@@ -68,6 +68,20 @@ export default function Home() {
     queryKey: ["/api/events"],
   });
 
+  // Q&A Global - using a special group ID
+  const { data: questions, isLoading: questionsLoading, refetch: refetchQuestions } = useQuery({
+    queryKey: ["/api/groups/global/questions"],
+    queryFn: async () => {
+      try {
+        const res = await apiRequest("GET", "/api/groups/global/questions");
+        return res || [];
+      } catch {
+        return [];
+      }
+    },
+    refetchInterval: 3000, // Poll every 3 seconds
+  });
+
   const createPostMutation = useMutation({
     mutationFn: async (content: string) => {
       await apiRequest("POST", "/api/posts", { content });
@@ -105,6 +119,51 @@ export default function Home() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+    },
+  });
+
+  const createQuestionMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/groups/global/questions", {
+        title: newQuestionTitle,
+        content: newQuestionContent,
+      });
+    },
+    onSuccess: () => {
+      setNewQuestionTitle("");
+      setNewQuestionContent("");
+      toast({
+        title: "Pregunta creada",
+        description: "Tu pregunta ha sido publicada.",
+      });
+      refetchQuestions();
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "No se pudo crear la pregunta.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const createAnswerMutation = useMutation({
+    mutationFn: async ({ qId, content }: { qId: string; content: string }) => {
+      await apiRequest("POST", `/api/questions/${qId}/answers`, { content });
+    },
+    onSuccess: () => {
+      setNewAnswers({});
+      toast({
+        title: "Respuesta publicada",
+      });
+      refetchQuestions();
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "No se pudo crear la respuesta.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -248,14 +307,11 @@ export default function Home() {
                       data-testid="input-question-content"
                     />
                     <Button
-                      onClick={() => newQuestionTitle && newQuestionContent && toast({
-                        title: "Pregunta enviada",
-                        description: "Tu pregunta ha sido publicada en Q&A"
-                      })}
-                      disabled={!newQuestionTitle || !newQuestionContent}
+                      onClick={() => createQuestionMutation.mutate()}
+                      disabled={!newQuestionTitle || !newQuestionContent || createQuestionMutation.isPending}
                       data-testid="button-submit-question"
                     >
-                      Publicar Pregunta
+                      {createQuestionMutation.isPending ? "Publicando..." : "Publicar Pregunta"}
                     </Button>
                   </CardContent>
                 </Card>
@@ -264,62 +320,79 @@ export default function Home() {
                 <div className="space-y-4">
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-lg">Preguntas Frecuentes</CardTitle>
+                      <CardTitle className="text-lg">Preguntas</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      {[
-                        { id: "q1", title: "¿Cómo descargar archivos?", author: "Juan Pérez", votes: 5, answers: 2 },
-                        { id: "q2", title: "¿Cuáles son las fechas de exámenes?", author: "María García", votes: 8, answers: 3 },
-                        { id: "q3", title: "¿Dónde encontrar material de estudio?", author: "Carlos López", votes: 3, answers: 1 },
-                      ].map((q) => (
-                        <div
-                          key={q.id}
-                          className="p-4 border rounded-lg hover-elevate cursor-pointer"
-                          onClick={() => setExpandedQId(expandedQId === q.id ? null : q.id)}
-                        >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1">
-                              <h3 className="font-semibold">{q.title}</h3>
-                              <p className="text-sm text-muted-foreground">{q.author}</p>
-                            </div>
-                            <div className="flex items-center gap-4 text-sm">
-                              <div className="flex items-center gap-1">
-                                <ThumbsUp className="h-4 w-4" />
-                                <span>{q.votes}</span>
+                      {questionsLoading ? (
+                        Array.from({ length: 2 }).map((_, i) => (
+                          <Skeleton key={i} className="h-20 w-full" />
+                        ))
+                      ) : !questions || questions.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No hay preguntas aún. ¡Sé el primero!</p>
+                      ) : (
+                        questions.map((q: any) => (
+                          <div
+                            key={q.id}
+                            className="p-4 border rounded-lg hover-elevate cursor-pointer"
+                            onClick={() => setExpandedQId(expandedQId === q.id ? null : q.id)}
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex-1">
+                                <h3 className="font-semibold">{q.title}</h3>
+                                <p className="text-sm text-muted-foreground">{q.author?.firstName || "Usuario"}</p>
                               </div>
-                              <div className="flex items-center gap-1">
-                                <MessageIcon className="h-4 w-4" />
-                                <span>{q.answers}</span>
+                              <div className="flex items-center gap-4 text-sm">
+                                <div className="flex items-center gap-1">
+                                  <ThumbsUp className="h-4 w-4" />
+                                  <span>{q.votes || 0}</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <MessageIcon className="h-4 w-4" />
+                                  <span>{q.answers?.length || 0}</span>
+                                </div>
                               </div>
                             </div>
-                          </div>
 
-                          {/* Expanded Answers */}
-                          {expandedQId === q.id && (
-                            <div className="mt-4 space-y-3 border-t pt-4" onClick={(e) => e.stopPropagation()}>
-                              <div className="space-y-2">
-                                {["Primera respuesta", "Segunda respuesta"].map((ans, i) => (
-                                  <div key={i} className="p-2 bg-muted/30 rounded text-sm">
-                                    <p>{ans}</p>
-                                    <p className="text-xs text-muted-foreground mt-1">Por: Usuario</p>
-                                  </div>
-                                ))}
+                            {/* Expanded Answers */}
+                            {expandedQId === q.id && (
+                              <div className="mt-4 space-y-3 border-t pt-4" onClick={(e) => e.stopPropagation()}>
+                                <div className="space-y-2">
+                                  {q.answers && q.answers.length > 0 ? (
+                                    q.answers.map((ans: any) => (
+                                      <div key={ans.id} className="p-2 bg-muted/30 rounded text-sm">
+                                        <p>{ans.content}</p>
+                                        <p className="text-xs text-muted-foreground mt-1">Por: {ans.author?.firstName || "Usuario"}</p>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <p className="text-xs text-muted-foreground">No hay respuestas aún</p>
+                                  )}
+                                </div>
+                                <div className="flex gap-2">
+                                  <Input
+                                    placeholder="Tu respuesta..."
+                                    value={newAnswers[q.id] || ""}
+                                    onChange={(e) => setNewAnswers({ ...newAnswers, [q.id]: e.target.value })}
+                                    data-testid={`input-answer-${q.id}`}
+                                  />
+                                  <Button 
+                                    size="sm" 
+                                    data-testid={`button-submit-answer-${q.id}`}
+                                    onClick={() => {
+                                      if (newAnswers[q.id]) {
+                                        createAnswerMutation.mutate({ qId: q.id, content: newAnswers[q.id] });
+                                      }
+                                    }}
+                                    disabled={!newAnswers[q.id] || createAnswerMutation.isPending}
+                                  >
+                                    {createAnswerMutation.isPending ? "..." : "Responder"}
+                                  </Button>
+                                </div>
                               </div>
-                              <div className="flex gap-2">
-                                <Input
-                                  placeholder="Tu respuesta..."
-                                  value={newAnswers[q.id] || ""}
-                                  onChange={(e) => setNewAnswers({ ...newAnswers, [q.id]: e.target.value })}
-                                  data-testid={`input-answer-${q.id}`}
-                                />
-                                <Button size="sm" data-testid={`button-submit-answer-${q.id}`}>
-                                  Responder
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                            )}
+                          </div>
+                        ))
+                      )}
                     </CardContent>
                   </Card>
                 </div>

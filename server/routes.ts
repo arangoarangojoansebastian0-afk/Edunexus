@@ -744,7 +744,34 @@ export async function registerRoutes(
     }
   });
 
-  // Q&A routes
+  // Q&A routes - Global (no group)
+  app.get("/api/groups/global/questions", requireAuth, async (req, res) => {
+    try {
+      const questions = await storage.getQuestionsByGroup("global");
+      res.json(questions);
+    } catch (error) {
+      console.error("Error fetching global questions:", error);
+      res.status(500).json({ message: "Failed to fetch questions" });
+    }
+  });
+
+  app.post("/api/groups/global/questions", requireAuth, requireVerified, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const data = insertQuestionSchema.parse({
+        ...req.body,
+        groupId: "global",
+        authorId: userId,
+      });
+      const question = await storage.createQuestion(data);
+      res.status(201).json(question);
+    } catch (error) {
+      console.error("Error creating global question:", error);
+      res.status(500).json({ message: "Failed to create question" });
+    }
+  });
+
+  // Q&A routes - Per Group
   app.get("/api/groups/:id/questions", requireAuth, async (req, res) => {
     try {
       const questions = await storage.getQuestionsByGroup(req.params.id);
