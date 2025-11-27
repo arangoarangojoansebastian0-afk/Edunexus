@@ -1,7 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
 import { setupAuthRoutes } from "./authRoutes";
 import { insertPostSchema, insertGroupSchema, insertCommentSchema, insertEventSchema, insertReportSchema, insertMessageSchema } from "@shared/schema";
 import { z } from "zod";
@@ -38,7 +37,7 @@ const upload = multer({
 });
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (!req.isAuthenticated() || !req.user) {
+  if (!req.session.userId || !req.user) {
     return res.status(401).json({ message: "Unauthorized" });
   }
   next();
@@ -81,10 +80,19 @@ export async function registerRoutes(
     })
   );
 
+  // Middleware to load user from session
+  app.use(async (req: Request, res: Response, next: NextFunction) => {
+    if (req.session.userId) {
+      try {
+        const user = await storage.getUser(req.session.userId);
+        (req as any).user = user;
+      } catch {}
+    }
+    next();
+  });
+
   // Setup auth routes (register, login, logout)
   setupAuthRoutes(app);
-
-  await setupAuth(app);
 
   // Auth routes
   app.get("/api/auth/user", async (req, res) => {

@@ -12,129 +12,152 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes (2025-11-27)
 
-### Authentication System Replacement
-- Replaced Replit Auth (OAuth/OIDC) with simple email/password authentication
-- Implemented bcryptjs for secure password hashing
-- Created new authentication routes:
-  - `POST /api/auth/register` - User registration with email, password, name
-  - `POST /api/auth/login` - Email/password login with session creation
-  - `POST /api/auth/logout` - Session termination
-  - `GET /api/auth/user` - Current user info from session
-- Updated schema: Added `passwordHash` field to users table
-- Session management using express-session with in-memory store (MemoryStore)
-- Sessions stored as HTTP-only cookies with 7-day expiration
-- Created new pages:
-  - `/login` - Login form with email/password inputs
-  - `/register` - Registration form with name, email, password
-- Updated AuthContext to use cookies instead of OAuth state
-- Updated UserMenu to show logout option with session cleanup
+### Complete Authentication System Overhaul
+- **Removed Replit Auth completely**: Deleted replitAuth.ts and all OAuth/OIDC integration
+- **Implemented simple email/password authentication**:
+  - New auth routes: `/api/auth/register`, `/api/auth/login`, `/api/auth/logout`
+  - Password hashing with bcryptjs (10 salt rounds)
+  - Session-based authentication using express-session with in-memory store
+  - HTTP-only cookies for session management (7-day expiration)
+- **Updated database schema**:
+  - Added `passwordHash` field to users table
+- **Created new authentication pages**:
+  - `/login` - Email/password login form
+  - `/register` - User registration with name, email, password
+- **Simplified authorization**:
+  - Replaced passport/OAuth middleware with simple session verification
+  - New session loading middleware that attaches user to request object
+  - Updated requireAuth to check req.session.userId instead of req.isAuthenticated()
+- **Frontend updates**:
+  - AuthContext updated to use cookies instead of OAuth tokens
+  - UserMenu now shows logout option with session cleanup
+  - useLocation hook from wouter for navigation (not useNavigate)
 
 ## System Architecture
 
 ### Frontend Architecture
 
-**Framework**: React 18+ with TypeScript, using Wouter for client-side routing instead of React Router.
+**Framework**: React 18+ with TypeScript, using Wouter for client-side routing.
 
-**UI Component System**: Built on shadcn/ui (Radix UI primitives) with Tailwind CSS for styling. The design follows a hybrid approach combining Material Design principles with modern community platform aesthetics. Custom theme system supports light/dark modes with CSS variables for consistent theming.
+**UI Component System**: Built on shadcn/ui (Radix UI primitives) with Tailwind CSS for styling.
 
-**State Management**: TanStack Query (React Query) for server state management. No global state library used - relies on React Query's caching and React's built-in state management (useState, useContext) for local UI state.
+**State Management**: TanStack Query for server state, React Context for auth state.
 
-**Form Handling**: React Hook Form with Zod validation schemas for type-safe form validation and submission.
+**Form Handling**: React Hook Form with Zod validation.
 
-**Authentication**: Cookie-based session authentication with localStorage persistence for smoother UX. AuthContext manages user state with automatic refetch on page focus.
+**Authentication**: Cookie-based sessions with localStorage fallback for UX.
 
 **Design System**: 
-- Typography: Inter (UI/body text) and Poppins (headings) from Google Fonts
-- Custom spacing primitives aligned with Tailwind's spacing scale
-- Responsive grid layouts for different content types (feed, groups, library)
-- Component elevation system with hover/active states for depth perception
+- Typography: Inter (UI) and Poppins (headings)
+- Responsive layouts with elevation system for depth
+- Light/dark mode support
 
 ### Backend Architecture
 
-**Runtime**: Node.js with Express.js server framework.
+**Runtime**: Node.js with Express.js.
 
-**API Pattern**: RESTful API design with conventional HTTP methods. Routes organized by resource type (posts, groups, files, events, etc.).
+**API Pattern**: RESTful with conventional HTTP methods.
 
-**Authentication**: Simple email/password authentication with bcryptjs password hashing. Session-based authentication using express-session with HTTP-only cookies. No OAuth complexity - straightforward registration and login flow.
+**Authentication**: Simple email/password with bcryptjs hashing.
+- Registration: Email validation, password hashing, user creation
+- Login: Email/password verification against hash
+- Session: HTTP-only cookies with 7-day expiration
+- Middleware: Session loading attaches user to request object
+
+**Authorization**: Role-based (student, teacher, admin) with middleware:
+- `requireAuth`: Checks session exists and user is logged in
+- `requireVerified`: Ensures user email is verified
+- `requireAdmin`: Ensures user has admin role
 
 **Password Security**: 
-- Passwords hashed with bcryptjs (10 salt rounds)
+- Bcryptjs with 10 salt rounds for hashing
 - Password never stored in plaintext
-- Verify password against hash during login
+- Hash comparison during login verification
 
-**File Handling**: Multer middleware for file uploads with validation (max 10MB, specific file types). Files stored in local filesystem under `/uploads` directory.
+**File Handling**: Multer middleware with 10MB limit and file type validation.
 
-**Authorization**: Role-based access control with three levels:
-- Student: Base user, can create posts/comments, join groups, book tutoring
-- Teacher: Enhanced permissions for academic content
-- Admin: Full platform moderation and user management capabilities
-
-**Database Access Layer**: Storage abstraction pattern with interface-based design (`IStorage`), allowing for future database swapping without business logic changes.
+**Database Access Layer**: Storage abstraction with IStorage interface.
 
 ### Data Storage
 
-**ORM**: Drizzle ORM with type-safe schema definitions and query builders.
+**ORM**: Drizzle ORM with PostgreSQL.
 
-**Database**: PostgreSQL via Neon serverless driver with WebSocket support for connection pooling.
+**Database**: Neon serverless PostgreSQL.
 
-**Session Store**: In-memory session storage using MemoryStore with automatic expiration cleanup.
+**Session Store**: In-memory MemoryStore (suitable for development).
 
 **Schema Design**:
-- User profiles with role-based permissions, verification status, interests, and password hash
-- Groups with type distinction (course/club) and member tracking
-- Posts with author relationships and metadata (pinned, grade-level targeting)
-- Comments with nested thread support
-- Files with visibility controls (public/group/private) and subject categorization
-- Events (tutoring sessions) with participant limits and calendar integration
-- Reports with status workflow for content moderation
-- Messages for group-based real-time chat
-- Badges and achievements system for gamification
+- User profiles with password hash, roles, verification status
+- Groups (courses/clubs) with member tracking
+- Posts with comments and reactions
+- Files with visibility controls
+- Events (tutoring) with participants
+- Reports for moderation
+- Messages for group chat
+- Badges for achievements
 
 ### External Dependencies
 
-**Core Infrastructure**:
-- **Neon Database**: Serverless PostgreSQL hosting with connection pooling
-- **bcryptjs**: Secure password hashing and verification
+**Core**:
+- Neon Database: PostgreSQL hosting
+- bcryptjs: Password hashing
 
-**Frontend Libraries**:
-- **Radix UI**: Unstyled, accessible component primitives (20+ components)
-- **TanStack Query**: Server state synchronization and caching
-- **date-fns**: Date manipulation and formatting with Spanish locale support
-- **Wouter**: Lightweight routing library
+**Frontend**:
+- Radix UI: Accessible components
+- TanStack Query: Server state management
+- date-fns: Date utilities
+- Wouter: Lightweight routing
 
-**Development Tools**:
-- **Vite**: Build tool and development server with HMR
-- **Drizzle Kit**: Database migrations and schema management
-- **ESBuild**: Production server bundling with selective dependency bundling
-- **TypeScript**: Type safety across client and server with path aliases
+**Backend**:
+- Express.js: Server framework
+- express-session: Session middleware
+- MemoryStore: In-memory session storage
+- Multer: File upload handling
 
-**Session Management**:
-- **express-session**: Session middleware with in-memory persistence
-- **MemoryStore**: In-memory session store for development
+**Security**:
+- HTTP-only cookies (XSS protection)
+- Password hashing with bcryptjs
+- Input validation with Zod
+- Role-based access control middleware
 
-**File Processing**:
-- **Multer**: Multipart form data handling for file uploads
+## Authentication Flow
 
-**Security Considerations**:
-- Content Security Policy through Vite configuration
-- HTTPS-only cookies for session security (in production)
-- HTTP-only cookies to prevent XSS access
-- Password hashing with bcryptjs (10 salt rounds)
-- Rate limiting ready (express-rate-limit in dependencies)
-- Input validation via Zod schemas on both client and server
-- Role-based route protection middleware (`requireAuth`, `requireVerified`)
+### Registration
+1. User navigates to `/register`
+2. Enters: name, email, password
+3. Backend validates email format and password length
+4. Password is hashed with bcryptjs
+5. User created in database
+6. Session is automatically created and stored in HTTP-only cookie
+7. User is logged in automatically
 
-**Development Environment**:
-- Replit-specific plugins for development (runtime error overlay, cartographer, dev banner)
-- Separate build processes for client (Vite) and server (ESBuild)
-- Hot module replacement in development mode
-- Production builds with optimized bundling and code splitting
+### Login
+1. User navigates to `/login`
+2. Enters email and password
+3. Backend retrieves user by email
+4. Compares provided password against stored hash
+5. If valid, session is created and stored in HTTP-only cookie
+6. User is logged in
+
+### Session Management
+1. All authenticated requests verify `req.session.userId` exists
+2. Session middleware loads user from database on each request
+3. User is attached to `req.user` for downstream middleware/routes
+4. Cookies expire after 7 days of inactivity
+5. On logout, session is destroyed and cookie is cleared
+
+### Frontend Session Persistence
+1. AuthContext loads user from localStorage on app start
+2. Verifies session with `/api/auth/user` endpoint
+3. If session is invalid, clears localStorage
+4. On page focus, re-verifies session to catch logout from other tabs
 
 ## Current Implementation Status
 
 ### Completed Features
 - ✅ User authentication (register/login/logout)
-- ✅ Session-based authentication with cookies
+- ✅ Session-based auth with cookies
+- ✅ Password hashing with bcryptjs
 - ✅ User profiles with roles (student/teacher/admin)
 - ✅ Public wall with posts and comments
 - ✅ Post reactions (likes)
@@ -144,7 +167,7 @@ Preferred communication style: Simple, everyday language.
 - ✅ Tutoring/advisory event scheduling
 - ✅ User profile pages
 - ✅ Admin moderation dashboard
-- ✅ Report system for content moderation
+- ✅ Report system
 - ✅ Real-time messaging for groups
 
 ### Project Structure
@@ -152,77 +175,71 @@ Preferred communication style: Simple, everyday language.
 ```
 /
 ├── client/src/
-│   ├── pages/              # Page components
-│   │   ├── Login.tsx        # NEW: Login page
-│   │   ├── Register.tsx     # NEW: Registration page
+│   ├── pages/
+│   │   ├── Login.tsx        # Login page with email/password
+│   │   ├── Register.tsx     # Registration page
 │   │   ├── Landing.tsx
-│   │   ├── Home.tsx
-│   │   ├── Groups.tsx
-│   │   ├── GroupDetail.tsx
-│   │   ├── Library.tsx
-│   │   ├── Tutoring.tsx
-│   │   ├── Profile.tsx
-│   │   ├── Admin.tsx
-│   │   ├── Notifications.tsx
-│   │   └── Settings.tsx
-│   ├── components/          # Reusable components
+│   │   └── ... (other pages)
+│   ├── components/
+│   │   └── UserMenu.tsx     # Updated for logout
 │   ├── context/
-│   │   └── AuthContext.tsx  # UPDATED: Uses cookies instead of OAuth
-│   ├── lib/
-│   ├── hooks/
-│   └── App.tsx             # UPDATED: Added /login and /register routes
+│   │   └── AuthContext.tsx  # Uses cookies, not OAuth
+│   └── App.tsx              # Routes include /login, /register
 ├── server/
-│   ├── authSimple.ts       # NEW: Password hashing and verification
-│   ├── authRoutes.ts       # NEW: Auth endpoints (register, login, logout)
-│   ├── routes.ts           # UPDATED: Session middleware and /api/auth/user
+│   ├── authSimple.ts        # Password hashing & verification
+│   ├── authRoutes.ts        # Auth endpoints
+│   ├── routes.ts            # Session middleware, requireAuth
 │   ├── storage.ts
 │   ├── db.ts
 │   └── index.ts
 ├── shared/
-│   └── schema.ts           # UPDATED: Added passwordHash field to users
+│   └── schema.ts            # passwordHash field in users table
 └── package.json
 ```
 
 ## Key Files Modified/Created
 
+### Files Deleted
+- `server/replitAuth.ts` - Completely removed Replit Auth/OAuth implementation
+
 ### New Files
-- `server/authSimple.ts` - Password hashing utilities (hashPassword, verifyPassword, registerUser, loginUser)
-- `server/authRoutes.ts` - Express routes for authentication endpoints
-- `client/src/pages/Login.tsx` - Login page with email/password form
-- `client/src/pages/Register.tsx` - Registration page with name, email, password fields
+- `server/authSimple.ts` - Password hashing utilities
+- `server/authRoutes.ts` - Express routes for auth endpoints
+- `client/src/pages/Login.tsx` - Login page
+- `client/src/pages/Register.tsx` - Registration page
 
 ### Modified Files
-- `shared/schema.ts` - Added `passwordHash: varchar("password_hash")` to users table
-- `client/src/context/AuthContext.tsx` - Updated to use `/api/auth/user` endpoint instead of OAuth
-- `client/src/components/UserMenu.tsx` - Updated logout to call `/api/auth/logout`
-- `client/src/App.tsx` - Added `/login` and `/register` routes
-- `client/src/pages/Landing.tsx` - Updated login button to navigate to `/login`
-- `server/routes.ts` - Added express-session middleware and `/api/auth/user` endpoint
+- `shared/schema.ts` - Added passwordHash to users table
+- `server/routes.ts` - Removed setupAuth/isAuthenticated, added session middleware, updated requireAuth
+- `client/src/context/AuthContext.tsx` - Uses /api/auth/user endpoint instead of OAuth
+- `client/src/components/UserMenu.tsx` - Updated logout handler
+- `client/src/App.tsx` - Added /login and /register routes
+- `client/src/pages/Landing.tsx` - Updated login button to navigate to /login
 
-## Testing Instructions
+## Testing Authentication
 
-1. **Start the app**: `npm run dev` (already configured)
-2. **Register a new account**: 
-   - Navigate to `/register`
-   - Fill in: name, email, password
-   - Password must be at least 6 characters
-3. **Login**:
-   - Navigate to `/login`
-   - Enter email and password
-   - Session is stored in cookies
-4. **Logout**:
-   - Click user avatar/menu in header
-   - Click "Cerrar Sesión" (Logout)
-5. **Session persistence**:
-   - Login and refresh the page
-   - User should still be logged in (from localStorage and cookie)
+1. **Start the app**: `npm run dev`
+2. **Register**: Navigate to `/register` and create account
+3. **Login**: Navigate to `/login` with credentials
+4. **Session persistence**: Refresh page - user stays logged in
+5. **Logout**: Click avatar → "Cerrar Sesión"
+6. **Protected routes**: Unauthenticated users redirected to `/login`
 
 ## Development Notes
 
-- Authentication uses express-session with in-memory store (suitable for development)
-- For production, consider using a persistent session store (PostgreSQL, Redis)
-- Passwords are hashed with bcryptjs before storage
-- Sessions expire after 7 days
-- Cookies are HTTP-only and secure (in production)
-- Email validation is built into Zod schema
-- Password minimum length is 6 characters
+- **Session Store**: MemoryStore for development (use PostgreSQL session store for production)
+- **Password Requirements**: Minimum 6 characters
+- **Email Validation**: Basic format validation (before was domain-specific, now accepts any email)
+- **Session Duration**: 7 days
+- **Cookies**: HTTP-only in production, secure flag set when NODE_ENV=production
+- **No OAuth/OIDC**: Completely eliminated external authentication provider dependency
+
+## No More Replit Auth
+
+All references to Replit Auth, OAuth, OIDC, and external identity providers have been removed:
+- ✅ No @replit/auth package
+- ✅ No passport.js Replit strategy
+- ✅ No OpenID Connect configuration
+- ✅ No OAuth callback handling
+- ✅ No token refresh logic
+- ✅ Simple, self-contained authentication system
