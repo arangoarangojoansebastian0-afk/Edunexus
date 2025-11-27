@@ -237,6 +237,59 @@ export const messages = pgTable(
   ]
 );
 
+// Q&A Questions table
+export const questions = pgTable(
+  "questions",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    groupId: varchar("group_id").references(() => groups.id, { onDelete: "cascade" }).notNull(),
+    authorId: varchar("author_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    title: varchar("title", { length: 255 }).notNull(),
+    content: text("content").notNull(),
+    votes: integer("votes").default(0).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_questions_group").on(table.groupId),
+    index("idx_questions_author").on(table.authorId),
+  ]
+);
+
+// Q&A Answers table
+export const answers = pgTable(
+  "answers",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    questionId: varchar("question_id").references(() => questions.id, { onDelete: "cascade" }).notNull(),
+    authorId: varchar("author_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    content: text("content").notNull(),
+    votes: integer("votes").default(0).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_answers_question").on(table.questionId),
+    index("idx_answers_author").on(table.authorId),
+  ]
+);
+
+// Question/Answer votes
+export const qaVotes = pgTable(
+  "qa_votes",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    questionId: varchar("question_id").references(() => questions.id, { onDelete: "cascade" }),
+    answerId: varchar("answer_id").references(() => answers.id, { onDelete: "cascade" }),
+    voteType: varchar("vote_type", { length: 50 }).notNull(), // "up" or "down"
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_qa_votes_user").on(table.userId),
+    index("idx_qa_votes_question").on(table.questionId),
+    index("idx_qa_votes_answer").on(table.answerId),
+  ]
+);
+
 // Badges table
 export const badges = pgTable("badges", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -274,6 +327,9 @@ export const usersRelations = relations(users, ({ many }) => ({
   messages: many(messages),
   reports: many(reports),
   userBadges: many(userBadges),
+  questions: many(questions),
+  answers: many(answers),
+  qaVotes: many(qaVotes),
 }));
 
 export const groupsRelations = relations(groups, ({ one, many }) => ({
@@ -285,6 +341,7 @@ export const groupsRelations = relations(groups, ({ one, many }) => ({
   posts: many(posts),
   files: many(files),
   messages: many(messages),
+  questions: many(questions),
 }));
 
 export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
@@ -385,6 +442,46 @@ export const messagesRelations = relations(messages, ({ one }) => ({
   }),
 }));
 
+export const questionsRelations = relations(questions, ({ one, many }) => ({
+  group: one(groups, {
+    fields: [questions.groupId],
+    references: [groups.id],
+  }),
+  author: one(users, {
+    fields: [questions.authorId],
+    references: [users.id],
+  }),
+  answers: many(answers),
+  votes: many(qaVotes),
+}));
+
+export const answersRelations = relations(answers, ({ one, many }) => ({
+  question: one(questions, {
+    fields: [answers.questionId],
+    references: [questions.id],
+  }),
+  author: one(users, {
+    fields: [answers.authorId],
+    references: [users.id],
+  }),
+  votes: many(qaVotes),
+}));
+
+export const qaVotesRelations = relations(qaVotes, ({ one }) => ({
+  user: one(users, {
+    fields: [qaVotes.userId],
+    references: [users.id],
+  }),
+  question: one(questions, {
+    fields: [qaVotes.questionId],
+    references: [questions.id],
+  }),
+  answer: one(answers, {
+    fields: [qaVotes.answerId],
+    references: [answers.id],
+  }),
+}));
+
 export const badgesRelations = relations(badges, ({ many }) => ({
   userBadges: many(userBadges),
 }));
@@ -471,6 +568,23 @@ export const insertMessageSchema = createInsertSchema(messages).omit({
   createdAt: true,
 });
 
+export const insertQuestionSchema = createInsertSchema(questions).omit({
+  id: true,
+  votes: true,
+  createdAt: true,
+});
+
+export const insertAnswerSchema = createInsertSchema(answers).omit({
+  id: true,
+  votes: true,
+  createdAt: true,
+});
+
+export const insertQaVoteSchema = createInsertSchema(qaVotes).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertBadgeSchema = createInsertSchema(badges).omit({
   id: true,
   createdAt: true,
@@ -515,6 +629,15 @@ export type InsertReport = z.infer<typeof insertReportSchema>;
 
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
+
+export type Question = typeof questions.$inferSelect;
+export type InsertQuestion = z.infer<typeof insertQuestionSchema>;
+
+export type Answer = typeof answers.$inferSelect;
+export type InsertAnswer = z.infer<typeof insertAnswerSchema>;
+
+export type QaVote = typeof qaVotes.$inferSelect;
+export type InsertQaVote = z.infer<typeof insertQaVoteSchema>;
 
 export type Badge = typeof badges.$inferSelect;
 export type InsertBadge = z.infer<typeof insertBadgeSchema>;
@@ -563,4 +686,12 @@ export type MessageWithSender = Message & {
 
 export type UserWithBadges = User & {
   userBadges?: (UserBadge & { badge: Badge })[];
+};
+
+export type QuestionWithAnswers = Question & {
+  author: User;
+  answers: (Answer & { author: User })[];
+  _count?: {
+    answers: number;
+  };
 };

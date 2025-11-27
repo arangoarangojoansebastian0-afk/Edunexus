@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuthRoutes } from "./authRoutes";
-import { insertPostSchema, insertGroupSchema, insertCommentSchema, insertEventSchema, insertReportSchema, insertMessageSchema } from "@shared/schema";
+import { insertPostSchema, insertGroupSchema, insertCommentSchema, insertEventSchema, insertReportSchema, insertMessageSchema, insertQuestionSchema, insertAnswerSchema, insertQaVoteSchema } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
 import path from "path";
@@ -741,6 +741,101 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting file:", error);
       res.status(500).json({ message: "Failed to delete file" });
+    }
+  });
+
+  // Q&A routes
+  app.get("/api/groups/:id/questions", requireAuth, async (req, res) => {
+    try {
+      const questions = await storage.getQuestionsByGroup(req.params.id);
+      res.json(questions);
+    } catch (error) {
+      console.error("Error fetching questions:", error);
+      res.status(500).json({ message: "Failed to fetch questions" });
+    }
+  });
+
+  app.post("/api/groups/:id/questions", requireAuth, requireVerified, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const data = insertQuestionSchema.parse({
+        ...req.body,
+        groupId: req.params.id,
+        authorId: userId,
+      });
+      const question = await storage.createQuestion(data);
+      res.status(201).json(question);
+    } catch (error) {
+      console.error("Error creating question:", error);
+      res.status(500).json({ message: "Failed to create question" });
+    }
+  });
+
+  app.delete("/api/questions/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteQuestion(req.params.id);
+      res.status(200).json({ success: true });
+    } catch (error) {
+      console.error("Error deleting question:", error);
+      res.status(500).json({ message: "Failed to delete question" });
+    }
+  });
+
+  app.post("/api/questions/:id/answers", requireAuth, requireVerified, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const data = insertAnswerSchema.parse({
+        ...req.body,
+        questionId: req.params.id,
+        authorId: userId,
+      });
+      const answer = await storage.createAnswer(data);
+      res.status(201).json(answer);
+    } catch (error) {
+      console.error("Error creating answer:", error);
+      res.status(500).json({ message: "Failed to create answer" });
+    }
+  });
+
+  app.delete("/api/answers/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteAnswer(req.params.id);
+      res.status(200).json({ success: true });
+    } catch (error) {
+      console.error("Error deleting answer:", error);
+      res.status(500).json({ message: "Failed to delete answer" });
+    }
+  });
+
+  app.post("/api/questions/:id/vote", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const data = insertQaVoteSchema.parse({
+        ...req.body,
+        questionId: req.params.id,
+        userId,
+      });
+      await storage.voteOnQuestion(data);
+      res.status(200).json({ success: true });
+    } catch (error) {
+      console.error("Error voting on question:", error);
+      res.status(500).json({ message: "Failed to vote" });
+    }
+  });
+
+  app.post("/api/answers/:id/vote", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const data = insertQaVoteSchema.parse({
+        ...req.body,
+        answerId: req.params.id,
+        userId,
+      });
+      await storage.voteOnAnswer(data);
+      res.status(200).json({ success: true });
+    } catch (error) {
+      console.error("Error voting on answer:", error);
+      res.status(500).json({ message: "Failed to vote" });
     }
   });
 

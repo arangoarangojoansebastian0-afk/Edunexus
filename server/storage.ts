@@ -14,6 +14,9 @@ import {
   messages,
   badges,
   userBadges,
+  questions,
+  answers,
+  qaVotes,
   type User,
   type UpsertUser,
   type InsertUser,
@@ -42,6 +45,12 @@ import {
   type FileWithUploader,
   type EventWithHost,
   type MessageWithSender,
+  type Question,
+  type InsertQuestion,
+  type Answer,
+  type InsertAnswer,
+  type InsertQaVote,
+  type QuestionWithAnswers,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -121,6 +130,15 @@ export interface IStorage {
   getMessagesByGroup(groupId: string, limit?: number): Promise<MessageWithSender[]>;
   createMessage(message: InsertMessage): Promise<Message>;
   deleteMessage(id: string): Promise<void>;
+
+  // Q&A
+  getQuestionsByGroup(groupId: string): Promise<QuestionWithAnswers[]>;
+  createQuestion(question: InsertQuestion): Promise<Question>;
+  deleteQuestion(id: string): Promise<void>;
+  createAnswer(answer: InsertAnswer): Promise<Answer>;
+  deleteAnswer(id: string): Promise<void>;
+  voteOnQuestion(vote: InsertQaVote): Promise<void>;
+  voteOnAnswer(vote: InsertQaVote): Promise<void>;
 
   // Stats
   getStats(): Promise<{
@@ -771,6 +789,110 @@ export class DatabaseStorage implements IStorage {
 
   async deleteMessage(id: string): Promise<void> {
     await db.delete(messages).where(eq(messages.id, id));
+  }
+
+  // Q&A
+  async getQuestionsByGroup(groupId: string): Promise<QuestionWithAnswers[]> {
+    const groupQuestions = await db
+      .select()
+      .from(questions)
+      .where(eq(questions.groupId, groupId))
+      .innerJoin(users, eq(questions.authorId, users.id));
+
+    const result: QuestionWithAnswers[] = [];
+    for (const q of groupQuestions) {
+      const groupAnswers = await db
+        .select()
+        .from(answers)
+        .where(eq(answers.questionId, q.questions.id))
+        .innerJoin(users, eq(answers.authorId, users.id));
+
+      result.push({
+        ...q.questions,
+        author: q.users,
+        answers: groupAnswers.map((a) => ({ ...a.answers, author: a.users })),
+      });
+    }
+    return result;
+  }
+
+  async createQuestion(question: InsertQuestion): Promise<Question> {
+    const [newQuestion] = await db.insert(questions).values(question).returning();
+    return newQuestion;
+  }
+
+  async deleteQuestion(id: string): Promise<void> {
+    await db.delete(questions).where(eq(questions.id, id));
+  }
+
+  async createAnswer(answer: InsertAnswer): Promise<Answer> {
+    const [newAnswer] = await db.insert(answers).values(answer).returning();
+    await db
+      .update(questions)
+      .set({ votes: sql`votes + 1` })
+      .where(eq(questions.id, answer.questionId));
+    return newAnswer;
+  }
+
+  async deleteAnswer(id: string): Promise<void> {
+    const answer = await db.select().from(answers).where(eq(answers.id, id)).limit(1);
+    if (answer.length > 0) {
+      await db
+        .update(questions)
+        .set({ votes: sql`CASE WHEN votes > 0 THEN votes - 1 ELSE 0 END` })
+        .where(eq(questions.id, answer[0].questionId));
+    }
+    await db.delete(answers).where(eq(answers.id, id));
+  }
+
+  async voteOnQuestion(vote: InsertQaVote): Promise<void> {
+    const existing = await db
+      .select()
+      .from(qaVotes)
+      .where(
+        and(
+          eq(qaVotes.userId, vote.userId),
+          eq(qaVotes.questionId, vote.questionId!)
+        )
+      );
+    
+    if (existing.length > 0) {
+      await db.delete(qaVotes).where(
+        and(
+          eq(qaVotes.userId, vote.userId),
+          eq(qaVotes.questionId, vote.questionId!)
+        )
+      );
+    } else {
+      const increment = vote.voteType === "up" ? 1 : -1;
+      await db.insert(qaVotes).values(vote);
+      await db
+        .update(questions)
+        .set({ votes: sql`votes + ${increment}` })
+        .where(eq(questions.id, vote.questionId!));
+    }
+  }
+
+  async voteOnAnswer(vote: InsertQaVote): Promise<void> {
+    const existing = await db
+      .select()
+      .from(qaVotes)
+      .where(
+        and(eq(qaVotes.userId, vote.userId), eq(qaVotes.answerId, vote.answerId!))
+      );
+    
+    if (existing.length > 0) {
+      await db.delete(qaVotes).where(
+        and(eq(qaVotes.userId, vote.userId), eq(qaVotes.answerId, vote.answerId!))
+      );
+    } else {
+      const increment = vote.voteType === "up" ? 1 : -1;
+      await db.insert(qaVotes).values(vote);
+      await db
+        .update(answers)
+        .set({ votes: sql`votes + ${increment}` })
+        .where(eq(answers.id, vote.answerId!));
+    }
   }
 
   // Stats
