@@ -229,7 +229,7 @@ export default function GroupDetail() {
         credentials: "include",
         body: JSON.stringify({ initiatorName: `${user?.firstName} ${user?.lastName}` }),
       });
-      window.open(`https://meet.jitsi.si/comunidad-loyola-${groupId}-video`, "_blank");
+      window.open(`https://meet.jitsi.org/comunidad-loyola-${groupId}-video`, "_blank");
       setActiveCall(groupId);
     } catch (error) {
       console.error("Error starting call:", error);
