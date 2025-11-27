@@ -25,12 +25,6 @@ export async function registerUser(
   role: "student" | "teacher" = "student",
   teacherCode?: string
 ) {
-  // Check if user exists
-  const existingUser = await storage.getUserByEmail(email);
-  if (existingUser) {
-    throw new Error("Email already registered");
-  }
-
   // Validate teacher code
   if (role === "teacher") {
     if (teacherCode !== "1234") {
