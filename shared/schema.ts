@@ -441,11 +441,16 @@ export const insertFileSchema = createInsertSchema(files).omit({
   downloadCount: true,
 });
 
-export const insertEventSchema = createInsertSchema(events).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
+export const insertEventSchema = createInsertSchema(events)
+  .omit({
+    id: true,
+    createdAt: true,
+    updatedAt: true,
+  })
+  .extend({
+    startTime: z.coerce.date(),
+    endTime: z.coerce.date(),
+  });
 
 export const insertEventParticipantSchema = createInsertSchema(eventParticipants).omit({
   id: true,
