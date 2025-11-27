@@ -237,7 +237,6 @@ export default function GroupDetail() {
     } catch (error) {
       console.error("Error uploading media:", error);
     }
-    if (mediaInputRef.current) mediaInputRef.current.value = "";
   };
 
   const handleDeleteMessage = async (messageId: string) => {
