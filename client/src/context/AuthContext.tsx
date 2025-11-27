@@ -6,46 +6,73 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   setUser: (user: User | null) => void;
+  refetchUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+async function fetchAuthUser(): Promise<User | null> {
+  try {
+    const res = await fetch("/api/auth/user", { credentials: "include" });
+    if (res.ok) {
+      return await res.json();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Initialize from localStorage on mount
-  useEffect(() => {
-    const savedUser = localStorage.getItem("communidad_loyola_user");
-    if (savedUser) {
-      try {
-        setUser(JSON.parse(savedUser));
-      } catch (error) {
-        console.error("Failed to restore session from localStorage:", error);
-        localStorage.removeItem("communidad_loyola_user");
-      }
+  const refetchUser = async () => {
+    const userData = await fetchAuthUser();
+    setUser(userData);
+    if (userData) {
+      localStorage.setItem("communidad_loyola_user", JSON.stringify(userData));
+    } else {
+      localStorage.removeItem("communidad_loyola_user");
     }
+  };
 
-    // Verify session is still valid with backend
-    fetch("/api/auth/user", { credentials: "include" })
-      .then((res) => {
-        if (res.ok) {
-          return res.json();
+  // Initialize on mount
+  useEffect(() => {
+    const init = async () => {
+      const savedUser = localStorage.getItem("communidad_loyola_user");
+      if (savedUser) {
+        try {
+          setUser(JSON.parse(savedUser));
+        } catch {
+          localStorage.removeItem("communidad_loyola_user");
         }
-        throw new Error("Unauthorized");
-      })
-      .then((data) => {
-        setUser(data);
-        localStorage.setItem("communidad_loyola_user", JSON.stringify(data));
-      })
-      .catch(() => {
-        // User not authenticated
-        localStorage.removeItem("communidad_loyola_user");
-        setUser(null);
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
+      }
+
+      await refetchUser();
+      setIsLoading(false);
+    };
+
+    init();
+  }, []);
+
+  // Re-verify session when page regains focus (handles OAuth redirect)
+  useEffect(() => {
+    const handleFocus = () => {
+      refetchUser();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) {
+        refetchUser();
+      }
+    });
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
+    };
   }, []);
 
   // Save to localStorage whenever user changes
@@ -64,6 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         isAuthenticated: !!user,
         setUser,
+        refetchUser,
       }}
     >
       {children}

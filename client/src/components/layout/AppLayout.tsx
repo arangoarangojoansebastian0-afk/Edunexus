@@ -1,6 +1,7 @@
 import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { UserMenu } from "@/components/UserMenu";
 import { Button } from "@/components/ui/button";
 import { Bell, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -48,6 +49,7 @@ export function AppLayout({ children, title, showSearch = false }: AppLayoutProp
                 <Bell className="h-5 w-5" />
               </Button>
               <ThemeToggle />
+              <UserMenu />
             </div>
           </header>
           <main className="flex-1 overflow-auto">
