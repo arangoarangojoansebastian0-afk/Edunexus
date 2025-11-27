@@ -7,6 +7,8 @@ const registerSchema = z.object({
   password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
   firstName: z.string().min(2, "Nombre requerido"),
   lastName: z.string().min(2, "Apellido requerido"),
+  role: z.enum(["student", "teacher"]).default("student"),
+  teacherCode: z.string().optional(),
 });
 
 const loginSchema = z.object({
@@ -22,7 +24,9 @@ export function setupAuthRoutes(app: Express) {
         data.email,
         data.password,
         data.firstName,
-        data.lastName
+        data.lastName,
+        data.role,
+        data.teacherCode
       );
 
       // Set session cookie
@@ -33,6 +37,7 @@ export function setupAuthRoutes(app: Express) {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
+        role: user.role,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Error en registro";

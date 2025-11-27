@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/AuthContext";
 import { GraduationCap, ArrowRight } from "lucide-react";
@@ -15,6 +16,8 @@ export default function Register() {
     email: "",
     password: "",
     confirmPassword: "",
+    role: "student" as "student" | "teacher",
+    teacherCode: "",
   });
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
@@ -26,6 +29,10 @@ export default function Register() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleRoleChange = (value: string) => {
+    setFormData((prev) => ({ ...prev, role: value as "student" | "teacher" }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -33,6 +40,15 @@ export default function Register() {
       toast({
         title: "Error",
         description: "Las contraseñas no coinciden",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (formData.role === "teacher" && !formData.teacherCode) {
+      toast({
+        title: "Error",
+        description: "El código de maestro es requerido",
         variant: "destructive",
       });
       return;
@@ -49,6 +65,8 @@ export default function Register() {
           lastName: formData.lastName,
           email: formData.email,
           password: formData.password,
+          role: formData.role,
+          teacherCode: formData.teacherCode || undefined,
         }),
       });
 
@@ -155,6 +173,42 @@ export default function Register() {
                   required
                 />
               </div>
+
+              <div className="space-y-3">
+                <Label>¿Eres maestro o estudiante?</Label>
+                <RadioGroup value={formData.role} onValueChange={handleRoleChange}>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="student" id="student" />
+                    <Label htmlFor="student" className="cursor-pointer font-normal">
+                      Estudiante
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="teacher" id="teacher" />
+                    <Label htmlFor="teacher" className="cursor-pointer font-normal">
+                      Maestro
+                    </Label>
+                  </div>
+                </RadioGroup>
+              </div>
+
+              {formData.role === "teacher" && (
+                <div className="space-y-2">
+                  <Label htmlFor="teacherCode">Código de Maestro</Label>
+                  <Input
+                    id="teacherCode"
+                    name="teacherCode"
+                    type="password"
+                    placeholder="Ingresa el código"
+                    value={formData.teacherCode}
+                    onChange={handleChange}
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Ingresa el código especial de maestro para crear una cuenta de maestro
+                  </p>
+                </div>
+              )}
 
               <Button
                 type="submit"
