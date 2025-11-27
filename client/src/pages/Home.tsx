@@ -99,6 +99,23 @@ export default function Home() {
               isSubmitting={createPostMutation.isPending}
             />
 
+            {/* News/Events Section */}
+            <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Calendar className="h-5 w-5" />
+                  Noticias y Eventos
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {user?.role === "teacher" || user?.role === "admin" ? (
+                  <p className="text-sm text-muted-foreground mb-2">Publica noticias importantes en tus publicaciones usando #NOTICIA o #EVENTO</p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Las noticias importantes aparecen aquí</p>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Filter Bar */}
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <h2 className="font-serif font-semibold text-lg">Publicaciones Recientes</h2>

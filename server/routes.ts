@@ -405,7 +405,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/groups/:id/messages", requireAuth, async (req, res) => {
+  app.post("/api/groups/:id/messages", requireAuth, upload.single("media"), async (req, res) => {
     try {
       const userId = req.user!.id;
       const groupId = req.params.id;
@@ -413,16 +413,44 @@ export async function registerRoutes(
       if (!isMember) {
         return res.status(403).json({ message: "Not a group member" });
       }
+      
+      let mediaUrl: string | undefined;
+      let mediaType: string | undefined;
+      
+      if (req.file) {
+        mediaUrl = `/uploads/${req.file.filename}`;
+        const ext = path.extname(req.file.originalname).slice(1).toLowerCase();
+        if (["mp3", "wav", "m4a", "ogg"].includes(ext)) mediaType = "voice";
+        else if (["jpg", "jpeg", "png", "gif"].includes(ext)) mediaType = "image";
+        else if (["pdf", "doc", "docx"].includes(ext)) mediaType = "document";
+      }
+      
       const data = insertMessageSchema.parse({
         ...req.body,
         groupId,
         senderId: userId,
+        mediaUrl,
+        mediaType,
       });
       const message = await storage.createMessage(data);
       res.status(201).json(message);
     } catch (error) {
       console.error("Error sending message:", error);
       res.status(500).json({ message: "Failed to send message" });
+    }
+  });
+
+  // Delete message (only teachers/admins can delete)
+  app.delete("/api/groups/:id/messages/:messageId", requireAuth, async (req, res) => {
+    try {
+      if (req.user!.role !== "teacher" && req.user!.role !== "admin") {
+        return res.status(403).json({ message: "Only moderators can delete messages" });
+      }
+      await storage.deleteMessage(req.params.messageId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting message:", error);
+      res.status(500).json({ message: "Failed to delete message" });
     }
   });
 

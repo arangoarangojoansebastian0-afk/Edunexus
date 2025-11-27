@@ -226,6 +226,8 @@ export const messages = pgTable(
     groupId: varchar("group_id").references(() => groups.id, { onDelete: "cascade" }).notNull(),
     senderId: varchar("sender_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
     content: text("content").notNull(),
+    mediaUrl: varchar("media_url"), // URL to voice, image, or document
+    mediaType: varchar("media_type"), // "voice", "image", "document"
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

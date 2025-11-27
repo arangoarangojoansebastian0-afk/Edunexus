@@ -25,6 +25,12 @@ import {
   BookOpen,
   ArrowLeft,
   Settings,
+  Paperclip,
+  Mic,
+  Image as ImageIcon,
+  Phone,
+  Video,
+  Trash2,
 } from "lucide-react";
 import type { GroupWithMembers, PostWithAuthor, MessageWithSender, GroupMember, User } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
@@ -40,6 +46,7 @@ export default function GroupDetail() {
   const [activeTab, setActiveTab] = useState("forum");
   const [chatMessage, setChatMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const mediaInputRef = useRef<HTMLInputElement>(null);
 
   const { data: group, isLoading: groupLoading } = useQuery<GroupWithMembers>({
     queryKey: ["/api/groups", groupId],
@@ -153,6 +160,43 @@ export default function GroupDetail() {
     e.preventDefault();
     if (!chatMessage.trim()) return;
     sendMessageMutation.mutate(chatMessage.trim());
+  };
+
+  const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const formData = new FormData();
+    formData.append("content", `[${file.type.includes("audio") ? "Nota de voz" : file.type.includes("image") ? "Imagen" : "Documento"}]`);
+    formData.append("media", file);
+    
+    try {
+      const response = await fetch(`/api/groups/${groupId}/messages`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (response.ok) {
+        queryClient.invalidateQueries({ queryKey: ["/api/groups", groupId, "messages"] });
+      }
+    } catch (error) {
+      console.error("Error uploading media:", error);
+    }
+    if (mediaInputRef.current) mediaInputRef.current.value = "";
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    try {
+      const response = await fetch(`/api/groups/${groupId}/messages/${messageId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (response.ok) {
+        queryClient.invalidateQueries({ queryKey: ["/api/groups", groupId, "messages"] });
+      }
+    } catch (error) {
+      console.error("Error deleting message:", error);
+    }
   };
 
   if (groupLoading) {
@@ -348,7 +392,34 @@ export default function GroupDetail() {
                                     }`}
                                   >
                                     <p className="text-sm">{message.content}</p>
+                                    {message.mediaUrl && (
+                                      <div className="mt-2">
+                                        {message.mediaType === "image" && (
+                                          <img src={message.mediaUrl} alt="shared" className="max-w-xs rounded-lg" />
+                                        )}
+                                        {message.mediaType === "voice" && (
+                                          <audio controls className="max-w-xs">
+                                            <source src={message.mediaUrl} />
+                                          </audio>
+                                        )}
+                                        {message.mediaType === "document" && (
+                                          <a href={message.mediaUrl} target="_blank" className="text-blue-400 underline">
+                                            Descargar documento
+                                          </a>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
+                                  {(isOwn || user?.role === "teacher" || user?.role === "admin") && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => handleDeleteMessage(message.id)}
+                                      className="opacity-0 hover:opacity-100"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  )}
                                   <p className="text-xs text-muted-foreground mt-1">
                                     {formatDistanceToNow(new Date(message.createdAt), {
                                       addSuffix: true,
@@ -369,26 +440,54 @@ export default function GroupDetail() {
                         </div>
                       )}
                     </ScrollArea>
-                    <form
-                      onSubmit={handleSendMessage}
-                      className="p-4 border-t flex items-center gap-2 shrink-0"
-                    >
-                      <Input
-                        placeholder="Escribe un mensaje..."
-                        value={chatMessage}
-                        onChange={(e) => setChatMessage(e.target.value)}
-                        disabled={sendMessageMutation.isPending}
-                        data-testid="input-chat-message"
-                      />
-                      <Button
-                        type="submit"
-                        size="icon"
-                        disabled={!chatMessage.trim() || sendMessageMutation.isPending}
-                        data-testid="button-send-message"
-                      >
-                        <Send className="h-4 w-4" />
-                      </Button>
-                    </form>
+                    <div className="p-4 border-t space-y-2 shrink-0">
+                      <div className="flex gap-1 flex-wrap">
+                        <Button size="sm" variant="outline" className="gap-1" onClick={() => mediaInputRef.current?.click()}>
+                          <Mic className="h-4 w-4" />
+                          Voz
+                        </Button>
+                        <Button size="sm" variant="outline" className="gap-1" onClick={() => { mediaInputRef.current?.click(); }}>
+                          <ImageIcon className="h-4 w-4" />
+                          Imagen
+                        </Button>
+                        <Button size="sm" variant="outline" className="gap-1" onClick={() => { mediaInputRef.current?.click(); }}>
+                          <Paperclip className="h-4 w-4" />
+                          Documento
+                        </Button>
+                        <Button size="sm" variant="outline" className="gap-1" onClick={() => window.open(`https://meet.jitsi.si/comunidad-loyola-${groupId}`, "_blank")}>
+                          <Phone className="h-4 w-4" />
+                          Llamada
+                        </Button>
+                        <Button size="sm" variant="outline" className="gap-1" onClick={() => window.open(`https://meet.jitsi.si/comunidad-loyola-${groupId}-video`, "_blank")}>
+                          <Video className="h-4 w-4" />
+                          Video
+                        </Button>
+                        <input
+                          ref={mediaInputRef}
+                          type="file"
+                          onChange={handleMediaUpload}
+                          className="hidden"
+                          accept="audio/*,image/*,.pdf,.doc,.docx"
+                        />
+                      </div>
+                      <form onSubmit={handleSendMessage} className="flex gap-2">
+                        <Input
+                          placeholder="Escribe un mensaje..."
+                          value={chatMessage}
+                          onChange={(e) => setChatMessage(e.target.value)}
+                          disabled={sendMessageMutation.isPending}
+                          data-testid="input-chat-message"
+                        />
+                        <Button
+                          type="submit"
+                          size="icon"
+                          disabled={!chatMessage.trim() || sendMessageMutation.isPending}
+                          data-testid="button-send-message"
+                        >
+                          <Send className="h-4 w-4" />
+                        </Button>
+                      </form>
+                    </div>
                   </Card>
                 </TabsContent>
               </Tabs>

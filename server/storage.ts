@@ -119,6 +119,7 @@ export interface IStorage {
   // Messages
   getMessagesByGroup(groupId: string, limit?: number): Promise<MessageWithSender[]>;
   createMessage(message: InsertMessage): Promise<Message>;
+  deleteMessage(id: string): Promise<void>;
 
   // Stats
   getStats(): Promise<{
@@ -758,6 +759,10 @@ export class DatabaseStorage implements IStorage {
   async createMessage(message: InsertMessage): Promise<Message> {
     const [newMessage] = await db.insert(messages).values(message).returning();
     return newMessage;
+  }
+
+  async deleteMessage(id: string): Promise<void> {
+    await db.delete(messages).where(eq(messages.id, id));
   }
 
   // Stats
