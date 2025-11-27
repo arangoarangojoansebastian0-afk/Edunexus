@@ -296,7 +296,7 @@ export default function Home() {
 
                           {/* Expanded Answers */}
                           {expandedQId === q.id && (
-                            <div className="mt-4 space-y-3 border-t pt-4">
+                            <div className="mt-4 space-y-3 border-t pt-4" onClick={(e) => e.stopPropagation()}>
                               <div className="space-y-2">
                                 {["Primera respuesta", "Segunda respuesta"].map((ans, i) => (
                                   <div key={i} className="p-2 bg-muted/30 rounded text-sm">
