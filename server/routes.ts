@@ -454,55 +454,6 @@ export async function registerRoutes(
     }
   });
 
-  // Notify group about active video call
-  app.post("/api/groups/:id/call-started", requireAuth, async (req, res) => {
-    try {
-      const groupId = req.params.id;
-      const userId = req.user!.id;
-      const { initiatorName } = req.body;
-      
-      // Store active call info temporarily (in memory, expires after 30 min)
-      const callKey = `call:${groupId}`;
-      if (!globalThis.activeCalls) (globalThis.activeCalls as any) = {};
-      (globalThis.activeCalls as any)[callKey] = {
-        initiatorId: userId,
-        initiatorName,
-        startedAt: new Date(),
-      };
-      
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Error starting call notification:", error);
-      res.status(500).json({ message: "Failed to start call" });
-    }
-  });
-
-  // Get active call info
-  app.get("/api/groups/:id/active-call", requireAuth, async (req, res) => {
-    try {
-      const groupId = req.params.id;
-      const callKey = `call:${groupId}`;
-      
-      if (!globalThis.activeCalls) (globalThis.activeCalls as any) = {};
-      const callInfo = (globalThis.activeCalls as any)[callKey];
-      
-      if (!callInfo) {
-        return res.json({ initiatorId: null });
-      }
-      
-      // Clean up old calls (older than 30 minutes)
-      const age = Date.now() - new Date(callInfo.startedAt).getTime();
-      if (age > 30 * 60 * 1000) {
-        delete (globalThis.activeCalls as any)[callKey];
-        return res.json({ initiatorId: null });
-      }
-      
-      res.json(callInfo);
-    } catch (error) {
-      console.error("Error getting active call:", error);
-      res.json({ initiatorId: null });
-    }
-  });
 
   // Files routes
   app.get("/api/files", requireAuth, async (req, res) => {

@@ -27,8 +27,8 @@ import {
   Settings,
   Paperclip,
   Mic,
+  Square,
   Image as ImageIcon,
-  Video,
   Trash2,
 } from "lucide-react";
 import type { GroupWithMembers, PostWithAuthor, MessageWithSender, GroupMember, User } from "@shared/schema";
@@ -44,9 +44,10 @@ export default function GroupDetail() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("forum");
   const [chatMessage, setChatMessage] = useState("");
-  const [activeCall, setActiveCall] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const voiceInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
 
@@ -65,28 +66,57 @@ export default function GroupDetail() {
     refetchInterval: activeTab === "chat" ? 3000 : false,
   });
 
-  // Poll for active calls
-  useEffect(() => {
-    if (activeTab !== "chat") return;
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/groups/${groupId}/active-call`, {
-          credentials: "include",
-        });
-        const data = await res.json();
-        if (data.initiatorId && data.initiatorId !== user?.id) {
-          setActiveCall(data.initiatorName);
-          toast({
-            title: "Videollamada en curso",
-            description: `${data.initiatorName} inició una videollamada. ¡Únete!`,
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      
+      mediaRecorder.ondataavailable = (event) => {
+        audioChunksRef.current.push(event.data);
+      };
+      
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        const formData = new FormData();
+        formData.append("content", "[Nota de voz]");
+        formData.append("media", audioBlob, "voice.webm");
+        
+        try {
+          const response = await fetch(`/api/groups/${groupId}/messages`, {
+            method: "POST",
+            credentials: "include",
+            body: formData,
           });
+          if (response.ok) {
+            queryClient.invalidateQueries({ queryKey: ["/api/groups", groupId, "messages"] });
+          }
+        } catch (error) {
+          console.error("Error uploading voice:", error);
         }
-      } catch (error) {
-        console.error("Error checking calls:", error);
-      }
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [groupId, activeTab, user?.id, toast]);
+        
+        stream.getTracks().forEach(track => track.stop());
+      };
+      
+      mediaRecorder.start();
+      mediaRecorderRef.current = mediaRecorder;
+      setIsRecording(true);
+    } catch (error) {
+      console.error("Error starting recording:", error);
+      toast({
+        title: "Error",
+        description: "No se pudo acceder al micrófono.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
 
   const { data: members } = useQuery<(GroupMember & { user: User })[]>({
     queryKey: ["/api/groups", groupId, "members"],
@@ -224,20 +254,6 @@ export default function GroupDetail() {
     }
   };
 
-  const handleStartVideoCall = async () => {
-    try {
-      await fetch(`/api/groups/${groupId}/call-started`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ initiatorName: `${user?.firstName} ${user?.lastName}` }),
-      });
-      window.open(`https://meet.jitsi.org/comunidad-loyola-${groupId}-video`, "_blank");
-      setActiveCall(groupId);
-    } catch (error) {
-      console.error("Error starting call:", error);
-    }
-  };
 
   if (groupLoading) {
     return (
@@ -481,15 +497,24 @@ export default function GroupDetail() {
                       )}
                     </ScrollArea>
                     <div className="p-4 border-t space-y-2 shrink-0">
-                      {activeCall && (
-                        <div className="bg-red-500/20 border border-red-500 rounded-lg p-2 mb-2 animate-pulse">
-                          <p className="text-sm font-semibold text-red-600">Llamada en curso</p>
-                        </div>
-                      )}
                       <div className="flex gap-1 flex-wrap">
-                        <Button size="sm" variant="outline" className="gap-1" onClick={() => voiceInputRef.current?.click()}>
-                          <Mic className="h-4 w-4" />
-                          Voz
+                        <Button 
+                          size="sm" 
+                          variant={isRecording ? "destructive" : "outline"} 
+                          className="gap-1" 
+                          onClick={isRecording ? stopRecording : startRecording}
+                        >
+                          {isRecording ? (
+                            <>
+                              <Square className="h-3 w-3" />
+                              Detener
+                            </>
+                          ) : (
+                            <>
+                              <Mic className="h-4 w-4" />
+                              Grabar Voz
+                            </>
+                          )}
                         </Button>
                         <Button size="sm" variant="outline" className="gap-1" onClick={() => imageInputRef.current?.click()}>
                           <ImageIcon className="h-4 w-4" />
@@ -499,17 +524,6 @@ export default function GroupDetail() {
                           <Paperclip className="h-4 w-4" />
                           Documento
                         </Button>
-                        <Button size="sm" variant="outline" className="gap-1" onClick={handleStartVideoCall} data-testid="button-video-call">
-                          <Video className="h-4 w-4" />
-                          Videollamada
-                        </Button>
-                        <input
-                          ref={voiceInputRef}
-                          type="file"
-                          onChange={handleMediaUpload}
-                          className="hidden"
-                          accept="audio/*"
-                        />
                         <input
                           ref={imageInputRef}
                           type="file"
