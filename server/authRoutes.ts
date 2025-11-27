@@ -12,8 +12,9 @@ const registerSchema = z.object({
 });
 
 const loginSchema = z.object({
-  email: z.string().email("Email inválido"),
+  email: z.string().min(1, "Email o nombre requerido"),
   password: z.string().min(1, "Contraseña requerida"),
+  lastName: z.string().optional(),
 });
 
 export function setupAuthRoutes(app: Express) {
@@ -48,7 +49,7 @@ export function setupAuthRoutes(app: Express) {
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     try {
       const data = loginSchema.parse(req.body);
-      const user = await loginUser(data.email, data.password);
+      const user = await loginUser(data.email, data.password, data.lastName);
 
       // Set session cookie
       req.session.userId = user.id;

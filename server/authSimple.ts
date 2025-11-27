@@ -48,9 +48,23 @@ export async function registerUser(
   return user;
 }
 
-export async function loginUser(email: string, password: string) {
-  // Get user
-  const user = await storage.getUserByEmail(email);
+export async function loginUser(
+  emailOrFirstName: string,
+  password: string,
+  lastName?: string
+) {
+  // Get user by email or name
+  let user;
+  if (emailOrFirstName.includes("@")) {
+    // It's an email
+    user = await storage.getUserByEmail(emailOrFirstName);
+  } else if (lastName) {
+    // It's a name
+    user = await storage.getUserByName(emailOrFirstName, lastName);
+  } else {
+    throw new Error("Invalid email or password");
+  }
+
   if (!user) {
     throw new Error("Invalid email or password");
   }

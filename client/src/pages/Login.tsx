@@ -9,9 +9,11 @@ import { useAuthContext } from "@/context/AuthContext";
 import { GraduationCap, ArrowRight } from "lucide-react";
 
 export default function Login() {
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
+  const [lastName, setLastName] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isNameMode, setIsNameMode] = useState(false);
   const { toast } = useToast();
   const { refetchUser } = useAuthContext();
   const [, navigate] = useLocation();
@@ -21,10 +23,14 @@ export default function Login() {
     setIsLoading(true);
 
     try {
+      const body = isNameMode 
+        ? { email: identifier, lastName, password }
+        : { email: identifier, password };
+
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(body),
       });
 
       if (res.ok) {
@@ -67,18 +73,55 @@ export default function Login() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="flex gap-2 mb-4">
+                <Button
+                  type="button"
+                  variant={!isNameMode ? "default" : "outline"}
+                  className="flex-1"
+                  onClick={() => {
+                    setIsNameMode(false);
+                    setLastName("");
+                  }}
+                >
+                  Por Email
+                </Button>
+                <Button
+                  type="button"
+                  variant={isNameMode ? "default" : "outline"}
+                  className="flex-1"
+                  onClick={() => setIsNameMode(true)}
+                >
+                  Por Nombre
+                </Button>
+              </div>
+
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="identifier">
+                  {isNameMode ? "Nombre" : "Email"}
+                </Label>
                 <Input
-                  id="email"
-                  type="email"
-                  placeholder="tu@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  id="identifier"
+                  placeholder={isNameMode ? "Tu nombre" : "tu@email.com"}
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                   required
-                  data-testid="input-email"
+                  data-testid={isNameMode ? "input-firstname" : "input-email"}
                 />
               </div>
+
+              {isNameMode && (
+                <div className="space-y-2">
+                  <Label htmlFor="lastname">Apellido</Label>
+                  <Input
+                    id="lastname"
+                    placeholder="Tu apellido"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    required
+                    data-testid="input-lastname"
+                  />
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="password">Contraseña</Label>
@@ -96,7 +139,7 @@ export default function Login() {
               <Button
                 type="submit"
                 className="w-full"
-                disabled={isLoading}
+                disabled={isLoading || (isNameMode && !lastName)}
                 data-testid="button-login"
               >
                 {isLoading ? "Iniciando..." : "Iniciar Sesión"}
