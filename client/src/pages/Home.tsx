@@ -47,8 +47,9 @@ export default function Home() {
   const [expandedQId, setExpandedQId] = useState<string | null>(null);
   const [newAnswers, setNewAnswers] = useState<Record<string, string>>({});
 
-  const { data: posts, isLoading: postsLoading } = useQuery<PostWithAuthor[]>({
+  const { data: posts, isLoading: postsLoading, refetch: refetchPosts } = useQuery<PostWithAuthor[]>({
     queryKey: ["/api/posts", gradeFilter],
+    refetchInterval: 3000, // Poll every 3 seconds
   });
 
   const { data: groups } = useQuery<Group[]>({
@@ -87,6 +88,7 @@ export default function Home() {
       await apiRequest("POST", "/api/posts", { content });
     },
     onSuccess: () => {
+      refetchPosts();
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       toast({
         title: "Publicación creada",
