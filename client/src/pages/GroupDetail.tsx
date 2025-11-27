@@ -26,6 +26,7 @@ import {
   ArrowLeft,
   Settings,
   Paperclip,
+  Mic,
   Image as ImageIcon,
   Video,
   Trash2,
@@ -45,7 +46,9 @@ export default function GroupDetail() {
   const [chatMessage, setChatMessage] = useState("");
   const [activeCall, setActiveCall] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const mediaInputRef = useRef<HTMLInputElement>(null);
+  const voiceInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const documentInputRef = useRef<HTMLInputElement>(null);
 
   const { data: group, isLoading: groupLoading } = useQuery<GroupWithMembers>({
     queryKey: ["/api/groups", groupId],
@@ -484,11 +487,15 @@ export default function GroupDetail() {
                         </div>
                       )}
                       <div className="flex gap-1 flex-wrap">
-                        <Button size="sm" variant="outline" className="gap-1" onClick={() => { mediaInputRef.current?.click(); }}>
+                        <Button size="sm" variant="outline" className="gap-1" onClick={() => voiceInputRef.current?.click()}>
+                          <Mic className="h-4 w-4" />
+                          Voz
+                        </Button>
+                        <Button size="sm" variant="outline" className="gap-1" onClick={() => imageInputRef.current?.click()}>
                           <ImageIcon className="h-4 w-4" />
                           Imagen
                         </Button>
-                        <Button size="sm" variant="outline" className="gap-1" onClick={() => { mediaInputRef.current?.click(); }}>
+                        <Button size="sm" variant="outline" className="gap-1" onClick={() => documentInputRef.current?.click()}>
                           <Paperclip className="h-4 w-4" />
                           Documento
                         </Button>
@@ -497,11 +504,25 @@ export default function GroupDetail() {
                           Videollamada
                         </Button>
                         <input
-                          ref={mediaInputRef}
+                          ref={voiceInputRef}
                           type="file"
                           onChange={handleMediaUpload}
                           className="hidden"
-                          accept="audio/*,image/*,.pdf,.doc,.docx"
+                          accept="audio/*"
+                        />
+                        <input
+                          ref={imageInputRef}
+                          type="file"
+                          onChange={handleMediaUpload}
+                          className="hidden"
+                          accept="image/*"
+                        />
+                        <input
+                          ref={documentInputRef}
+                          type="file"
+                          onChange={handleMediaUpload}
+                          className="hidden"
+                          accept=".pdf,.doc,.docx"
                         />
                       </div>
                       <form onSubmit={handleSendMessage} className="flex gap-2">
