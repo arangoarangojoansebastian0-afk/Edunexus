@@ -2,11 +2,14 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
+import { setupAuthRoutes } from "./authRoutes";
 import { insertPostSchema, insertGroupSchema, insertCommentSchema, insertEventSchema, insertReportSchema, insertMessageSchema } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import session from "express-session";
+import MemoryStore from "memorystore";
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -59,18 +62,41 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Session middleware
+  const memStore = new (MemoryStore(session))({
+    checkInterval: 86400000,
+  });
+
+  app.use(
+    session({
+      secret: process.env.SESSION_SECRET || "dev-secret-key",
+      store: memStore,
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        secure: process.env.NODE_ENV === "production",
+        httpOnly: true,
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      },
+    })
+  );
+
+  // Setup auth routes (register, login, logout)
+  setupAuthRoutes(app);
+
   await setupAuth(app);
 
   // Auth routes
-  app.get("/api/auth/user", isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user!.id;
-      const user = await storage.getUser(userId);
-      res.json(user);
-    } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
+  app.get("/api/auth/user", async (req, res) => {
+    if (req.session.userId) {
+      try {
+        const user = await storage.getUser(req.session.userId);
+        return res.json(user);
+      } catch (error) {
+        return res.status(401).json({ error: "User not found" });
+      }
     }
+    res.status(401).json({ error: "Not authenticated" });
   });
 
   // Stats route (public)

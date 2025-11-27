@@ -9,16 +9,21 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { User, LogOut, Settings } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { getFullName, getInitials } from "@/lib/authUtils";
+import { useToast } from "@/hooks/use-toast";
+import { useAuthContext } from "@/context/AuthContext";
 
 export function UserMenu() {
   const { user, isAuthenticated } = useAuth();
+  const { refetchUser } = useAuthContext();
+  const { toast } = useToast();
+  const [, navigate] = useLocation();
 
   if (!isAuthenticated || !user) {
     return (
-      <Button onClick={() => (window.location.href = "/api/login")}>
-        Iniciar Sesión
+      <Button asChild>
+        <Link href="/login">Iniciar Sesión</Link>
       </Button>
     );
   }
@@ -26,8 +31,25 @@ export function UserMenu() {
   const fullName = getFullName(user.firstName, user.lastName);
   const initials = getInitials(user.firstName, user.lastName);
 
-  const handleLogout = () => {
-    window.location.href = "/api/logout";
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+      await refetchUser();
+      toast({
+        title: "Sesión cerrada",
+        description: "Hasta pronto",
+      });
+      navigate("/");
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "No se pudo cerrar sesión",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
