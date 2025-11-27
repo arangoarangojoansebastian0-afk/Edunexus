@@ -210,6 +210,34 @@ export default function Library() {
     }
   };
 
+  const handleDelete = async (fileId: string) => {
+    try {
+      const response = await fetch(`/api/files/${fileId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (response.ok) {
+        queryClient.invalidateQueries({ queryKey: ["/api/files"] });
+        toast({
+          title: "Archivo eliminado",
+          description: "El archivo ha sido eliminado del sistema.",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: "No se pudo eliminar el archivo.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Error al intentar eliminar el archivo.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <AppLayout title="Biblioteca Académica">
       <div className="max-w-7xl mx-auto p-4 md:p-6">
@@ -402,8 +430,10 @@ export default function Library() {
                   key={file.id}
                   file={file}
                   onDownload={handleDownload}
+                  onDelete={handleDelete}
                   isOwner={user?.id === file.uploaderId}
                   isAdmin={user?.role === "admin"}
+                  isModerator={user?.role === "teacher"}
                 />
               ))}
             </div>

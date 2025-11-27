@@ -31,6 +31,7 @@ interface FileCardProps {
   onReport?: (fileId: string) => void;
   isOwner?: boolean;
   isAdmin?: boolean;
+  isModerator?: boolean;
 }
 
 const fileTypeIcons: Record<string, typeof FileText> = {
@@ -67,6 +68,7 @@ export function FileCard({
   onReport,
   isOwner = false,
   isAdmin = false,
+  isModerator = false,
 }: FileCardProps) {
   const extension = file.fileName.split(".").pop()?.toLowerCase() || "";
   const IconComponent = fileTypeIcons[extension] || FileText;
@@ -144,14 +146,14 @@ export function FileCard({
                   <Eye className="h-4 w-4 mr-2" />
                   Ver detalles
                 </DropdownMenuItem>
-                {(isOwner || isAdmin) && (
+                {(isOwner || isAdmin || isModerator) && (
                   <DropdownMenuItem
                     onClick={() => onDelete?.(file.id)}
                     className="text-destructive focus:text-destructive"
                     data-testid="button-delete-file"
                   >
                     <Trash2 className="h-4 w-4 mr-2" />
-                    Eliminar
+                    {isModerator && !isOwner ? "Eliminar (Moderador)" : "Eliminar"}
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem onClick={() => onReport?.(file.id)} data-testid="button-report-file">

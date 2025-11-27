@@ -485,6 +485,29 @@ export async function registerRoutes(
     }
   });
 
+  // Moderators (teachers) can delete files
+  app.delete("/api/files/:id", requireAuth, async (req, res) => {
+    try {
+      const fileId = req.params.id;
+      const file = await storage.getFile(fileId);
+      
+      if (!file) {
+        return res.status(404).json({ message: "File not found" });
+      }
+
+      // Only teachers (moderators) and admins can delete files
+      if (req.user!.role !== "teacher" && req.user!.role !== "admin") {
+        return res.status(403).json({ message: "Only moderators can delete files" });
+      }
+
+      await storage.deleteFile(fileId);
+      res.json({ success: true, message: "File deleted by moderator" });
+    } catch (error) {
+      console.error("Error deleting file:", error);
+      res.status(500).json({ message: "Failed to delete file" });
+    }
+  });
+
   // Events routes
   app.get("/api/events", requireAuth, async (req, res) => {
     try {
