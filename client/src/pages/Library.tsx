@@ -137,7 +137,7 @@ export default function Library() {
       form.reset();
       toast({
         title: "Archivo subido",
-        description: "Tu archivo está pendiente de aprobación por un moderador.",
+        description: "Tu archivo ha sido compartido exitosamente.",
       });
     },
     onError: (error: Error) => {
@@ -262,8 +262,7 @@ export default function Library() {
                   <DialogHeader>
                     <DialogTitle>Subir Recurso</DialogTitle>
                     <DialogDescription>
-                      Comparte materiales de estudio con la comunidad. Los archivos serán
-                      revisados por un moderador antes de publicarse.
+                      Comparte materiales de estudio con la comunidad.
                     </DialogDescription>
                   </DialogHeader>
                   <Form {...form}>

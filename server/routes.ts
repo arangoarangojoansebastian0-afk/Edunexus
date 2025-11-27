@@ -485,7 +485,7 @@ export async function registerRoutes(
         subject: subject || null,
         description: description || null,
         visibility: "public" as const,
-        approved: false,
+        approved: true,
       };
 
       const newFile = await storage.createFile(fileData);
@@ -501,9 +501,6 @@ export async function registerRoutes(
       const file = await storage.getFile(req.params.id);
       if (!file) {
         return res.status(404).json({ message: "File not found" });
-      }
-      if (!file.approved && file.uploaderId !== req.user!.id && req.user!.role !== "admin") {
-        return res.status(403).json({ message: "File not approved" });
       }
       await storage.incrementDownloadCount(req.params.id);
       const filePath = path.join(process.cwd(), "uploads", file.storageKey);
