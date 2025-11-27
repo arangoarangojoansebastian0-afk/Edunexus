@@ -26,9 +26,7 @@ import {
   ArrowLeft,
   Settings,
   Paperclip,
-  Mic,
   Image as ImageIcon,
-  Phone,
   Video,
   Trash2,
 } from "lucide-react";
@@ -45,6 +43,7 @@ export default function GroupDetail() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("forum");
   const [chatMessage, setChatMessage] = useState("");
+  const [activeCall, setActiveCall] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaInputRef = useRef<HTMLInputElement>(null);
 
@@ -62,6 +61,29 @@ export default function GroupDetail() {
     enabled: !!groupId && activeTab === "chat",
     refetchInterval: activeTab === "chat" ? 3000 : false,
   });
+
+  // Poll for active calls
+  useEffect(() => {
+    if (activeTab !== "chat") return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/groups/${groupId}/active-call`, {
+          credentials: "include",
+        });
+        const data = await res.json();
+        if (data.initiatorId && data.initiatorId !== user?.id) {
+          setActiveCall(data.initiatorName);
+          toast({
+            title: "Videollamada en curso",
+            description: `${data.initiatorName} inició una videollamada. ¡Únete!`,
+          });
+        }
+      } catch (error) {
+        console.error("Error checking calls:", error);
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [groupId, activeTab, user?.id, toast]);
 
   const { data: members } = useQuery<(GroupMember & { user: User })[]>({
     queryKey: ["/api/groups", groupId, "members"],
@@ -196,6 +218,21 @@ export default function GroupDetail() {
       }
     } catch (error) {
       console.error("Error deleting message:", error);
+    }
+  };
+
+  const handleStartVideoCall = async () => {
+    try {
+      await fetch(`/api/groups/${groupId}/call-started`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ initiatorName: `${user?.firstName} ${user?.lastName}` }),
+      });
+      window.open(`https://meet.jitsi.si/comunidad-loyola-${groupId}-video`, "_blank");
+      setActiveCall(groupId);
+    } catch (error) {
+      console.error("Error starting call:", error);
     }
   };
 
@@ -441,11 +478,12 @@ export default function GroupDetail() {
                       )}
                     </ScrollArea>
                     <div className="p-4 border-t space-y-2 shrink-0">
+                      {activeCall && (
+                        <div className="bg-red-500/20 border border-red-500 rounded-lg p-2 mb-2 animate-pulse">
+                          <p className="text-sm font-semibold text-red-600">Llamada en curso</p>
+                        </div>
+                      )}
                       <div className="flex gap-1 flex-wrap">
-                        <Button size="sm" variant="outline" className="gap-1" onClick={() => mediaInputRef.current?.click()}>
-                          <Mic className="h-4 w-4" />
-                          Voz
-                        </Button>
                         <Button size="sm" variant="outline" className="gap-1" onClick={() => { mediaInputRef.current?.click(); }}>
                           <ImageIcon className="h-4 w-4" />
                           Imagen
@@ -454,13 +492,9 @@ export default function GroupDetail() {
                           <Paperclip className="h-4 w-4" />
                           Documento
                         </Button>
-                        <Button size="sm" variant="outline" className="gap-1" onClick={() => window.open(`https://meet.jitsi.si/comunidad-loyola-${groupId}`, "_blank")}>
-                          <Phone className="h-4 w-4" />
-                          Llamada
-                        </Button>
-                        <Button size="sm" variant="outline" className="gap-1" onClick={() => window.open(`https://meet.jitsi.si/comunidad-loyola-${groupId}-video`, "_blank")}>
+                        <Button size="sm" variant="outline" className="gap-1" onClick={handleStartVideoCall} data-testid="button-video-call">
                           <Video className="h-4 w-4" />
-                          Video
+                          Videollamada
                         </Button>
                         <input
                           ref={mediaInputRef}
