@@ -50,10 +50,28 @@ function updateUserSession(
   user.expires_at = user.claims?.exp;
 }
 
+function isValidEmail(email: string): boolean {
+  if (!email) return false;
+  // Allow Gmail (.com) or iecolegioloyola.edu.co
+  return (
+    email.endsWith("@gmail.com") ||
+    email.endsWith("@iecolegioloyola.edu.co")
+  );
+}
+
 async function upsertUser(claims: any) {
+  const email = claims["email"];
+  
+  // Validate email domain
+  if (!isValidEmail(email)) {
+    throw new Error(
+      `Email domain not allowed. Use Gmail (@gmail.com) or @iecolegioloyola.edu.co`
+    );
+  }
+
   await storage.upsertUser({
     id: claims["sub"],
-    email: claims["email"],
+    email: email,
     firstName: claims["first_name"],
     lastName: claims["last_name"],
     profileImageUrl: claims["profile_image_url"],

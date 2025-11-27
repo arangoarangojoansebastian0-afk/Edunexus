@@ -97,7 +97,7 @@ export default function Landing() {
                 </Button>
               </div>
               <p className="text-sm text-muted-foreground">
-                Acceso exclusivo para estudiantes y profesores con correo @loyola.edu.co
+                Acceso con Gmail o correo @iecolegioloyola.edu.co
               </p>
             </div>
             <div className="relative">
@@ -281,7 +281,7 @@ export default function Landing() {
             ¿Listo para unirte a la comunidad?
           </h2>
           <p className="text-primary-foreground/80 mb-8 max-w-2xl mx-auto">
-            Inicia sesión con tu correo institucional @loyola.edu.co y comienza 
+            Inicia sesión con tu correo de Gmail o @iecolegioloyola.edu.co y comienza 
             a disfrutar de todos los beneficios de nuestra plataforma estudiantil.
           </p>
           <Button

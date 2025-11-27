@@ -23,7 +23,10 @@ export function getInitials(firstName?: string | null, lastName?: string | null)
 
 export function isEmailFromLoyola(email?: string | null): boolean {
   if (!email) return false;
-  return email.endsWith("@loyola.edu.co");
+  return (
+    email.endsWith("@gmail.com") ||
+    email.endsWith("@iecolegioloyola.edu.co")
+  );
 }
 
 export function formatRole(role: string): string {
