@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuthRoutes } from "./authRoutes";
-import { insertPostSchema, insertGroupSchema, insertCommentSchema, insertEventSchema, insertReportSchema, insertMessageSchema, insertQuestionSchema, insertAnswerSchema, insertQaVoteSchema } from "@shared/schema";
+import { insertPostSchema, insertGroupSchema, insertCommentSchema, insertEventSchema, insertReportSchema, insertMessageSchema, insertQuestionSchema, insertAnswerSchema, insertQaVoteSchema, insertNotificationPreferenceSchema } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
 import path from "path";
@@ -863,6 +863,47 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error voting on answer:", error);
       res.status(500).json({ message: "Failed to vote" });
+    }
+  });
+
+  // Notification routes
+  app.get("/api/notifications/preferences", requireAuth, async (req, res) => {
+    try {
+      const prefs = await storage.getNotificationPreferences(req.user!.id);
+      res.json(prefs || {});
+    } catch (error) {
+      console.error("Error fetching notification preferences:", error);
+      res.status(500).json({ message: "Failed to fetch preferences" });
+    }
+  });
+
+  app.post("/api/notifications/preferences", requireAuth, async (req, res) => {
+    try {
+      const prefs = await storage.updateNotificationPreferences(req.user!.id, req.body);
+      res.json(prefs);
+    } catch (error) {
+      console.error("Error updating notification preferences:", error);
+      res.status(500).json({ message: "Failed to update preferences" });
+    }
+  });
+
+  app.get("/api/notifications", requireAuth, async (req, res) => {
+    try {
+      const notifs = await storage.getNotifications(req.user!.id, 20);
+      res.json(notifs);
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+      res.status(500).json({ message: "Failed to fetch notifications" });
+    }
+  });
+
+  app.post("/api/notifications/:id/read", requireAuth, async (req, res) => {
+    try {
+      await storage.markNotificationAsRead(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error marking notification as read:", error);
+      res.status(500).json({ message: "Failed to mark as read" });
     }
   });
 

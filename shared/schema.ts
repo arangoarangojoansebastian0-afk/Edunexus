@@ -315,8 +315,47 @@ export const userBadges = pgTable(
   ]
 );
 
+// Notification preferences
+export const notificationPreferences = pgTable(
+  "notification_preferences",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull().unique(),
+    emailNewPost: boolean("email_new_post").default(true).notNull(),
+    emailNewAnswer: boolean("email_new_answer").default(true).notNull(),
+    emailNewComment: boolean("email_new_comment").default(true).notNull(),
+    emailNewMessage: boolean("email_new_message").default(true).notNull(),
+    pushEnabled: boolean("push_enabled").default(false).notNull(),
+    pushNewPost: boolean("push_new_post").default(false).notNull(),
+    pushNewAnswer: boolean("push_new_answer").default(false).notNull(),
+    pushNewMessage: boolean("push_new_message").default(false).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_notif_prefs_user").on(table.userId)]
+);
+
+// Notifications history
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    type: varchar("type", { length: 50 }).notNull(), // "post", "answer", "comment", "message"
+    title: varchar("title", { length: 255 }).notNull(),
+    message: text("message").notNull(),
+    relatedId: varchar("related_id"), // post_id, question_id, etc
+    read: boolean("read").default(false).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_notifications_user").on(table.userId),
+    index("idx_notifications_read").on(table.read),
+  ]
+);
+
 // Relations
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ many, one }) => ({
   posts: many(posts),
   comments: many(comments),
   reactions: many(reactions),
@@ -330,6 +369,11 @@ export const usersRelations = relations(users, ({ many }) => ({
   questions: many(questions),
   answers: many(answers),
   qaVotes: many(qaVotes),
+  notificationPreferences: one(notificationPreferences, {
+    fields: [users.id],
+    references: [notificationPreferences.userId],
+  }),
+  notifications: many(notifications),
 }));
 
 export const groupsRelations = relations(groups, ({ one, many }) => ({
@@ -595,6 +639,17 @@ export const insertUserBadgeSchema = createInsertSchema(userBadges).omit({
   earnedAt: true,
 });
 
+export const insertNotificationPreferenceSchema = createInsertSchema(notificationPreferences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type User = typeof users.$inferSelect;
 export type UpsertUser = typeof users.$inferInsert;
@@ -644,6 +699,12 @@ export type InsertBadge = z.infer<typeof insertBadgeSchema>;
 
 export type UserBadge = typeof userBadges.$inferSelect;
 export type InsertUserBadge = z.infer<typeof insertUserBadgeSchema>;
+
+export type NotificationPreference = typeof notificationPreferences.$inferSelect;
+export type InsertNotificationPreference = z.infer<typeof insertNotificationPreferenceSchema>;
+
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 
 // Extended types with relations
 export type PostWithAuthor = Post & {

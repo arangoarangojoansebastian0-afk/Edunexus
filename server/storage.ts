@@ -17,6 +17,8 @@ import {
   questions,
   answers,
   qaVotes,
+  notifications,
+  notificationPreferences,
   type User,
   type UpsertUser,
   type InsertUser,
@@ -51,6 +53,10 @@ import {
   type InsertAnswer,
   type InsertQaVote,
   type QuestionWithAnswers,
+  type NotificationPreference,
+  type InsertNotificationPreference,
+  type Notification,
+  type InsertNotification,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -139,6 +145,13 @@ export interface IStorage {
   deleteAnswer(id: string): Promise<void>;
   voteOnQuestion(vote: InsertQaVote): Promise<void>;
   voteOnAnswer(vote: InsertQaVote): Promise<void>;
+
+  // Notifications
+  getNotificationPreferences(userId: string): Promise<NotificationPreference | undefined>;
+  updateNotificationPreferences(userId: string, prefs: Partial<InsertNotificationPreference>): Promise<NotificationPreference>;
+  getNotifications(userId: string, limit?: number): Promise<Notification[]>;
+  createNotification(notif: InsertNotification): Promise<Notification>;
+  markNotificationAsRead(id: string): Promise<void>;
 
   // Stats
   getStats(): Promise<{
@@ -944,6 +957,41 @@ export class DatabaseStorage implements IStorage {
       pendingReports: Number(pendingReportCount?.count || 0),
       pendingFiles: Number(pendingFileCount?.count || 0),
     };
+  }
+
+  // Notifications
+  async getNotificationPreferences(userId: string): Promise<NotificationPreference | undefined> {
+    const [prefs] = await db.select().from(notificationPreferences).where(eq(notificationPreferences.userId, userId));
+    return prefs;
+  }
+
+  async updateNotificationPreferences(userId: string, prefs: Partial<InsertNotificationPreference>): Promise<NotificationPreference> {
+    const existing = await this.getNotificationPreferences(userId);
+    if (existing) {
+      const [updated] = await db
+        .update(notificationPreferences)
+        .set({ ...prefs, updatedAt: new Date() })
+        .where(eq(notificationPreferences.userId, userId))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(notificationPreferences).values({ userId, ...prefs }).returning();
+    return created;
+  }
+
+  async getNotifications(userId: string, limit?: number): Promise<Notification[]> {
+    const query = db.select().from(notifications).where(eq(notifications.userId, userId)).orderBy(desc(notifications.createdAt));
+    if (limit) query.limit(limit);
+    return query;
+  }
+
+  async createNotification(notif: InsertNotification): Promise<Notification> {
+    const [created] = await db.insert(notifications).values(notif).returning();
+    return created;
+  }
+
+  async markNotificationAsRead(id: string): Promise<void> {
+    await db.update(notifications).set({ read: true }).where(eq(notifications.id, id));
   }
 }
 
