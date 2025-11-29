@@ -9,6 +9,7 @@ import path from "path";
 import fs from "fs";
 import session from "express-session";
 import MemoryStore from "memorystore";
+import { isS3Configured, generatePresignedUrl, generateUploadPresignedUrl } from "./s3";
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -531,6 +532,111 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting file:", error);
       res.status(500).json({ message: "Failed to delete file" });
+    }
+  });
+
+  // S3 optional endpoints - only available if S3 is configured
+  app.post("/api/files/upload-s3", requireAuth, requireVerified, async (req, res) => {
+    try {
+      if (!isS3Configured()) {
+        return res.status(503).json({ message: "S3 storage not configured" });
+      }
+      
+      const { fileName, fileType, fileSize, subject, description } = req.body;
+      const userId = req.user!.id;
+      
+      // Validate input
+      if (!fileName || !fileType || fileSize === undefined) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+      
+      if (fileSize > 10 * 1024 * 1024) {
+        return res.status(400).json({ message: "File too large (max 10MB)" });
+      }
+      
+      const allowedTypes = ["pdf", "docx", "doc", "jpg", "jpeg", "png"];
+      if (!allowedTypes.includes(fileType.toLowerCase())) {
+        return res.status(400).json({ message: "File type not allowed" });
+      }
+      
+      // Generate S3 key
+      const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+      const s3Key = `uploads/${uniqueSuffix}-${fileName}`;
+      
+      // Generate presigned upload URL
+      const uploadUrl = generateUploadPresignedUrl(s3Key, `application/${fileType}`);
+      
+      res.json({ 
+        uploadUrl,
+        s3Key,
+        bucket: process.env.AWS_S3_BUCKET,
+        region: process.env.AWS_S3_REGION || "us-east-1"
+      });
+    } catch (error) {
+      console.error("Error generating S3 presigned URL:", error);
+      res.status(500).json({ message: "Failed to generate upload URL" });
+    }
+  });
+
+  app.post("/api/files/confirm-s3-upload", requireAuth, requireVerified, async (req, res) => {
+    try {
+      const { s3Key, fileName, fileType, fileSize, subject, description } = req.body;
+      const userId = req.user!.id;
+      
+      if (!s3Key || !fileName) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+      
+      const s3Url = `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_S3_REGION || "us-east-1"}.amazonaws.com/${s3Key}`;
+      
+      const fileData = {
+        uploaderId: userId,
+        fileName: fileName,
+        fileUrl: s3Url,
+        storageKey: s3Key,
+        fileType: fileType || "unknown",
+        fileSize: fileSize || 0,
+        subject: subject || null,
+        description: description || null,
+        visibility: "public" as const,
+        approved: true,
+      };
+      
+      const newFile = await storage.createFile(fileData);
+      res.status(201).json(newFile);
+    } catch (error) {
+      console.error("Error confirming S3 upload:", error);
+      res.status(500).json({ message: "Failed to confirm upload" });
+    }
+  });
+
+  app.get("/api/files/:id/signed-url", requireAuth, async (req, res) => {
+    try {
+      if (!isS3Configured()) {
+        return res.status(503).json({ message: "S3 storage not configured" });
+      }
+      
+      const file = await storage.getFile(req.params.id);
+      if (!file) {
+        return res.status(404).json({ message: "File not found" });
+      }
+      
+      // Only generate presigned URL if file is in S3
+      if (!file.fileUrl.includes("s3")) {
+        return res.status(400).json({ message: "File is not stored in S3" });
+      }
+      
+      await storage.incrementDownloadCount(req.params.id);
+      const signedUrl = generatePresignedUrl(file.storageKey);
+      
+      res.json({ 
+        signedUrl,
+        fileName: file.fileName,
+        expiresIn: 3600
+      });
+    } catch (error) {
+      console.error("Error generating signed URL:", error);
+      res.status(500).json({ message: "Failed to generate signed URL" });
     }
   });
 
