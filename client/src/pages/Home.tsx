@@ -270,10 +270,12 @@ export default function Home() {
                         post={post}
                         currentUserId={user?.id}
                         onLike={(postId) => likeMutation.mutate(postId)}
-                        onComment={(postId) => toast({
-                          title: "Info",
-                          description: `Comentarios para post ${postId} (próximamente)`
-                        })}
+                        onComment={(postId) => {
+                          toast({
+                            title: "Proximamente",
+                            description: "Los comentarios estarán disponibles muy pronto",
+                          })
+                        }}
                         likesCount={post._count?.reactions || 0}
                         commentsCount={post._count?.comments || 0}
                       />

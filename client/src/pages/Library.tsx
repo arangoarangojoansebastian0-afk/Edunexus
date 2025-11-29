@@ -219,6 +219,7 @@ export default function Library() {
         credentials: "include",
       });
       if (response.ok) {
+        refetchFiles();
         queryClient.invalidateQueries({ queryKey: ["/api/files"] });
         toast({
           title: "Archivo eliminado",
