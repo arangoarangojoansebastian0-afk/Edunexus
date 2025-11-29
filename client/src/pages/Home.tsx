@@ -75,20 +75,11 @@ export default function Home() {
   // Q&A Global - using a special group ID
   const { data: questions, isLoading: questionsLoading, refetch: refetchQuestions } = useQuery({
     queryKey: ["/api/groups/global/questions"],
-    queryFn: async () => {
-      try {
-        const res = await apiRequest("GET", "/api/groups/global/questions");
-        return res || [];
-      } catch {
-        return [];
-      }
-    },
-    refetchInterval: 3000, // Poll every 3 seconds
   });
 
   const createPostMutation = useMutation({
     mutationFn: async (content: string) => {
-      await apiRequest("POST", "/api/posts", { content });
+      await apiRequest("/api/posts", "POST", { content });
     },
     onSuccess: () => {
       refetchPosts();
@@ -120,7 +111,7 @@ export default function Home() {
 
   const likeMutation = useMutation({
     mutationFn: async (postId: string) => {
-      await apiRequest("POST", `/api/posts/${postId}/reactions`, { type: "like" });
+      await apiRequest(`/api/posts/${postId}/reactions`, "POST", { type: "like" });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
@@ -129,7 +120,7 @@ export default function Home() {
 
   const createQuestionMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("POST", "/api/groups/global/questions", {
+      await apiRequest("/api/groups/global/questions", "POST", {
         title: newQuestionTitle,
         content: newQuestionContent,
       });
@@ -154,7 +145,7 @@ export default function Home() {
 
   const createAnswerMutation = useMutation({
     mutationFn: async ({ qId, content }: { qId: string; content: string }) => {
-      await apiRequest("POST", `/api/questions/${qId}/answers`, { content });
+      await apiRequest(`/api/questions/${qId}/answers`, "POST", { content });
     },
     onSuccess: () => {
       setNewAnswers({});
