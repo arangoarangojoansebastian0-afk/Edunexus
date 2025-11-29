@@ -117,36 +117,6 @@ export default function Home() {
               isSubmitting={createPostMutation.isPending}
             />
 
-            {/* Events/News */}
-            <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Calendar className="h-5 w-5" />
-                  Próximas Asesorías
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {eventsLoading ? (
-                  <div className="space-y-2">
-                    {Array.from({ length: 2 }).map((_, i) => (
-                      <Skeleton key={i} className="h-12 w-full" />
-                    ))}
-                  </div>
-                ) : events && Array.isArray(events) && events.length > 0 ? (
-                  <div className="space-y-2">
-                    {events.slice(0, 3).map((evt: any) => (
-                      <div key={evt.id} className="p-3 rounded-lg bg-muted/50 text-sm">
-                        <p className="font-medium">{evt.title}</p>
-                        <p className="text-xs text-muted-foreground">{evt.subject}</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No hay asesorías próximas</p>
-                )}
-              </CardContent>
-            </Card>
-
             {/* Recognitions */}
             <RecognitionsCarousel />
 
