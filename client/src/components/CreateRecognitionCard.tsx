@@ -64,10 +64,39 @@ export function CreateRecognitionCard({ users, onSuccess }: CreateRecognitionCar
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setImageFile(file);
+      // Compress image before storing
       const reader = new FileReader();
       reader.onloadend = () => {
-        setPreviewUrl(reader.result as string);
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let width = img.width;
+          let height = img.height;
+          
+          // Max dimension 800px
+          if (width > height) {
+            if (width > 800) {
+              height = Math.round(height * (800 / width));
+              width = 800;
+            }
+          } else {
+            if (height > 800) {
+              width = Math.round(width * (800 / height));
+              height = 800;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressed = canvas.toDataURL("image/jpeg", 0.7);
+            setPreviewUrl(compressed);
+            setImageFile(file);
+          }
+        };
+        img.src = reader.result as string;
       };
       reader.readAsDataURL(file);
     }
