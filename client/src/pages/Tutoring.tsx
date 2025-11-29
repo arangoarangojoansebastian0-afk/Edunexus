@@ -71,7 +71,8 @@ const createEventSchema = z.object({
   date: z.date({ required_error: "Selecciona una fecha" }),
   startHour: z.string().min(1, "Selecciona la hora de inicio"),
   duration: z.string().min(1, "Selecciona la duración"),
-  maxParticipants: z.string().min(1, "Indica el número de participantes"),
+  maxParticipants: z.string().optional(),
+  participantsType: z.enum(["limited", "unlimited"]).default("limited"),
   locationUrl: z.string().url("Ingresa un enlace válido").optional().or(z.literal("")),
 });
 
@@ -106,6 +107,7 @@ export default function Tutoring() {
       startHour: "",
       duration: "60",
       maxParticipants: "5",
+      participantsType: "limited",
       locationUrl: "",
     },
   });
@@ -155,7 +157,7 @@ export default function Tutoring() {
         subject: data.subject,
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
-        maxParticipants: parseInt(data.maxParticipants),
+        maxParticipants: data.participantsType === "unlimited" ? null : parseInt(data.maxParticipants || "1"),
         locationUrl: data.locationUrl || null,
       });
     },
@@ -401,30 +403,62 @@ export default function Tutoring() {
                         />
                       </div>
 
-                      <FormField
-                        control={form.control}
-                        name="maxParticipants"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Número máximo de participantes</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value}>
-                              <FormControl>
-                                <SelectTrigger data-testid="select-max-participants">
-                                  <SelectValue placeholder="Participantes" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {[1, 2, 3, 4, 5, 10, 15, 20].map((num) => (
-                                  <SelectItem key={num} value={num.toString()}>
-                                    {num} {num === 1 ? "persona" : "personas"}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
+                      <div className="space-y-3">
+                        <FormField
+                          control={form.control}
+                          name="participantsType"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Límite de participantes</FormLabel>
+                              <div className="flex gap-4">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                  <input
+                                    type="radio"
+                                    value="limited"
+                                    checked={field.value === "limited"}
+                                    onChange={(e) => field.onChange(e.target.value)}
+                                    data-testid="radio-limited"
+                                  />
+                                  <span className="text-sm">Con límite</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                  <input
+                                    type="radio"
+                                    value="unlimited"
+                                    checked={field.value === "unlimited"}
+                                    onChange={(e) => field.onChange(e.target.value)}
+                                    data-testid="radio-unlimited"
+                                  />
+                                  <span className="text-sm">Sin límite</span>
+                                </label>
+                              </div>
+                            </FormItem>
+                          )}
+                        />
+
+                        {form.watch("participantsType") === "limited" && (
+                          <FormField
+                            control={form.control}
+                            name="maxParticipants"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Número máximo de participantes</FormLabel>
+                                <FormControl>
+                                  <Input
+                                    type="number"
+                                    min="1"
+                                    max="999"
+                                    placeholder="Ej: 5"
+                                    {...field}
+                                    data-testid="input-max-participants"
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
                         )}
-                      />
+                      </div>
 
                       <FormField
                         control={form.control}

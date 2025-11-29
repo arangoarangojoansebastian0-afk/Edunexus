@@ -93,7 +93,7 @@ export function EventCard({
           <div className="flex items-center gap-2 text-muted-foreground">
             <Users className="h-4 w-4 shrink-0" />
             <span>
-              {participantCount} / {event.maxParticipants}{" "}
+              {participantCount} {event.maxParticipants ? `/ ${event.maxParticipants}` : "/ Sin límite"}{" "}
               {event.maxParticipants === 1 ? "participante" : "participantes"}
             </span>
           </div>
