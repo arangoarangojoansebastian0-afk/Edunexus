@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { CreatePostCard } from "@/components/posts/CreatePostCard";
 import { PostCard } from "@/components/posts/PostCard";
+import { CommentSection } from "@/components/posts/CommentSection";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +47,7 @@ export default function Home() {
   const [newQuestionContent, setNewQuestionContent] = useState("");
   const [expandedQId, setExpandedQId] = useState<string | null>(null);
   const [newAnswers, setNewAnswers] = useState<Record<string, string>>({});
+  const [expandedCommentPostId, setExpandedCommentPostId] = useState<string | null>(null);
 
   const { data: posts, isLoading: postsLoading, refetch: refetchPosts } = useQuery<PostWithAuthor[]>({
     queryKey: ["/api/posts"],
@@ -266,20 +268,23 @@ export default function Home() {
                     ))
                   ) : posts && posts.length > 0 ? (
                     posts.map((post) => (
-                      <PostCard
-                        key={post.id}
-                        post={post}
-                        currentUserId={user?.id}
-                        onLike={(postId) => likeMutation.mutate(postId)}
-                        onComment={(postId) => {
-                          toast({
-                            title: "Proximamente",
-                            description: "Los comentarios estarán disponibles muy pronto",
-                          })
-                        }}
-                        likesCount={post._count?.reactions || 0}
-                        commentsCount={post._count?.comments || 0}
-                      />
+                      <div key={post.id}>
+                        <PostCard
+                          post={post}
+                          currentUserId={user?.id}
+                          onLike={(postId) => likeMutation.mutate(postId)}
+                          onComment={(postId) => setExpandedCommentPostId(expandedCommentPostId === postId ? null : postId)}
+                          likesCount={post._count?.reactions || 0}
+                          commentsCount={post._count?.comments || 0}
+                        />
+                        {expandedCommentPostId === post.id && user && (
+                          <Card className="mt-2">
+                            <div className="p-4">
+                              <CommentSection postId={post.id} currentUserId={user.id} />
+                            </div>
+                          </Card>
+                        )}
+                      </div>
                     ))
                   ) : (
                     <EmptyState
