@@ -196,7 +196,7 @@ export async function registerRoutes(
             type: "post",
             title: "Nuevo anuncio",
             message: `${req.user!.firstName} hizo un nuevo anuncio`,
-            targetId: post.id,
+            relatedId: post.id,
             read: false,
           });
         }
@@ -459,7 +459,7 @@ export async function registerRoutes(
             type: "message",
             title: "Nuevo mensaje",
             message: `${req.user!.firstName} escribió en un grupo`,
-            targetId: groupId,
+            relatedId: groupId,
             read: false,
           });
         }
@@ -614,7 +614,7 @@ export async function registerRoutes(
             type: "event",
             title: "Nueva asesoría",
             message: `${req.user!.firstName} abrió una nueva asesoría de ${data.subject || "un tema"}`,
-            targetId: event.id,
+            relatedId: event.id,
             read: false,
           });
         }
