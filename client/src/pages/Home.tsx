@@ -28,7 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { FileText, Users, TrendingUp, Calendar, BookOpen, ThumbsUp, ThumbsDown, MessageCircle as MessageIcon, HelpCircle } from "lucide-react";
-import type { PostWithAuthor, Group } from "@shared/schema";
+import type { PostWithAuthor, Group, EventWithHost } from "@shared/schema";
 import { Link } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
@@ -65,8 +65,9 @@ export default function Home() {
     queryKey: ["/api/stats"],
   });
 
-  const { data: events, isLoading: eventsLoading } = useQuery({
+  const { data: events, isLoading: eventsLoading } = useQuery<EventWithHost[]>({
     queryKey: ["/api/events"],
+    refetchInterval: 3000, // Poll every 3 seconds
   });
 
   // Q&A Global - using a special group ID
