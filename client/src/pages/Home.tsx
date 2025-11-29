@@ -34,9 +34,9 @@ export default function Home() {
   const [gradeFilter, setGradeFilter] = useState<string>("all");
   const [expandedCommentPostId, setExpandedCommentPostId] = useState<string | null>(null);
 
+
   const { data: posts, isLoading: postsLoading, refetch: refetchPosts } = useQuery<PostWithAuthor[]>({
     queryKey: ["/api/posts"],
-    refetchInterval: 3000,
   });
 
   const { data: groups } = useQuery<Group[]>({
@@ -54,7 +54,6 @@ export default function Home() {
 
   const { data: events, isLoading: eventsLoading } = useQuery<EventWithHost[]>({
     queryKey: ["/api/events"],
-    refetchInterval: 3000,
   });
 
   const createPostMutation = useMutation({
