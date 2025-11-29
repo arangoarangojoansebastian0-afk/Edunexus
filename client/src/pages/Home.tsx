@@ -79,7 +79,7 @@ export default function Home() {
 
   const createPostMutation = useMutation({
     mutationFn: async (content: string) => {
-      const response = await apiRequest("/api/posts", "POST", { content });
+      const response = await apiRequest("POST", "/api/posts", { content });
       return await response.json();
     },
     onSuccess: () => {
@@ -113,7 +113,7 @@ export default function Home() {
 
   const likeMutation = useMutation({
     mutationFn: async (postId: string) => {
-      await apiRequest(`/api/posts/${postId}/reactions`, "POST", { type: "like" });
+      await apiRequest("POST", `/api/posts/${postId}/reactions`, { type: "like" });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
@@ -122,7 +122,7 @@ export default function Home() {
 
   const createQuestionMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("/api/groups/global/questions", "POST", {
+      const response = await apiRequest("POST", "/api/groups/global/questions", {
         title: newQuestionTitle,
         content: newQuestionContent,
       });
@@ -149,7 +149,7 @@ export default function Home() {
 
   const createAnswerMutation = useMutation({
     mutationFn: async ({ qId, content }: { qId: string; content: string }) => {
-      const response = await apiRequest(`/api/questions/${qId}/answers`, "POST", { content });
+      const response = await apiRequest("POST", `/api/questions/${qId}/answers`, { content });
       return await response.json();
     },
     onSuccess: () => {

@@ -32,7 +32,7 @@ export function CommentSection({ postId, currentUserId }: CommentSectionProps) {
 
   const createCommentMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest(`/api/posts/${postId}/comments`, "POST", {
+      const response = await apiRequest("POST", `/api/posts/${postId}/comments`, {
         content: newComment,
       });
       return await response.json();
