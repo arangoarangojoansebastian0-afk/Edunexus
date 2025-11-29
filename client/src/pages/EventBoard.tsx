@@ -4,7 +4,6 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -13,18 +12,13 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Pin, MessageCircle, Plus, Clock, User, Loader2 } from "lucide-react";
+import { Pin, Plus, Clock, User, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 import { getFullName } from "@/lib/authUtils";
@@ -50,8 +44,6 @@ export default function EventBoard() {
   const [newEventSubject, setNewEventSubject] = useState("");
   const [newEventDate, setNewEventDate] = useState("");
   const [newEventTime, setNewEventTime] = useState("");
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [newComment, setNewComment] = useState("");
 
   const { data: apiEvents, isLoading } = useQuery<EventWithHost[]>({
     queryKey: ["/api/events"],
@@ -184,50 +176,9 @@ export default function EventBoard() {
 
         {/* Actions */}
         <div className="flex gap-2 pt-2 border-t">
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-2"
-                onClick={() => setSelectedEventId(evt.id)}
-                data-testid={`button-comment-${evt.id}`}
-              >
-                <MessageCircle className="h-4 w-4" />
-                <span className="text-xs">{evt._count?.participants || 0}</span>
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-80">
-              <div className="space-y-3">
-                <h3 className="font-semibold">Comentarios</h3>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  <p className="text-sm text-muted-foreground">No hay comentarios aún</p>
-                </div>
-                <div className="space-y-2 pt-2 border-t">
-                  <Textarea
-                    placeholder="Agregar comentario..."
-                    value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                    className="text-sm"
-                    rows={2}
-                  />
-                  <Button
-                    size="sm"
-                    className="w-full"
-                    disabled={!newComment.trim()}
-                    data-testid="button-submit-comment"
-                  >
-                    Comentar
-                  </Button>
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
-
           <Button
             variant="outline"
             size="sm"
-            className="ml-auto"
             data-testid={`button-join-${evt.id}`}
           >
             Unirse
