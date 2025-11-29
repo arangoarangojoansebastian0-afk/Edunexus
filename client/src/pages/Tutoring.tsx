@@ -110,16 +110,19 @@ export default function Tutoring() {
     },
   });
 
-  const { data: events, isLoading } = useQuery<EventWithHost[]>({
-    queryKey: ["/api/events", subjectFilter],
+  const { data: events, isLoading, refetch: refetchEvents } = useQuery<EventWithHost[]>({
+    queryKey: ["/api/events"],
+    refetchInterval: 3000,
   });
 
-  const { data: myEvents } = useQuery<EventWithHost[]>({
+  const { data: myEvents, refetch: refetchMyEvents } = useQuery<EventWithHost[]>({
     queryKey: ["/api/events/my"],
+    refetchInterval: 3000,
   });
 
-  const { data: myBookings } = useQuery<EventWithHost[]>({
+  const { data: myBookings, refetch: refetchMyBookings } = useQuery<EventWithHost[]>({
     queryKey: ["/api/events/booked"],
+    refetchInterval: 3000,
   });
 
   const bookedEventIds = new Set(myBookings?.map((e) => e.id) || []);
@@ -157,6 +160,8 @@ export default function Tutoring() {
       });
     },
     onSuccess: () => {
+      refetchEvents();
+      refetchMyEvents();
       queryClient.invalidateQueries({ queryKey: ["/api/events"] });
       setIsCreateOpen(false);
       form.reset();
@@ -190,6 +195,8 @@ export default function Tutoring() {
       await apiRequest("POST", `/api/events/${eventId}/book`);
     },
     onSuccess: () => {
+      refetchEvents();
+      refetchMyBookings();
       queryClient.invalidateQueries({ queryKey: ["/api/events"] });
       toast({
         title: "Reserva confirmada",
@@ -210,6 +217,8 @@ export default function Tutoring() {
       await apiRequest("DELETE", `/api/events/${eventId}/book`);
     },
     onSuccess: () => {
+      refetchEvents();
+      refetchMyBookings();
       queryClient.invalidateQueries({ queryKey: ["/api/events"] });
       toast({
         title: "Reserva cancelada",
