@@ -100,8 +100,8 @@ export default function EventBoard() {
     const positioned = apiEvents.map((evt, index) => ({
       ...evt,
       position: {
-        x: (index % 4) * 260 + Math.random() * 20,
-        y: Math.floor(index / 4) * 200 + Math.random() * 20,
+        x: (index % 5) * 280 + Math.random() * 30,
+        y: Math.floor(index / 5) * 220 + Math.random() * 30,
       },
       isPinned: false,
     }));
@@ -155,8 +155,8 @@ export default function EventBoard() {
     if (!draggedEvent || !boardRef.current) return;
 
     const boardRect = boardRef.current.getBoundingClientRect();
-    const newX = Math.max(0, Math.min(e.clientX - boardRect.left - dragOffset.x, boardRect.width - 220));
-    const newY = Math.max(0, Math.min(e.clientY - boardRect.top - dragOffset.y, boardRect.height - 180));
+    const newX = Math.max(0, e.clientX - boardRect.left - dragOffset.x);
+    const newY = Math.max(0, e.clientY - boardRect.top - dragOffset.y);
 
     setEvents((prev) =>
       prev.map((evt) =>
@@ -180,7 +180,7 @@ export default function EventBoard() {
   const eventCard = (evt: PositionedEvent) => (
     <div
       key={evt.id}
-      className="absolute w-56 bg-white dark:bg-slate-900 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 p-3 hover-elevate"
+      className="absolute w-64 bg-white dark:bg-slate-900 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 p-3 hover-elevate"
       style={{
         left: `${evt.position.x}px`,
         top: `${evt.position.y}px`,
@@ -336,7 +336,7 @@ export default function EventBoard() {
         {/* Kanban Board */}
         <div
           ref={boardRef}
-          className="flex-1 bg-gradient-to-br from-primary/5 to-accent/5 rounded-lg border-2 border-dashed border-primary/20 relative overflow-hidden"
+          className="flex-1 bg-gradient-to-br from-primary/5 to-accent/5 rounded-lg border-2 border-dashed border-primary/20 relative overflow-auto"
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
