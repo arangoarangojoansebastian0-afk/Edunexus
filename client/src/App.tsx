@@ -15,6 +15,7 @@ import Groups from "@/pages/Groups";
 import GroupDetail from "@/pages/GroupDetail";
 import Library from "@/pages/Library";
 import Tutoring from "@/pages/Tutoring";
+import EventBoard from "@/pages/EventBoard";
 import Profile from "@/pages/Profile";
 import Admin from "@/pages/Admin";
 import Notifications from "@/pages/Notifications";
@@ -45,6 +46,7 @@ function Router() {
           <Route path="/groups/:id" component={GroupDetail} />
           <Route path="/library" component={Library} />
           <Route path="/tutoring" component={Tutoring} />
+          <Route path="/events" component={EventBoard} />
           <Route path="/profile" component={Profile} />
           <Route path="/admin" component={Admin} />
           <Route path="/notifications" component={Notifications} />
