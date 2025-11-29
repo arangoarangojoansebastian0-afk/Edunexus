@@ -42,7 +42,6 @@ const mainNavItems = [
   { title: "Grupos", url: "/groups", icon: Users },
   { title: "Biblioteca", url: "/library", icon: BookOpen },
   { title: "Asesorías", url: "/tutoring", icon: Calendar },
-  { title: "Eventos", url: "/events", icon: Grid3x3 },
 ];
 
 const personalNavItems = [
