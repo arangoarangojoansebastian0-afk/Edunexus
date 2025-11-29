@@ -71,7 +71,7 @@ const createEventSchema = z.object({
   date: z.date({ required_error: "Selecciona una fecha" }),
   startHour: z.string().min(1, "Selecciona la hora de inicio"),
   duration: z.string().min(1, "Selecciona la duración"),
-  maxParticipants: z.string().min(1, "Indica el número de participantes"),
+  maxParticipants: z.string().optional(),
   locationUrl: z.string().url("Ingresa un enlace válido").optional().or(z.literal("")),
 });
 
@@ -105,7 +105,7 @@ export default function Tutoring() {
       subject: "",
       startHour: "",
       duration: "60",
-      maxParticipants: "1",
+      maxParticipants: "unlimited",
       locationUrl: "",
     },
   });
@@ -155,7 +155,7 @@ export default function Tutoring() {
         subject: data.subject,
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
-        maxParticipants: parseInt(data.maxParticipants),
+        maxParticipants: data.maxParticipants === "unlimited" ? null : parseInt(data.maxParticipants || "1"),
         locationUrl: data.locationUrl || null,
       });
     },
@@ -407,13 +407,14 @@ export default function Tutoring() {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Número de participantes</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value}>
+                            <Select onValueChange={field.onChange} value={field.value || "unlimited"}>
                               <FormControl>
                                 <SelectTrigger data-testid="select-max-participants">
                                   <SelectValue placeholder="Participantes" />
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
+                                <SelectItem value="unlimited">Sin límite</SelectItem>
                                 {[1, 2, 3, 4, 5].map((num) => (
                                   <SelectItem key={num} value={num.toString()}>
                                     {num} {num === 1 ? "persona" : "personas"}
