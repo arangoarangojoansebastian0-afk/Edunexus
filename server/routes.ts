@@ -647,6 +647,24 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/events/:id", requireAuth, async (req, res) => {
+    try {
+      const eventId = req.params.id;
+      const event = await storage.getEventById(eventId);
+      if (!event) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      if (event.hostId !== req.user!.id) {
+        return res.status(403).json({ message: "Only event host can delete" });
+      }
+      await storage.deleteEvent(eventId);
+      res.status(200).json({ success: true });
+    } catch (error) {
+      console.error("Error deleting event:", error);
+      res.status(500).json({ message: "Failed to delete event" });
+    }
+  });
+
   app.post("/api/events/:id/book", requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id;

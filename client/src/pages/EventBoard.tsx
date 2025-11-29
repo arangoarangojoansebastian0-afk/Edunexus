@@ -18,13 +18,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Pin, Plus, Clock, User, Loader2 } from "lucide-react";
+import { Pin, Plus, Clock, User, Loader2, MoreVertical, Trash2, Copy, Edit2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 import { getFullName } from "@/lib/authUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import type { EventWithHost } from "@shared/schema";
 
 interface PositionedEvent extends EventWithHost {
@@ -44,10 +51,49 @@ export default function EventBoard() {
   const [newEventSubject, setNewEventSubject] = useState("");
   const [newEventDate, setNewEventDate] = useState("");
   const [newEventTime, setNewEventTime] = useState("");
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
   const { data: apiEvents, isLoading } = useQuery<EventWithHost[]>({
     queryKey: ["/api/events"],
   });
+
+  const deleteEventMutation = useMutation({
+    mutationFn: async (eventId: string) => {
+      await apiRequest("DELETE", `/api/events/${eventId}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/events"] });
+      toast({
+        title: "Éxito",
+        description: "Evento eliminado correctamente",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "No se pudo eliminar el evento",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleCopyEvent = (evt: EventWithHost) => {
+    const eventText = `${evt.title}\nTema: ${evt.subject}\nFecha: ${new Date(evt.startTime).toLocaleString("es-ES")}\nPor: ${getFullName(evt.host.firstName, evt.host.lastName)}`;
+    navigator.clipboard.writeText(eventText);
+    toast({
+      title: "Copiado",
+      description: "Evento copiado al portapapeles",
+    });
+  };
+
+  const handleEditEvent = (evt: EventWithHost) => {
+    setEditingEventId(evt.id);
+    setNewEventTitle(evt.title);
+    setNewEventSubject(evt.subject || "");
+    const startDate = new Date(evt.startTime);
+    setNewEventDate(startDate.toISOString().split("T")[0]);
+    setNewEventTime(startDate.toTimeString().slice(0, 5));
+  };
 
   // Initialize events with random positions
   const initializeEvents = (apiEvents: EventWithHost[]) => {
@@ -146,20 +192,54 @@ export default function EventBoard() {
     >
       <div className="space-y-3">
         {/* Header */}
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
             <h3 className="font-semibold text-lg leading-tight">{evt.title}</h3>
             <p className="text-sm text-muted-foreground">{evt.subject}</p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 flex-shrink-0"
-            onClick={() => togglePin(evt.id)}
-            data-testid={`button-pin-${evt.id}`}
-          >
-            <Pin className={`h-4 w-4 ${evt.isPinned ? "fill-current text-primary" : ""}`} />
-          </Button>
+          <div className="flex gap-1 flex-shrink-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => togglePin(evt.id)}
+              data-testid={`button-pin-${evt.id}`}
+            >
+              <Pin className={`h-4 w-4 ${evt.isPinned ? "fill-current text-primary" : ""}`} />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  data-testid={`button-menu-${evt.id}`}
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleEditEvent(evt)} data-testid={`menu-edit-${evt.id}`}>
+                  <Edit2 className="h-4 w-4 mr-2" />
+                  Editar
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleCopyEvent(evt)} data-testid={`menu-copy-${evt.id}`}>
+                  <Copy className="h-4 w-4 mr-2" />
+                  Copiar
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => deleteEventMutation.mutate(evt.id)}
+                  disabled={deleteEventMutation.isPending}
+                  className="text-destructive focus:text-destructive"
+                  data-testid={`menu-delete-${evt.id}`}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Eliminar
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
         {/* Info */}
