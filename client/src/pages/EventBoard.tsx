@@ -97,11 +97,11 @@ export default function EventBoard() {
 
   // Initialize events with random positions
   const initializeEvents = (apiEvents: EventWithHost[]) => {
-    const positioned = apiEvents.map((evt) => ({
+    const positioned = apiEvents.map((evt, index) => ({
       ...evt,
       position: {
-        x: Math.random() * 400,
-        y: Math.random() * 300,
+        x: (index % 4) * 260 + Math.random() * 20,
+        y: Math.floor(index / 4) * 200 + Math.random() * 20,
       },
       isPinned: false,
     }));
@@ -155,8 +155,8 @@ export default function EventBoard() {
     if (!draggedEvent || !boardRef.current) return;
 
     const boardRect = boardRef.current.getBoundingClientRect();
-    const newX = Math.max(0, Math.min(e.clientX - boardRect.left - dragOffset.x, boardRect.width - 300));
-    const newY = Math.max(0, Math.min(e.clientY - boardRect.top - dragOffset.y, boardRect.height - 200));
+    const newX = Math.max(0, Math.min(e.clientX - boardRect.left - dragOffset.x, boardRect.width - 220));
+    const newY = Math.max(0, Math.min(e.clientY - boardRect.top - dragOffset.y, boardRect.height - 180));
 
     setEvents((prev) =>
       prev.map((evt) =>
@@ -180,7 +180,7 @@ export default function EventBoard() {
   const eventCard = (evt: PositionedEvent) => (
     <div
       key={evt.id}
-      className="absolute w-80 bg-white dark:bg-slate-900 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 p-4 hover-elevate"
+      className="absolute w-56 bg-white dark:bg-slate-900 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 p-3 hover-elevate"
       style={{
         left: `${evt.position.x}px`,
         top: `${evt.position.y}px`,
@@ -190,41 +190,41 @@ export default function EventBoard() {
       onMouseDown={(e) => handleMouseDown(e, evt.id)}
       data-testid={`event-card-${evt.id}`}
     >
-      <div className="space-y-3">
+      <div className="space-y-2">
         {/* Header */}
-        <div className="flex items-start justify-between gap-2">
+        <div className="flex items-start justify-between gap-1">
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-lg leading-tight">{evt.title}</h3>
-            <p className="text-sm text-muted-foreground">{evt.subject}</p>
+            <h3 className="font-semibold text-base leading-tight line-clamp-2">{evt.title}</h3>
+            <p className="text-xs text-muted-foreground">{evt.subject}</p>
           </div>
-          <div className="flex gap-1 flex-shrink-0">
+          <div className="flex gap-0.5 flex-shrink-0">
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8"
+              className="h-7 w-7"
               onClick={() => togglePin(evt.id)}
               data-testid={`button-pin-${evt.id}`}
             >
-              <Pin className={`h-4 w-4 ${evt.isPinned ? "fill-current text-primary" : ""}`} />
+              <Pin className={`h-3 w-3 ${evt.isPinned ? "fill-current text-primary" : ""}`} />
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8"
+                  className="h-7 w-7"
                   data-testid={`button-menu-${evt.id}`}
                 >
-                  <MoreVertical className="h-4 w-4" />
+                  <MoreVertical className="h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="text-xs">
                 <DropdownMenuItem onClick={() => handleEditEvent(evt)} data-testid={`menu-edit-${evt.id}`}>
-                  <Edit2 className="h-4 w-4 mr-2" />
+                  <Edit2 className="h-3 w-3 mr-2" />
                   Editar
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleCopyEvent(evt)} data-testid={`menu-copy-${evt.id}`}>
-                  <Copy className="h-4 w-4 mr-2" />
+                  <Copy className="h-3 w-3 mr-2" />
                   Copiar
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -234,7 +234,7 @@ export default function EventBoard() {
                   className="text-destructive focus:text-destructive"
                   data-testid={`menu-delete-${evt.id}`}
                 >
-                  <Trash2 className="h-4 w-4 mr-2" />
+                  <Trash2 className="h-3 w-3 mr-2" />
                   Eliminar
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -243,22 +243,23 @@ export default function EventBoard() {
         </div>
 
         {/* Info */}
-        <div className="space-y-2 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4" />
-            <span>{formatDistanceToNow(new Date(evt.startTime), { addSuffix: true, locale: es })}</span>
+        <div className="space-y-1 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1">
+            <Clock className="h-3 w-3 flex-shrink-0" />
+            <span className="truncate">{formatDistanceToNow(new Date(evt.startTime), { addSuffix: true, locale: es })}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <User className="h-4 w-4" />
-            <span>{getFullName(evt.host.firstName, evt.host.lastName)}</span>
+          <div className="flex items-center gap-1">
+            <User className="h-3 w-3 flex-shrink-0" />
+            <span className="truncate text-xs">{getFullName(evt.host.firstName, evt.host.lastName)}</span>
           </div>
         </div>
 
         {/* Actions */}
-        <div className="flex gap-2 pt-2 border-t">
+        <div className="flex gap-1 pt-1.5 border-t">
           <Button
             variant="outline"
             size="sm"
+            className="text-xs h-7"
             data-testid={`button-join-${evt.id}`}
           >
             Unirse
