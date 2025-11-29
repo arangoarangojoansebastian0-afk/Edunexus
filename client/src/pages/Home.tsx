@@ -5,6 +5,7 @@ import { CreatePostCard } from "@/components/posts/CreatePostCard";
 import { PostCard } from "@/components/posts/PostCard";
 import { CommentSection } from "@/components/posts/CommentSection";
 import { RecognitionsCarousel } from "@/components/RecognitionsCarousel";
+import { CreateRecognitionCard } from "@/components/CreateRecognitionCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { FileText, Users, TrendingUp, Calendar, BookOpen } from "lucide-react";
-import type { PostWithAuthor, Group, EventWithHost } from "@shared/schema";
+import type { PostWithAuthor, Group, EventWithHost, User } from "@shared/schema";
 import { Link } from "wouter";
 import { getFullName, getInitials } from "@/lib/authUtils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -42,6 +43,10 @@ export default function Home() {
 
   const { data: groups } = useQuery<Group[]>({
     queryKey: ["/api/groups/my"],
+  });
+
+  const { data: allUsers = [] } = useQuery<User[]>({
+    queryKey: ["/api/users"],
   });
 
   const { data: stats } = useQuery<{
@@ -144,6 +149,15 @@ export default function Home() {
 
             {/* Recognitions */}
             <RecognitionsCarousel />
+
+            {/* Create Recognition (Teachers Only) */}
+            {user?.role === "teacher" && (
+              <CreateRecognitionCard
+                users={
+                  allUsers.filter((u) => u.role === "student") || []
+                }
+              />
+            )}
 
             {/* Filter */}
             <div className="flex items-center justify-between gap-4 flex-wrap">
