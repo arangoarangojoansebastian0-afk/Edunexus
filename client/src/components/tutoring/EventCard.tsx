@@ -43,7 +43,7 @@ export function EventCard({
   const hostName = getFullName(event.host.firstName, event.host.lastName);
   const hostInitials = getInitials(event.host.firstName, event.host.lastName);
   const participantCount = event._count?.participants || 0;
-  const isFull = event.maxParticipants ? participantCount >= event.maxParticipants : false;
+  const isFull = participantCount >= (event.maxParticipants || 1);
   const isHost = currentUserId === event.hostId;
   const startDate = new Date(event.startTime);
   const endDate = new Date(event.endTime);
@@ -93,8 +93,8 @@ export function EventCard({
           <div className="flex items-center gap-2 text-muted-foreground">
             <Users className="h-4 w-4 shrink-0" />
             <span>
-              {participantCount} {event.maxParticipants ? `/ ${event.maxParticipants}` : "/ Sin límite"}{" "}
-              {participantCount === 1 ? "participante" : "participantes"}
+              {participantCount} / {event.maxParticipants}{" "}
+              {event.maxParticipants === 1 ? "participante" : "participantes"}
             </span>
           </div>
           {event.locationUrl && (

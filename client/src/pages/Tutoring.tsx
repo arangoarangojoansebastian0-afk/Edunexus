@@ -71,7 +71,7 @@ const createEventSchema = z.object({
   date: z.date({ required_error: "Selecciona una fecha" }),
   startHour: z.string().min(1, "Selecciona la hora de inicio"),
   duration: z.string().min(1, "Selecciona la duración"),
-  maxParticipants: z.string().optional(),
+  maxParticipants: z.string().min(1, "Indica el número de participantes"),
   locationUrl: z.string().url("Ingresa un enlace válido").optional().or(z.literal("")),
 });
 
@@ -105,7 +105,7 @@ export default function Tutoring() {
       subject: "",
       startHour: "",
       duration: "60",
-      maxParticipants: "unlimited",
+      maxParticipants: "5",
       locationUrl: "",
     },
   });
@@ -155,7 +155,7 @@ export default function Tutoring() {
         subject: data.subject,
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
-        maxParticipants: data.maxParticipants === "unlimited" ? null : parseInt(data.maxParticipants || "1"),
+        maxParticipants: parseInt(data.maxParticipants),
         locationUrl: data.locationUrl || null,
       });
     },
@@ -406,16 +406,15 @@ export default function Tutoring() {
                         name="maxParticipants"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Número de participantes</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value || "unlimited"}>
+                            <FormLabel>Número máximo de participantes</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
                               <FormControl>
                                 <SelectTrigger data-testid="select-max-participants">
                                   <SelectValue placeholder="Participantes" />
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                <SelectItem value="unlimited">Sin límite</SelectItem>
-                                {[1, 2, 3, 4, 5].map((num) => (
+                                {[1, 2, 3, 4, 5, 10, 15, 20].map((num) => (
                                   <SelectItem key={num} value={num.toString()}>
                                     {num} {num === 1 ? "persona" : "personas"}
                                   </SelectItem>
