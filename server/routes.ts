@@ -1,14 +1,20 @@
-import type { Express, Request, Response, NextFunction } from "express";
+import type { Express, Request as ExpressRequest, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuthRoutes } from "./authRoutes";
 import { insertPostSchema, insertGroupSchema, insertCommentSchema, insertEventSchema, insertReportSchema, insertMessageSchema, insertQuestionSchema, insertAnswerSchema, insertQaVoteSchema, insertNotificationPreferenceSchema } from "@shared/schema";
+import type { User } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
 import session from "express-session";
 import MemoryStore from "memorystore";
+
+// Extend Express Request with user
+interface Request extends ExpressRequest {
+  user?: User;
+}
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -85,7 +91,7 @@ export async function registerRoutes(
     if (req.session.userId) {
       try {
         const user = await storage.getUser(req.session.userId);
-        (req as any).user = user;
+        req.user = user;
       } catch {}
     }
     next();
