@@ -985,6 +985,33 @@ export async function registerRoutes(
     }
   });
 
+  // Recognitions
+  app.get("/api/recognitions", async (req, res) => {
+    try {
+      const recognitions = await storage.getRecognitions(10);
+      res.json(recognitions);
+    } catch (error) {
+      console.error("Error fetching recognitions:", error);
+      res.status(500).json({ message: "Failed to fetch recognitions" });
+    }
+  });
+
+  app.post("/api/recognitions", requireAuth, async (req, res) => {
+    try {
+      const { recipientId, content, imageUrl } = req.body;
+      const recognition = await storage.createRecognition({
+        createdBy: req.user!.id,
+        recipientId,
+        content,
+        imageUrl,
+      });
+      res.json(recognition);
+    } catch (error) {
+      console.error("Error creating recognition:", error);
+      res.status(500).json({ message: "Failed to create recognition" });
+    }
+  });
+
   // Serve uploaded files
   app.use("/uploads", (req, res, next) => {
     const uploadsDir = path.join(process.cwd(), "uploads");

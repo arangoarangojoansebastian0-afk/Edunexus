@@ -4,6 +4,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { CreatePostCard } from "@/components/posts/CreatePostCard";
 import { PostCard } from "@/components/posts/PostCard";
 import { CommentSection } from "@/components/posts/CommentSection";
+import { RecognitionsCarousel } from "@/components/RecognitionsCarousel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -140,6 +141,9 @@ export default function Home() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Recognitions */}
+            <RecognitionsCarousel />
 
             {/* Filter */}
             <div className="flex items-center justify-between gap-4 flex-wrap">

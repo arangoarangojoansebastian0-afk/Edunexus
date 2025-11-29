@@ -354,6 +354,36 @@ export const notifications = pgTable(
   ]
 );
 
+// Recognition/Shoutouts table
+export const recognitions = pgTable(
+  "recognitions",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    createdBy: varchar("created_by").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    recipientId: varchar("recipient_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    content: text("content").notNull(),
+    imageUrl: varchar("image_url"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_recognitions_created").on(table.createdBy),
+    index("idx_recognitions_recipient").on(table.recipientId),
+  ]
+);
+
+// Recognition relations
+export const recognitionsRelations = relations(recognitions, ({ one }) => ({
+  createdBy: one(users, {
+    fields: [recognitions.createdBy],
+    references: [users.id],
+  }),
+  recipient: one(users, {
+    fields: [recognitions.recipientId],
+    references: [users.id],
+  }),
+}));
+
 // Relations
 export const usersRelations = relations(users, ({ many, one }) => ({
   posts: many(posts),
@@ -374,6 +404,8 @@ export const usersRelations = relations(users, ({ many, one }) => ({
     references: [notificationPreferences.userId],
   }),
   notifications: many(notifications),
+  recognitionsCreated: many(recognitions, { relationName: "createdBy" }),
+  recognitionsReceived: many(recognitions, { relationName: "recipient" }),
 }));
 
 export const groupsRelations = relations(groups, ({ one, many }) => ({
@@ -650,6 +682,12 @@ export const insertNotificationSchema = createInsertSchema(notifications).omit({
   createdAt: true,
 });
 
+export const insertRecognitionSchema = createInsertSchema(recognitions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Types
 export type User = typeof users.$inferSelect;
 export type UpsertUser = typeof users.$inferInsert;
@@ -706,6 +744,9 @@ export type InsertNotificationPreference = z.infer<typeof insertNotificationPref
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 
+export type Recognition = typeof recognitions.$inferSelect;
+export type InsertRecognition = z.infer<typeof insertRecognitionSchema>;
+
 // Extended types with relations
 export type PostWithAuthor = Post & {
   author: User;
@@ -755,4 +796,9 @@ export type QuestionWithAnswers = Question & {
   _count?: {
     answers: number;
   };
+};
+
+export type RecognitionWithUsers = Recognition & {
+  createdBy: User;
+  recipient: User;
 };

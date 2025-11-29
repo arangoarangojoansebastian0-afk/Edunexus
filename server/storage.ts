@@ -19,6 +19,7 @@ import {
   qaVotes,
   notifications,
   notificationPreferences,
+  recognitions,
   type User,
   type UpsertUser,
   type InsertUser,
@@ -57,6 +58,9 @@ import {
   type InsertNotificationPreference,
   type Notification,
   type InsertNotification,
+  type Recognition,
+  type InsertRecognition,
+  type RecognitionWithUsers,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -152,6 +156,10 @@ export interface IStorage {
   getNotifications(userId: string, limit?: number): Promise<Notification[]>;
   createNotification(notif: InsertNotification): Promise<Notification>;
   markNotificationAsRead(id: string): Promise<void>;
+
+  // Recognitions
+  getRecognitions(limit?: number): Promise<RecognitionWithUsers[]>;
+  createRecognition(recognition: InsertRecognition): Promise<Recognition>;
 
   // Stats
   getStats(): Promise<{
@@ -992,6 +1000,28 @@ export class DatabaseStorage implements IStorage {
 
   async markNotificationAsRead(id: string): Promise<void> {
     await db.update(notifications).set({ read: true }).where(eq(notifications.id, id));
+  }
+
+  // Recognitions
+  async getRecognitions(limit?: number): Promise<RecognitionWithUsers[]> {
+    const query = db.select().from(recognitions).orderBy(desc(recognitions.createdAt));
+    const result = limit ? await query.limit(limit) : await query;
+    return Promise.all(
+      result.map(async (r) => {
+        const createdByUser = await this.getUser(r.createdBy);
+        const recipientUser = await this.getUser(r.recipientId);
+        return {
+          ...r,
+          createdBy: createdByUser!,
+          recipient: recipientUser!,
+        };
+      })
+    );
+  }
+
+  async createRecognition(recognition: InsertRecognition): Promise<Recognition> {
+    const [created] = await db.insert(recognitions).values(recognition).returning();
+    return created;
   }
 }
 
