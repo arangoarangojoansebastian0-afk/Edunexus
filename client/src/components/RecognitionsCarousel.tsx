@@ -16,8 +16,30 @@ export function RecognitionsCarousel() {
     queryKey: ["/api/recognitions"],
   });
 
-  if (isLoading || !recognitions || recognitions.length === 0) {
-    return null;
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg">Reconocimientos</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-32 bg-muted animate-pulse rounded" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!recognitions || recognitions.length === 0) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg">Reconocimientos</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground text-center py-8">No hay reconocimientos aún</p>
+        </CardContent>
+      </Card>
+    );
   }
 
   const current = recognitions[currentIndex];
