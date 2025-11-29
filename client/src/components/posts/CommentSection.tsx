@@ -35,11 +35,15 @@ export function CommentSection({ postId, currentUserId }: CommentSectionProps) {
       const response = await apiRequest(`/api/posts/${postId}/comments`, "POST", {
         content: newComment,
       });
-      return response;
+      return await response.json();
     },
     onSuccess: () => {
       setNewComment("");
       queryClient.invalidateQueries({ queryKey: ["/api/posts", postId, "comments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+    },
+    onError: (error: Error) => {
+      console.error("Error creating comment:", error);
     },
   });
 

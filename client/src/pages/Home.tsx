@@ -79,7 +79,8 @@ export default function Home() {
 
   const createPostMutation = useMutation({
     mutationFn: async (content: string) => {
-      await apiRequest("/api/posts", "POST", { content });
+      const response = await apiRequest("/api/posts", "POST", { content });
+      return await response.json();
     },
     onSuccess: () => {
       refetchPosts();
@@ -101,6 +102,7 @@ export default function Home() {
         }, 500);
         return;
       }
+      console.error("Error creating post:", error);
       toast({
         title: "Error",
         description: "No se pudo crear la publicación. Intenta de nuevo.",
@@ -120,10 +122,11 @@ export default function Home() {
 
   const createQuestionMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("/api/groups/global/questions", "POST", {
+      const response = await apiRequest("/api/groups/global/questions", "POST", {
         title: newQuestionTitle,
         content: newQuestionContent,
       });
+      return await response.json();
     },
     onSuccess: () => {
       setNewQuestionTitle("");
@@ -134,7 +137,8 @@ export default function Home() {
       });
       refetchQuestions();
     },
-    onError: () => {
+    onError: (error: Error) => {
+      console.error("Error creating question:", error);
       toast({
         title: "Error",
         description: "No se pudo crear la pregunta.",
@@ -145,16 +149,19 @@ export default function Home() {
 
   const createAnswerMutation = useMutation({
     mutationFn: async ({ qId, content }: { qId: string; content: string }) => {
-      await apiRequest(`/api/questions/${qId}/answers`, "POST", { content });
+      const response = await apiRequest(`/api/questions/${qId}/answers`, "POST", { content });
+      return await response.json();
     },
     onSuccess: () => {
       setNewAnswers({});
       toast({
         title: "Respuesta publicada",
+        description: "Tu respuesta ha sido compartida",
       });
       refetchQuestions();
     },
-    onError: () => {
+    onError: (error: Error) => {
+      console.error("Error creating answer:", error);
       toast({
         title: "Error",
         description: "No se pudo crear la respuesta.",
