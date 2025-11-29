@@ -72,12 +72,14 @@ export default function Groups() {
     },
   });
 
-  const { data: allGroups, isLoading: allLoading } = useQuery<GroupWithMembers[]>({
+  const { data: allGroups, isLoading: allLoading, refetch: refetchAllGroups } = useQuery<GroupWithMembers[]>({
     queryKey: ["/api/groups", typeFilter, gradeFilter],
+    refetchInterval: 3000,
   });
 
-  const { data: myGroups, isLoading: myLoading } = useQuery<GroupWithMembers[]>({
+  const { data: myGroups, isLoading: myLoading, refetch: refetchMyGroups } = useQuery<GroupWithMembers[]>({
     queryKey: ["/api/groups/my"],
+    refetchInterval: 3000,
   });
 
   const myGroupIds = new Set(myGroups?.map((g) => g.id) || []);
@@ -97,6 +99,8 @@ export default function Groups() {
       await apiRequest("POST", "/api/groups", data);
     },
     onSuccess: () => {
+      refetchAllGroups();
+      refetchMyGroups();
       queryClient.invalidateQueries({ queryKey: ["/api/groups"] });
       setIsCreateOpen(false);
       form.reset();
@@ -130,6 +134,8 @@ export default function Groups() {
       await apiRequest("POST", `/api/groups/${groupId}/join`);
     },
     onSuccess: () => {
+      refetchAllGroups();
+      refetchMyGroups();
       queryClient.invalidateQueries({ queryKey: ["/api/groups"] });
       toast({
         title: "Te uniste al grupo",
@@ -150,6 +156,8 @@ export default function Groups() {
       await apiRequest("POST", `/api/groups/${groupId}/leave`);
     },
     onSuccess: () => {
+      refetchAllGroups();
+      refetchMyGroups();
       queryClient.invalidateQueries({ queryKey: ["/api/groups"] });
       toast({
         title: "Saliste del grupo",

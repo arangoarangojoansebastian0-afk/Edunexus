@@ -93,8 +93,9 @@ export default function Library() {
     },
   });
 
-  const { data: files, isLoading } = useQuery<FileWithUploader[]>({
+  const { data: files, isLoading, refetch: refetchFiles } = useQuery<FileWithUploader[]>({
     queryKey: ["/api/files", subjectFilter],
+    refetchInterval: 3000,
   });
 
   const filteredFiles = files?.filter((file) => {
@@ -131,6 +132,7 @@ export default function Library() {
       return response.json();
     },
     onSuccess: () => {
+      refetchFiles();
       queryClient.invalidateQueries({ queryKey: ["/api/files"] });
       setIsUploadOpen(false);
       setSelectedFile(null);
