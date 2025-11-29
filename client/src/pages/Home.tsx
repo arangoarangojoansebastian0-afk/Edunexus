@@ -48,7 +48,7 @@ export default function Home() {
   const [newAnswers, setNewAnswers] = useState<Record<string, string>>({});
 
   const { data: posts, isLoading: postsLoading, refetch: refetchPosts } = useQuery<PostWithAuthor[]>({
-    queryKey: ["/api/posts", gradeFilter],
+    queryKey: ["/api/posts"],
     refetchInterval: 3000, // Poll every 3 seconds
   });
 

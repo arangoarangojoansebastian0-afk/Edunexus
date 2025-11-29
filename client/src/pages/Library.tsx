@@ -94,7 +94,7 @@ export default function Library() {
   });
 
   const { data: files, isLoading, refetch: refetchFiles } = useQuery<FileWithUploader[]>({
-    queryKey: ["/api/files", subjectFilter],
+    queryKey: ["/api/files"],
     refetchInterval: 3000,
   });
 

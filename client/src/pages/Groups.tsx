@@ -73,7 +73,7 @@ export default function Groups() {
   });
 
   const { data: allGroups, isLoading: allLoading, refetch: refetchAllGroups } = useQuery<GroupWithMembers[]>({
-    queryKey: ["/api/groups", typeFilter, gradeFilter],
+    queryKey: ["/api/groups"],
     refetchInterval: 3000,
   });
 
