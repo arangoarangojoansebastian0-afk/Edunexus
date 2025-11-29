@@ -23,7 +23,7 @@ export function CommentSection({ postId, currentUserId }: CommentSectionProps) {
     queryKey: ["/api/posts", postId, "comments"],
     queryFn: async () => {
       const response = await fetch(`/api/posts/${postId}/comments`, {
-        headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` },
+        credentials: "include",
       });
       if (!response.ok) throw new Error("Failed to fetch comments");
       return response.json();

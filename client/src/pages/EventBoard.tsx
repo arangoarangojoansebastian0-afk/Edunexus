@@ -79,7 +79,7 @@ export default function EventBoard() {
       const startDateTime = new Date(`${newEventDate}T${newEventTime}`);
       const endDateTime = new Date(startDateTime.getTime() + 60 * 60000);
 
-      await apiRequest("/api/events", "POST", {
+      await apiRequest("POST", "/api/events", {
         title: newEventTitle,
         subject: newEventSubject,
         startTime: startDateTime.toISOString(),
