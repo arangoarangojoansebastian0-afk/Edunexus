@@ -186,6 +186,22 @@ export async function registerRoutes(
       const userId = req.user!.id;
       const data = insertPostSchema.parse({ ...req.body, authorId: userId });
       const post = await storage.createPost(data);
+      
+      // Create notification for all users about new post
+      const allUsers = await storage.getAllUsers();
+      for (const user of allUsers) {
+        if (user.id !== userId) {
+          await storage.createNotification({
+            userId: user.id,
+            type: "post",
+            title: "Nuevo anuncio",
+            message: `${req.user!.firstName} hizo un nuevo anuncio`,
+            targetId: post.id,
+            read: false,
+          });
+        }
+      }
+      
       res.status(201).json(post);
     } catch (error) {
       console.error("Error creating post:", error);
@@ -433,6 +449,22 @@ export async function registerRoutes(
         mediaType,
       });
       const message = await storage.createMessage(data);
+      
+      // Create notification for group members
+      const members = await storage.getGroupMembers(groupId);
+      for (const member of members) {
+        if (member.userId !== userId) {
+          await storage.createNotification({
+            userId: member.userId,
+            type: "message",
+            title: "Nuevo mensaje",
+            message: `${req.user!.firstName} escribió en un grupo`,
+            targetId: groupId,
+            read: false,
+          });
+        }
+      }
+      
       res.status(201).json(message);
     } catch (error) {
       console.error("Error sending message:", error);
@@ -572,6 +604,22 @@ export async function registerRoutes(
       const userId = req.user!.id;
       const data = insertEventSchema.parse({ ...req.body, hostId: userId });
       const event = await storage.createEvent(data);
+      
+      // Create notification for all users about new tutoring session
+      const allUsers = await storage.getAllUsers();
+      for (const user of allUsers) {
+        if (user.id !== userId) {
+          await storage.createNotification({
+            userId: user.id,
+            type: "event",
+            title: "Nueva asesoría",
+            message: `${req.user!.firstName} abrió una nueva asesoría de ${data.subject || "un tema"}`,
+            targetId: event.id,
+            read: false,
+          });
+        }
+      }
+      
       res.status(201).json(event);
     } catch (error) {
       console.error("Error creating event:", error);
@@ -606,6 +654,30 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error canceling booking:", error);
       res.status(500).json({ message: "Failed to cancel booking" });
+    }
+  });
+
+  // Notifications routes
+  app.get("/api/notifications", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const notifications = await storage.getNotifications(userId, 50);
+      res.json(notifications);
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+      res.status(500).json({ message: "Failed to fetch notifications" });
+    }
+  });
+
+  app.patch("/api/notifications/:id/read", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const notificationId = req.params.id;
+      // TODO: Implement update notification read status
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error updating notification:", error);
+      res.status(500).json({ message: "Failed to update notification" });
     }
   });
 
