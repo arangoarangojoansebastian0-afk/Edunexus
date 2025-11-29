@@ -190,7 +190,7 @@ export default function Home() {
                       likesCount={post._count?.reactions || 0}
                       commentsCount={post._count?.comments || 0}
                     />
-                    {expandedCommentPostId === post.id && user?.id && (
+                    {expandedCommentPostId === post.id && user && (
                       <Card className="mt-2">
                         <div className="p-4">
                           <CommentSection postId={post.id} currentUserId={user.id} />
