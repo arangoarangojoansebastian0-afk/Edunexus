@@ -74,7 +74,13 @@ const createEventSchema = z.object({
   maxParticipants: z.string().optional(),
   participantsType: z.enum(["limited", "unlimited"]).default("limited"),
   locationUrl: z.string().url("Ingresa un enlace válido").optional().or(z.literal("")),
-});
+}).refine(
+  (data) => data.participantsType === "unlimited" || (data.maxParticipants && data.maxParticipants.trim() !== ""),
+  {
+    message: "Especifica el número máximo de participantes",
+    path: ["maxParticipants"],
+  }
+);
 
 type CreateEventForm = z.infer<typeof createEventSchema>;
 
