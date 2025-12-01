@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useParams, useLocation } from "wouter";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -84,34 +85,45 @@ const profileSchema = z.object({
 type ProfileForm = z.infer<typeof profileSchema>;
 
 export default function Profile() {
-  const { user } = useAuth();
+  const { user: authUser } = useAuth();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
+  const params = useParams();
+  const profileUserId = params.id || authUser?.id;
+  const isOwnProfile = !params.id || params.id === authUser?.id;
   const [isEditOpen, setIsEditOpen] = useState(false);
+
+  const { data: profileUser } = useQuery({
+    queryKey: ["/api/users", profileUserId],
+    enabled: !!profileUserId,
+  });
+
+  const displayUser = isOwnProfile ? authUser : profileUser;
 
   const form = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
-      firstName: user?.firstName || "",
-      lastName: user?.lastName || "",
-      grade: user?.grade || "",
-      bio: user?.bio || "",
-      interests: user?.interests || [],
+      firstName: displayUser?.firstName || "",
+      lastName: displayUser?.lastName || "",
+      grade: displayUser?.grade || "",
+      bio: displayUser?.bio || "",
+      interests: displayUser?.interests || [],
     },
   });
 
   const { data: posts, isLoading: postsLoading } = useQuery<PostWithAuthor[]>({
-    queryKey: ["/api/users", user?.id, "posts"],
-    enabled: !!user?.id,
+    queryKey: ["/api/users", profileUserId, "posts"],
+    enabled: !!profileUserId,
   });
 
   const { data: files, isLoading: filesLoading } = useQuery<FileWithUploader[]>({
-    queryKey: ["/api/users", user?.id, "files"],
-    enabled: !!user?.id,
+    queryKey: ["/api/users", profileUserId, "files"],
+    enabled: !!profileUserId,
   });
 
-  const { data: badges } = useQuery<(UserBadge & { badge: BadgeType })[]>({
-    queryKey: ["/api/users", user?.id, "badges"],
-    enabled: !!user?.id,
+  const { data: badges, refetch: refetchBadges } = useQuery<(UserBadge & { badge: BadgeType })[]>({
+    queryKey: ["/api/users", profileUserId, "badges"],
+    enabled: !!profileUserId,
   });
 
   const updateProfileMutation = useMutation({
@@ -120,6 +132,9 @@ export default function Profile() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      if (!isOwnProfile && profileUserId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/users", profileUserId] });
+      }
       setIsEditOpen(false);
       toast({
         title: "Perfil actualizado",
@@ -148,9 +163,9 @@ export default function Profile() {
     }
   };
 
-  if (!user) {
+  if (!displayUser) {
     return (
-      <AppLayout title="Mi Perfil">
+      <AppLayout title={isOwnProfile ? "Mi Perfil" : "Perfil"}>
         <div className="flex items-center justify-center h-96">
           <Skeleton className="h-32 w-32 rounded-full" />
         </div>
@@ -158,8 +173,10 @@ export default function Profile() {
     );
   }
 
+  const user = displayUser;
+
   return (
-    <AppLayout title="Mi Perfil">
+    <AppLayout title={isOwnProfile ? "Mi Perfil" : `Perfil de ${user.firstName}`}>
       <div className="max-w-4xl mx-auto p-4 md:p-6">
         <div className="space-y-6">
           {/* Profile Header */}
@@ -198,13 +215,14 @@ export default function Profile() {
                       </div>
                       <p className="text-muted-foreground">{formatRole(user.role)}</p>
                     </div>
-                    <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-                      <DialogTrigger asChild>
-                        <Button variant="outline" className="gap-2" data-testid="button-edit-profile">
-                          <Edit className="h-4 w-4" />
-                          Editar Perfil
-                        </Button>
-                      </DialogTrigger>
+                    {isOwnProfile && (
+                      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+                        <DialogTrigger asChild>
+                          <Button variant="outline" className="gap-2" data-testid="button-edit-profile">
+                            <Edit className="h-4 w-4" />
+                            Editar Perfil
+                          </Button>
+                        </DialogTrigger>
                       <DialogContent>
                         <DialogHeader>
                           <DialogTitle>Editar Perfil</DialogTitle>
@@ -337,7 +355,8 @@ export default function Profile() {
                           </form>
                         </Form>
                       </DialogContent>
-                    </Dialog>
+                      </Dialog>
+                    )}
                   </div>
 
                   <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">

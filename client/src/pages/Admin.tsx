@@ -62,7 +62,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 
 export default function Admin() {
   const { user } = useAuth();
@@ -420,22 +420,24 @@ export default function Admin() {
                       filteredUsers.map((u) => (
                         <TableRow key={u.id}>
                           <TableCell>
-                            <div className="flex items-center gap-3">
-                              <Avatar className="h-9 w-9">
-                                <AvatarImage src={u.profileImageUrl || undefined} className="object-cover" />
-                                <AvatarFallback className="text-xs">
-                                  {getInitials(u.firstName, u.lastName)}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="min-w-0">
-                                <p className="font-medium truncate">
-                                  {getFullName(u.firstName, u.lastName)}
-                                </p>
-                                <p className="text-xs text-muted-foreground truncate">
-                                  {u.email}
-                                </p>
+                            <Link href={`/profile/${u.id}`}>
+                              <div className="flex items-center gap-3 hover-elevate cursor-pointer">
+                                <Avatar className="h-9 w-9">
+                                  <AvatarImage src={u.profileImageUrl || undefined} className="object-cover" />
+                                  <AvatarFallback className="text-xs">
+                                    {getInitials(u.firstName, u.lastName)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="min-w-0">
+                                  <p className="font-medium truncate">
+                                    {getFullName(u.firstName, u.lastName)}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground truncate">
+                                    {u.email}
+                                  </p>
+                                </div>
                               </div>
-                            </div>
+                            </Link>
                           </TableCell>
                           <TableCell>
                             <Select

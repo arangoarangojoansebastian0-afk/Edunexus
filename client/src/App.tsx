@@ -48,6 +48,7 @@ function Router() {
           <Route path="/tutoring" component={Tutoring} />
           <Route path="/calendar" component={Calendar} />
           <Route path="/profile" component={Profile} />
+          <Route path="/profile/:id" component={Profile} />
           <Route path="/admin" component={Admin} />
           <Route path="/notifications" component={Notifications} />
           <Route path="/settings" component={Settings} />

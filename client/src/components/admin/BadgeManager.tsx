@@ -23,11 +23,22 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Award, Plus } from "lucide-react";
+import { Award, Plus, Lock } from "lucide-react";
 import type { Badge as BadgeType, User } from "@shared/schema";
+import { useAuth } from "@/hooks/useAuth";
 
 export function BadgeManager() {
+  const { user } = useAuth();
   const { toast } = useToast();
+
+  if (user?.role !== "teacher" && user?.role !== "admin") {
+    return (
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Lock className="h-4 w-4" />
+        <p>Solo los profesores y administradores pueden gestionar insignias.</p>
+      </div>
+    );
+  }
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isAssignOpen, setIsAssignOpen] = useState(false);
   const [selectedBadgeId, setSelectedBadgeId] = useState<string>("");
@@ -78,7 +89,7 @@ export function BadgeManager() {
       await apiRequest("POST", `/api/users/${selectedUserId}/badges/${selectedBadgeId}`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users", selectedUserId, "badges"] });
       setSelectedUserId("");
       setSelectedBadgeId("");
       setIsAssignOpen(false);
