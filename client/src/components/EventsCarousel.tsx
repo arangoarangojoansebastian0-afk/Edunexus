@@ -67,6 +67,11 @@ export function EventsCarousel() {
       <CardContent>
         <div className="space-y-4">
           <div className="space-y-3">
+            {current.imageUrl && (
+              <div className="w-full aspect-video rounded-lg overflow-hidden bg-muted">
+                <img src={current.imageUrl} alt={current.title} className="w-full h-full object-cover" />
+              </div>
+            )}
             <div>
               <h3 className="font-semibold text-base">{current.title}</h3>
               <p className="text-sm text-muted-foreground mt-1">{current.subject}</p>

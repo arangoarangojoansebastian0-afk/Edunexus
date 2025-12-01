@@ -169,6 +169,7 @@ export const events = pgTable(
     startTime: timestamp("start_time").notNull(),
     endTime: timestamp("end_time").notNull(),
     locationUrl: varchar("location_url"),
+    imageUrl: varchar("image_url"),
     maxParticipants: integer("max_participants"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

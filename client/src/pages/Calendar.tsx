@@ -127,11 +127,17 @@ export default function Calendar() {
                     selectedDateEvents.map((event) => (
                       <div
                         key={event.id}
-                        className="border rounded-lg p-3 hover:bg-muted/50 transition-colors"
+                        className="border rounded-lg overflow-hidden hover:bg-muted/50 transition-colors"
                         data-testid={`calendar-event-${event.id}`}
                       >
-                        <p className="font-medium text-sm mb-1">{event.title}</p>
-                        <p className="text-xs text-muted-foreground mb-2">{event.subject}</p>
+                        {event.imageUrl && (
+                          <div className="w-full h-32 bg-muted">
+                            <img src={event.imageUrl} alt={event.title} className="w-full h-full object-cover" />
+                          </div>
+                        )}
+                        <div className="p-3">
+                          <p className="font-medium text-sm mb-1">{event.title}</p>
+                          <p className="text-xs text-muted-foreground mb-2">{event.subject}</p>
                         <div className="space-y-1 text-xs text-muted-foreground">
                           <div className="flex items-center gap-2">
                             <Clock className="h-3 w-3" />
@@ -164,6 +170,7 @@ export default function Calendar() {
                               </a>
                             </div>
                           )}
+                        </div>
                         </div>
                       </div>
                     ))
