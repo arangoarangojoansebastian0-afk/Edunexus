@@ -19,6 +19,7 @@ import {
   Edit,
   Trash2,
   Pin,
+  Calendar,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
@@ -35,6 +36,7 @@ interface PostCardProps {
   onDelete?: (postId: string) => void;
   onReport?: (postId: string) => void;
   onPin?: (postId: string) => void;
+  onConvertToEvent?: (post: PostWithAuthor) => void;
   isLiked?: boolean;
   likesCount?: number;
   commentsCount?: number;
@@ -49,6 +51,7 @@ export function PostCard({
   onDelete,
   onReport,
   onPin,
+  onConvertToEvent,
   isLiked = false,
   likesCount = 0,
   commentsCount = 0,
@@ -136,6 +139,11 @@ export function PostCard({
             <DropdownMenuItem onClick={() => onReport?.(post.id)} data-testid="button-report-post">
               <Flag className="h-4 w-4 mr-2" />
               Reportar
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onConvertToEvent?.(post)} data-testid="button-convert-to-event">
+              <Calendar className="h-4 w-4 mr-2" />
+              Convertir a Evento
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

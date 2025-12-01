@@ -1041,6 +1041,24 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/posts/:postId/convert-to-event", requireAuth, async (req, res) => {
+    try {
+      const { title, subject, locationUrl, startTime, endTime } = req.body;
+      const event = await storage.createEvent({
+        title,
+        subject,
+        hostId: req.user!.id,
+        startTime: new Date(startTime),
+        endTime: new Date(endTime),
+        locationUrl,
+      });
+      res.json(event);
+    } catch (error) {
+      console.error("Error converting post to event:", error);
+      res.status(500).json({ message: "Failed to convert post" });
+    }
+  });
+
   // Serve uploaded files
   app.use("/uploads", (req, res, next) => {
     const uploadsDir = path.join(process.cwd(), "uploads");

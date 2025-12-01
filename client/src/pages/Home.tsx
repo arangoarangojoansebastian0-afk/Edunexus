@@ -4,6 +4,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { CreatePostCard } from "@/components/posts/CreatePostCard";
 import { PostCard } from "@/components/posts/PostCard";
 import { CommentSection } from "@/components/posts/CommentSection";
+import { ConvertPostToEventDialog } from "@/components/posts/ConvertPostToEventDialog";
 import { RecognitionsCarousel } from "@/components/RecognitionsCarousel";
 import { CreateRecognitionCard } from "@/components/CreateRecognitionCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,6 +36,8 @@ export default function Home() {
   const { toast } = useToast();
   const [gradeFilter, setGradeFilter] = useState<string>("all");
   const [expandedCommentPostId, setExpandedCommentPostId] = useState<string | null>(null);
+  const [convertPostId, setConvertPostId] = useState<string | null>(null);
+  const [selectedPost, setSelectedPost] = useState<PostWithAuthor | null>(null);
 
 
   const { data: posts, isLoading: postsLoading, refetch: refetchPosts } = useQuery<PostWithAuthor[]>({
@@ -174,6 +177,10 @@ export default function Home() {
                       post={post}
                       currentUserId={user?.id}
                       onLike={(postId) => likeMutation.mutate(postId)}
+                      onConvertToEvent={(post) => {
+                        setSelectedPost(post);
+                        setConvertPostId(post.id);
+                      }}
                       onComment={(postId) => setExpandedCommentPostId(expandedCommentPostId === postId ? null : postId)}
                       likesCount={post._count?.reactions || 0}
                       commentsCount={post._count?.comments || 0}
@@ -312,6 +319,17 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      {selectedPost && (
+        <ConvertPostToEventDialog
+          post={selectedPost}
+          isOpen={convertPostId !== null}
+          onOpenChange={(open) => {
+            setConvertPostId(open ? convertPostId : null);
+            if (!open) setSelectedPost(null);
+          }}
+        />
+      )}
     </AppLayout>
   );
 }
