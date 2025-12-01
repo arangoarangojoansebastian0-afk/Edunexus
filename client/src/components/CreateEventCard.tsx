@@ -21,7 +21,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Loader2 } from "lucide-react";
+import { Plus, Loader2, Upload } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -46,6 +46,47 @@ export function CreateEventCard() {
   const [startHour, setStartHour] = useState("09:00");
   const [endHour, setEndHour] = useState("10:00");
   const [locationUrl, setLocationUrl] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState("");
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > 800) {
+              height = Math.round(height * (800 / width));
+              width = 800;
+            }
+          } else {
+            if (height > 800) {
+              width = Math.round(width * (800 / height));
+              height = 800;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressed = canvas.toDataURL("image/jpeg", 0.7);
+            setPreviewUrl(compressed);
+            setImageFile(file);
+          }
+        };
+        img.src = reader.result as string;
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -60,6 +101,7 @@ export function CreateEventCard() {
         startTime: startDateTime.toISOString(),
         endTime: endDateTime.toISOString(),
         locationUrl: locationUrl.trim() || undefined,
+        imageUrl: previewUrl || undefined,
       });
     },
     onSuccess: () => {
@@ -71,6 +113,8 @@ export function CreateEventCard() {
       setStartHour("09:00");
       setEndHour("10:00");
       setLocationUrl("");
+      setImageFile(null);
+      setPreviewUrl("");
       setIsOpen(false);
 
       queryClient.invalidateQueries({ queryKey: ["/api/events"] });
@@ -216,6 +260,47 @@ export function CreateEventCard() {
               onChange={(e) => setLocationUrl(e.target.value)}
               data-testid="input-location"
             />
+          </div>
+
+          {/* Image Preview */}
+          {previewUrl && (
+            <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-muted">
+              <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+              <Button
+                size="sm"
+                variant="destructive"
+                className="absolute top-2 right-2"
+                onClick={() => {
+                  setPreviewUrl("");
+                  setImageFile(null);
+                }}
+                data-testid="button-remove-image"
+              >
+                Remover
+              </Button>
+            </div>
+          )}
+
+          {/* Image Input */}
+          <div>
+            <Label htmlFor="location">Imagen (opcional)</Label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+              className="hidden"
+              id="event-image"
+              data-testid="input-event-image"
+            />
+            <label
+              htmlFor="event-image"
+              className="cursor-pointer flex items-center justify-center gap-2 p-3 rounded border-2 border-dashed hover:bg-muted/50 transition"
+            >
+              <Upload className="h-4 w-4" />
+              <span className="text-sm">
+                {imageFile ? imageFile.name : "Selecciona una imagen"}
+              </span>
+            </label>
           </div>
         </div>
 
