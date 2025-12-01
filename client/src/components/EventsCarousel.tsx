@@ -86,10 +86,15 @@ export function EventsCarousel() {
                 <div className="flex items-center gap-2 text-sm">
                   <MapPin className="h-4 w-4 text-primary" />
                   <a
-                    href={current.locationUrl}
+                    href={
+                      current.locationUrl.includes("http")
+                        ? current.locationUrl
+                        : `https://www.google.com/maps/search/${encodeURIComponent(current.locationUrl)}`
+                    }
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-primary hover:underline"
+                    className="text-primary hover:underline cursor-pointer"
+                    data-testid="link-event-location"
                   >
                     {current.locationUrl.includes("http")
                       ? new URL(current.locationUrl).hostname

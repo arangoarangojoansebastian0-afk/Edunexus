@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, ChevronLeft, ChevronRight, Clock, User } from "lucide-react";
+import { Loader2, ChevronLeft, ChevronRight, Clock, User, MapPin } from "lucide-react";
 import { useState } from "react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth, addMonths, subMonths } from "date-fns";
 import { es } from "date-fns/locale";
@@ -144,6 +144,26 @@ export default function Calendar() {
                             <User className="h-3 w-3" />
                             <span>{getFullName(event.host.firstName, event.host.lastName)}</span>
                           </div>
+                          {event.locationUrl && (
+                            <div className="flex items-center gap-2">
+                              <MapPin className="h-3 w-3" />
+                              <a
+                                href={
+                                  event.locationUrl.includes("http")
+                                    ? event.locationUrl
+                                    : `https://www.google.com/maps/search/${encodeURIComponent(event.locationUrl)}`
+                                }
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline cursor-pointer"
+                                data-testid={`link-calendar-event-location-${event.id}`}
+                              >
+                                {event.locationUrl.includes("http")
+                                  ? new URL(event.locationUrl).hostname
+                                  : event.locationUrl}
+                              </a>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))
