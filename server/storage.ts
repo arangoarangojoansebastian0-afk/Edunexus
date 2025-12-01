@@ -1,5 +1,6 @@
 import { db } from "./db";
 import { eq, desc, and, sql, or, ilike } from "drizzle-orm";
+import { randomUUID } from "crypto";
 import {
   users,
   groups,
@@ -994,7 +995,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createNotification(notif: InsertNotification): Promise<Notification> {
-    const [created] = await db.insert(notifications).values(notif).returning();
+    const [created] = await db.insert(notifications).values({ id: randomUUID(), ...notif }).returning();
     return created;
   }
 
