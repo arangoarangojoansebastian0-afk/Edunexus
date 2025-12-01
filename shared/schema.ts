@@ -88,6 +88,8 @@ export const posts = pgTable(
     content: text("content").notNull(),
     media: text("media").array().default(sql`ARRAY[]::text[]`),
     pinned: boolean("pinned").default(false).notNull(),
+    publishDate: varchar("publish_date"),
+    publishTime: varchar("publish_time"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

@@ -9,7 +9,7 @@ import { getFullName, getInitials } from "@/lib/authUtils";
 import { cn } from "@/lib/utils";
 
 interface CreatePostCardProps {
-  onSubmit: (content: string, media?: string[]) => void;
+  onSubmit: (content: string, media?: string[], publishDate?: string, publishTime?: string) => void;
   placeholder?: string;
   isSubmitting?: boolean;
   groupId?: string;
@@ -23,11 +23,17 @@ export function CreatePostCard({
   const { user } = useAuth();
   const [content, setContent] = useState("");
   const [isFocused, setIsFocused] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [publishDate, setPublishDate] = useState("");
+  const [publishTime, setPublishTime] = useState("");
 
   const handleSubmit = () => {
     if (!content.trim()) return;
-    onSubmit(content.trim());
+    onSubmit(content.trim(), [], publishDate || undefined, publishTime || undefined);
     setContent("");
+    setPublishDate("");
+    setPublishTime("");
+    setShowSchedule(false);
     setIsFocused(false);
   };
 
@@ -77,19 +83,52 @@ export function CreatePostCard({
               data-testid="input-post-content"
             />
             {(isFocused || content) && (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="gap-2"
-                    data-testid="button-add-media"
-                  >
-                    <ImagePlus className="h-4 w-4" />
-                    <span className="hidden sm:inline">Imagen</span>
-                  </Button>
-                </div>
+              <div className="space-y-3">
+                {showSchedule && (
+                  <div className="flex gap-3 p-3 bg-muted/50 rounded-lg">
+                    <div className="flex-1">
+                      <label className="text-xs font-medium text-muted-foreground">Fecha (opcional)</label>
+                      <input
+                        type="date"
+                        value={publishDate}
+                        onChange={(e) => setPublishDate(e.target.value)}
+                        className="w-full text-sm border rounded px-2 py-1 mt-1"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-xs font-medium text-muted-foreground">Hora (opcional)</label>
+                      <input
+                        type="time"
+                        value={publishTime}
+                        onChange={(e) => setPublishTime(e.target.value)}
+                        className="w-full text-sm border rounded px-2 py-1 mt-1"
+                      />
+                    </div>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="gap-2"
+                      data-testid="button-add-media"
+                    >
+                      <ImagePlus className="h-4 w-4" />
+                      <span className="hidden sm:inline">Imagen</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => setShowSchedule(!showSchedule)}
+                      data-testid="button-schedule-post"
+                    >
+                      <span className="hidden sm:inline">Programar</span>
+                    </Button>
+                  </div>
                 <div className="flex items-center gap-2">
                   <Button
                     type="button"
@@ -113,6 +152,7 @@ export function CreatePostCard({
                     <Send className="h-4 w-4" />
                     <span>Publicar</span>
                   </Button>
+                </div>
                 </div>
               </div>
             )}
