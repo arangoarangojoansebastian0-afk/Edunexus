@@ -6,6 +6,7 @@ import { PostCard } from "@/components/posts/PostCard";
 import { CommentSection } from "@/components/posts/CommentSection";
 import { ConvertPostToEventDialog } from "@/components/posts/ConvertPostToEventDialog";
 import { RecognitionsCarousel } from "@/components/RecognitionsCarousel";
+import { EventsCarousel } from "@/components/EventsCarousel";
 import { CreateRecognitionCard } from "@/components/CreateRecognitionCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -119,6 +120,9 @@ export default function Home() {
               onSubmit={(content) => createPostMutation.mutate(content)}
               isSubmitting={createPostMutation.isPending}
             />
+
+            {/* Events */}
+            <EventsCarousel />
 
             {/* Recognitions */}
             <RecognitionsCarousel />
