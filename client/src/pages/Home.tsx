@@ -8,6 +8,7 @@ import { ConvertPostToEventDialog } from "@/components/posts/ConvertPostToEventD
 import { RecognitionsCarousel } from "@/components/RecognitionsCarousel";
 import { EventsCarousel } from "@/components/EventsCarousel";
 import { CreateRecognitionCard } from "@/components/CreateRecognitionCard";
+import { CreateEventCard } from "@/components/CreateEventCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -123,6 +124,9 @@ export default function Home() {
 
             {/* Events */}
             <EventsCarousel />
+
+            {/* Create Event */}
+            <CreateEventCard />
 
             {/* Recognitions */}
             <RecognitionsCarousel />
