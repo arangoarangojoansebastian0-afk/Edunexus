@@ -33,6 +33,7 @@ import {
   ChevronUp,
   Bell,
   Grid3x3,
+  Clock,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { getFullName, getInitials, formatRole } from "@/lib/authUtils";
@@ -42,6 +43,7 @@ const mainNavItems = [
   { title: "Grupos", url: "/groups", icon: Users },
   { title: "Biblioteca", url: "/library", icon: BookOpen },
   { title: "Asesorías", url: "/tutoring", icon: Calendar },
+  { title: "Calendario", url: "/calendar", icon: Clock },
 ];
 
 const personalNavItems = [
