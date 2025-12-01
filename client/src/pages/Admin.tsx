@@ -50,8 +50,10 @@ import {
   Ban,
   Trash2,
   TrendingUp,
+  Award,
 } from "lucide-react";
 import type { User, Report, File as FileType } from "@shared/schema";
+import { BadgeManager } from "@/components/admin/BadgeManager";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 import {
@@ -348,6 +350,10 @@ export default function Admin() {
                     {stats.pendingFiles}
                   </Badge>
                 ) : null}
+              </TabsTrigger>
+              <TabsTrigger value="badges" className="gap-2" data-testid="tab-badges">
+                <Award className="h-4 w-4" />
+                Insignias
               </TabsTrigger>
             </TabsList>
 
@@ -668,6 +674,21 @@ export default function Admin() {
                   description="Todos los archivos han sido moderados."
                 />
               )}
+            </TabsContent>
+
+            {/* Badges Tab */}
+            <TabsContent value="badges" className="space-y-4 mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Award className="h-5 w-5" />
+                    Gestionar Insignias
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <BadgeManager />
+                </CardContent>
+              </Card>
             </TabsContent>
           </Tabs>
 

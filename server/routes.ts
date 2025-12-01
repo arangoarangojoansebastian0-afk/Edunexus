@@ -1041,6 +1041,60 @@ export async function registerRoutes(
     }
   });
 
+  // Badges routes
+  app.get("/api/badges", requireAuth, async (req, res) => {
+    try {
+      const badges = await storage.getAllBadges();
+      res.json(badges);
+    } catch (error) {
+      console.error("Error fetching badges:", error);
+      res.status(500).json({ message: "Failed to fetch badges" });
+    }
+  });
+
+  app.get("/api/users/:userId/badges", requireAuth, async (req, res) => {
+    try {
+      const badges = await storage.getUserBadges(req.params.userId);
+      res.json(badges);
+    } catch (error) {
+      console.error("Error fetching user badges:", error);
+      res.status(500).json({ message: "Failed to fetch badges" });
+    }
+  });
+
+  app.post("/api/badges", requireAuth, async (req, res) => {
+    try {
+      if (req.user!.role !== "teacher" && req.user!.role !== "admin") {
+        return res.status(403).json({ message: "Only teachers can create badges" });
+      }
+      const { name, description, iconUrl, color } = req.body;
+      const badge = await storage.createBadge({ name, description, iconUrl, color });
+      res.status(201).json(badge);
+    } catch (error) {
+      console.error("Error creating badge:", error);
+      res.status(500).json({ message: "Failed to create badge" });
+    }
+  });
+
+  app.post("/api/users/:userId/badges/:badgeId", requireAuth, async (req, res) => {
+    try {
+      if (req.user!.role !== "teacher" && req.user!.role !== "admin") {
+        return res.status(403).json({ message: "Only teachers can assign badges" });
+      }
+      const userId = req.params.userId;
+      const badgeId = req.params.badgeId;
+      const hasAlready = await storage.hasBadge(userId, badgeId);
+      if (hasAlready) {
+        return res.status(400).json({ message: "User already has this badge" });
+      }
+      const userBadge = await storage.assignBadgeToUser(userId, badgeId);
+      res.status(201).json(userBadge);
+    } catch (error) {
+      console.error("Error assigning badge:", error);
+      res.status(500).json({ message: "Failed to assign badge" });
+    }
+  });
+
   app.post("/api/posts/:postId/convert-to-event", requireAuth, async (req, res) => {
     try {
       const { title, subject, locationUrl, startTime, endTime } = req.body;

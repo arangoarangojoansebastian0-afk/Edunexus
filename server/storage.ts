@@ -1041,6 +1041,51 @@ export class DatabaseStorage implements IStorage {
     const [created] = await db.insert(recognitions).values(recognition).returning();
     return created;
   }
+
+  // Badges
+  async createBadge(badge: InsertBadge): Promise<Badge> {
+    const [created] = await db.insert(badges).values(badge).returning();
+    return created;
+  }
+
+  async getAllBadges(): Promise<Badge[]> {
+    return await db.select().from(badges).orderBy(badges.name);
+  }
+
+  async getBadge(id: string): Promise<Badge | undefined> {
+    const [badge] = await db.select().from(badges).where(eq(badges.id, id));
+    return badge;
+  }
+
+  async getUserBadges(userId: string): Promise<(UserBadge & { badge: Badge })[]> {
+    const result = await db
+      .select()
+      .from(userBadges)
+      .where(eq(userBadges.userId, userId))
+      .innerJoin(badges, eq(userBadges.badgeId, badges.id))
+      .orderBy(desc(userBadges.earnedAt));
+
+    return result.map((r) => ({
+      ...r.user_badges,
+      badge: r.badges,
+    }));
+  }
+
+  async assignBadgeToUser(userId: string, badgeId: string): Promise<UserBadge> {
+    const [created] = await db
+      .insert(userBadges)
+      .values({ userId, badgeId, id: randomUUID() })
+      .returning();
+    return created;
+  }
+
+  async hasBadge(userId: string, badgeId: string): Promise<boolean> {
+    const [existing] = await db
+      .select()
+      .from(userBadges)
+      .where(and(eq(userBadges.userId, userId), eq(userBadges.badgeId, badgeId)));
+    return !!existing;
+  }
 }
 
 export const storage = new DatabaseStorage();
