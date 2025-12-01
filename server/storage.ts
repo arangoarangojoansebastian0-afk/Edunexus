@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, desc, and, sql, or, ilike } from "drizzle-orm";
+import { eq, desc, and, sql, or, ilike, lt } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
   users,
@@ -645,7 +645,18 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  async deleteExpiredEvents(): Promise<number> {
+    const now = new Date();
+    const result = await db
+      .delete(events)
+      .where(lt(events.endTime, now));
+    return result.rowCount || 0;
+  }
+
   async getAllEvents(): Promise<EventWithHost[]> {
+    // Delete expired events first
+    await this.deleteExpiredEvents();
+
     const allEvents = await db
       .select()
       .from(events)
@@ -671,6 +682,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getEventsByHost(hostId: string): Promise<EventWithHost[]> {
+    // Delete expired events first
+    await this.deleteExpiredEvents();
+
     const hostEvents = await db
       .select()
       .from(events)
@@ -697,6 +711,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getBookedEvents(userId: string): Promise<EventWithHost[]> {
+    // Delete expired events first
+    await this.deleteExpiredEvents();
+
     const bookings = await db
       .select({ eventId: eventParticipants.eventId })
       .from(eventParticipants)
