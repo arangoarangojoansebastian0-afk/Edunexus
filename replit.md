@@ -10,28 +10,22 @@ The application enables students to create and join groups (courses and clubs), 
 
 Preferred communication style: Simple, everyday language.
 
-## Recent Changes (2025-11-27)
+## Recent Changes (2025-12-02)
 
-### Complete Authentication System Overhaul
-- **Removed Replit Auth completely**: Deleted replitAuth.ts and all OAuth/OIDC integration
-- **Implemented simple email/password authentication**:
-  - New auth routes: `/api/auth/register`, `/api/auth/login`, `/api/auth/logout`
-  - Password hashing with bcryptjs (10 salt rounds)
-  - Session-based authentication using express-session with in-memory store
-  - HTTP-only cookies for session management (7-day expiration)
-- **Updated database schema**:
-  - Added `passwordHash` field to users table
-- **Created new authentication pages**:
-  - `/login` - Email/password login form
-  - `/register` - User registration with name, email, password
-- **Simplified authorization**:
-  - Replaced passport/OAuth middleware with simple session verification
-  - New session loading middleware that attaches user to request object
-  - Updated requireAuth to check req.session.userId instead of req.isAuthenticated()
-- **Frontend updates**:
-  - AuthContext updated to use cookies instead of OAuth tokens
-  - UserMenu now shows logout option with session cleanup
-  - useLocation hook from wouter for navigation (not useNavigate)
+### Complete Badge System Implementation
+- **25+ comprehensive badges** covering all achievement categories:
+  - **Académicas**: Intelectual, Explorador Científico, Literato, Historiador, Programador
+  - **Deportivas**: Atleta, Campeón
+  - **Artes**: Artista, Músico, Actor
+  - **Liderazgo**: Líder, Mentor, Organizador
+  - **Tecnología**: Experto Robótica, Innovador Tech
+  - **Social**: Mariposa Social, Mano Amiga
+  - **Especiales**: Débater, En Ascenso, Trabajo en Equipo, Guardián Ambiental, Excepcional
+- **Database tables**: `badges` (25 definitions) + `user_badges` (user-badge assignments)
+- **Badge assignment UI**: Teachers/admins can assign badges via dialog selector in user profiles
+- **Badge display**: Tooltips show descriptions on hover in student profiles
+- **Clickable authors**: Student names in posts/comments navigate to their profiles showing all assigned badges
+- **Admin/Teacher access**: Teachers see badge management tab, admins see full admin panel
 
 ## System Architecture
 
@@ -68,6 +62,7 @@ Preferred communication style: Simple, everyday language.
 - `requireAuth`: Checks session exists and user is logged in
 - `requireVerified`: Ensures user email is verified
 - `requireAdmin`: Ensures user has admin role
+- Teachers can access badge assignment UI in profiles
 
 **Password Security**: 
 - Bcryptjs with 10 salt rounds for hashing
@@ -94,7 +89,9 @@ Preferred communication style: Simple, everyday language.
 - Events (tutoring) with participants
 - Reports for moderation
 - Messages for group chat
-- Badges for achievements
+- **Badges (NEW)**: badges table with 25+ definitions + userBadges assignment table
+- Recognitions/Shoutouts with images
+- Notifications and notification preferences
 
 ### External Dependencies
 
@@ -164,11 +161,22 @@ Preferred communication style: Simple, everyday language.
 - ✅ Groups (courses and clubs)
 - ✅ Group memberships
 - ✅ Academic file library
-- ✅ Tutoring/advisory event scheduling
-- ✅ User profile pages
+- ✅ Tutoring/advisory event scheduling with calendar
+- ✅ User profile pages with clickable author names
 - ✅ Admin moderation dashboard
 - ✅ Report system
 - ✅ Real-time messaging for groups
+- ✅ **Badge System (NEW)**: 25+ comprehensive badges across all categories
+- ✅ **Badge Assignment UI**: Teachers/admins can assign badges to students
+- ✅ **Badge Tooltips**: Descriptions on hover in profiles
+- ✅ **Recognitions/Shoutouts**: With image support and @mentions
+
+### Next Priority Features
+- 🔲 Direct messages between users (1:1 chat)
+- 🔲 User blocking system
+- 🔲 Favorites for posts/files
+- 🔲 Global search (users, groups, posts)
+- 🔲 @mentions with notifications in posts/comments
 
 ### Project Structure
 
@@ -178,61 +186,112 @@ Preferred communication style: Simple, everyday language.
 │   ├── pages/
 │   │   ├── Login.tsx        # Login page with email/password
 │   │   ├── Register.tsx     # Registration page
-│   │   ├── Landing.tsx
+│   │   ├── Profile.tsx      # User profiles with badges display
+│   │   ├── Admin.tsx        # Admin/Teacher dashboard
 │   │   └── ... (other pages)
 │   ├── components/
-│   │   └── UserMenu.tsx     # Updated for logout
+│   │   ├── UserMenu.tsx     # Updated for logout
+│   │   ├── posts/
+│   │   │   ├── PostCard.tsx      # Posts with clickable authors
+│   │   │   └── CommentSection.tsx # Comments with clickable authors
+│   │   └── admin/
+│   │       └── BadgeManager.tsx   # Badge assignment UI
 │   ├── context/
 │   │   └── AuthContext.tsx  # Uses cookies, not OAuth
-│   └── App.tsx              # Routes include /login, /register
+│   └── App.tsx              # Routes include /login, /register, /profile/:id
 ├── server/
 │   ├── authSimple.ts        # Password hashing & verification
 │   ├── authRoutes.ts        # Auth endpoints
-│   ├── routes.ts            # Session middleware, requireAuth
+│   ├── routes.ts            # Session middleware, requireAuth, badge routes
 │   ├── storage.ts
 │   ├── db.ts
+│   ├── seed.ts              # 25 badge definitions + sample data
 │   └── index.ts
 ├── shared/
-│   └── schema.ts            # passwordHash field in users table
+│   └── schema.ts            # badges + userBadges tables
 └── package.json
 ```
 
 ## Key Files Modified/Created
 
-### Files Deleted
-- `server/replitAuth.ts` - Completely removed Replit Auth/OAuth implementation
-
-### New Files
+### New Files Created
 - `server/authSimple.ts` - Password hashing utilities
 - `server/authRoutes.ts` - Express routes for auth endpoints
 - `client/src/pages/Login.tsx` - Login page
 - `client/src/pages/Register.tsx` - Registration page
+- `client/src/components/admin/BadgeManager.tsx` - Badge assignment component
 
 ### Modified Files
-- `shared/schema.ts` - Added passwordHash to users table
-- `server/routes.ts` - Removed setupAuth/isAuthenticated, added session middleware, updated requireAuth
+- `shared/schema.ts` - Added passwordHash to users table, added badges + userBadges tables
+- `server/routes.ts` - Session middleware, updated requireAuth, added badge routes
 - `client/src/context/AuthContext.tsx` - Uses /api/auth/user endpoint instead of OAuth
 - `client/src/components/UserMenu.tsx` - Updated logout handler
-- `client/src/App.tsx` - Added /login and /register routes
-- `client/src/pages/Landing.tsx` - Updated login button to navigate to /login
+- `client/src/components/posts/PostCard.tsx` - Clickable author names
+- `client/src/components/posts/CommentSection.tsx` - Clickable author names
+- `client/src/pages/Profile.tsx` - Display badges with tooltips, badge assignment UI
+- `client/src/pages/Admin.tsx` - Teacher access to badges tab
+- `client/src/App.tsx` - Added /login, /register, /profile/:id routes
+- `server/seed.ts` - 25 comprehensive badge definitions
 
-## Testing Authentication
+## Badge System Details
+
+### 25 Badge Categories
+
+**Académicas (5)**:
+- Intelectual: Math achievement
+- Explorador Científico: Science exploration
+- Literato: Literature and writing
+- Historiador: History knowledge
+- Programador: Programming skills
+
+**Deportivas (2)**:
+- Atleta: Sports participation
+- Campeón: Athletic achievements
+
+**Artes (3)**:
+- Artista: Visual arts
+- Músico: Musical talent
+- Actor: Performance arts
+
+**Liderazgo (3)**:
+- Líder: Leadership
+- Mentor: Mentoring others
+- Organizador: Event organization
+
+**Tecnología (2)**:
+- Experto Robótica: Robotics expertise
+- Innovador Tech: Tech innovation
+
+**Social (2)**:
+- Mariposa Social: Socializing
+- Mano Amiga: Helping others
+
+**Especiales (5)**:
+- Débater: Debate excellence
+- En Ascenso: Growth potential
+- Trabajo en Equipo: Collaboration
+- Guardián Ambiental: Environmental awareness
+- Excepcional: Overall excellence
+
+## Testing the Badge System
 
 1. **Start the app**: `npm run dev`
-2. **Register**: Navigate to `/register` and create account
-3. **Login**: Navigate to `/login` with credentials
-4. **Session persistence**: Refresh page - user stays logged in
-5. **Logout**: Click avatar → "Cerrar Sesión"
-6. **Protected routes**: Unauthenticated users redirected to `/login`
+2. **Login**: Navigate to `/login` with teacher/admin credentials
+3. **View Profiles**: Click on any student name in posts/comments
+4. **Assign Badges**: Click "Asignar Insignia" button in profile
+5. **See Badges**: Hover over badge icons to see descriptions
+6. **Verify Database**: Check `badges` and `user_badges` tables in DB
 
 ## Development Notes
 
 - **Session Store**: MemoryStore for development (use PostgreSQL session store for production)
 - **Password Requirements**: Minimum 6 characters
-- **Email Validation**: Basic format validation (before was domain-specific, now accepts any email)
+- **Email Validation**: Basic format validation
 - **Session Duration**: 7 days
 - **Cookies**: HTTP-only in production, secure flag set when NODE_ENV=production
-- **No OAuth/OIDC**: Completely eliminated external authentication provider dependency
+- **Badge Display**: All 25 badges visible in profiles with tooltips
+- **Badge Assignment**: Only teachers and admins can assign badges
+- **Author Navigation**: Clicking on author names in posts/comments navigates to their profile
 
 ## No More Replit Auth
 
