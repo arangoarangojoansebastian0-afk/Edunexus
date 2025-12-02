@@ -486,7 +486,7 @@ export default function Profile() {
                   {badges?.map((ub) => (
                     <Tooltip key={ub.id}>
                       <TooltipTrigger asChild>
-                        <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 cursor-help hover-elevate">
+                        <div className={`flex items-center gap-2 p-2 rounded-lg cursor-help hover-elevate ${ub.level > 1 ? 'bg-yellow-500/20 border border-yellow-500/50' : 'bg-muted/50'}`}>
                           {ub.badge.iconUrl ? (
                             <img
                               src={ub.badge.iconUrl}
@@ -499,11 +499,12 @@ export default function Profile() {
                               style={{ color: ub.badge.color || undefined }}
                             />
                           )}
-                          <span className="text-sm font-medium">{ub.badge.name}</span>
+                          <span className="text-sm font-medium">{ub.badge.name}{ub.level > 1 ? ` ★${ub.level}` : ""}</span>
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
                         <p>{ub.badge.description || "Sin descripción"}</p>
+                        {ub.level > 1 && <p className="text-xs mt-1">Nivel: {ub.level}</p>}
                       </TooltipContent>
                     </Tooltip>
                   ))}
