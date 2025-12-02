@@ -222,7 +222,6 @@ async function seed() {
     type: "course",
     createdBy: adminUser.id,
     grade: "11",
-    visibility: "public",
   }).returning().then(r => r[0]);
 
   const clubGroup = await db.insert(groups).values({
@@ -231,7 +230,6 @@ async function seed() {
     description: "Proyecto y desarrollo de aplicaciones",
     type: "club",
     createdBy: teacherUser.id,
-    visibility: "public",
   }).returning().then(r => r[0]);
 
   const sportsGroup = await db.insert(groups).values({
@@ -240,7 +238,6 @@ async function seed() {
     description: "Actividades deportivas y entrenamiento",
     type: "club",
     createdBy: adminUser.id,
-    visibility: "public",
   }).returning().then(r => r[0]);
 
   console.log("✅ Grupos creados");
@@ -266,36 +263,29 @@ async function seed() {
   const post1 = await db.insert(posts).values({
     content: "¡Hola a todos! Bienvenidos a Comunidad Loyola. Este es el lugar perfecto para compartir ideas y colaborar.",
     authorId: adminUser.id,
-    grade: "11",
-    visibility: "public",
   }).returning().then(r => r[0]);
 
   const post2 = await db.insert(posts).values({
     content: "Les comparto mis apuntes de matemáticas. ¡Espero que les sean útiles para estudiar para el parcial!",
     authorId: teacherUser.id,
     groupId: courseGroup.id,
-    visibility: "public",
   }).returning().then(r => r[0]);
 
   const post3 = await db.insert(posts).values({
     content: "¿Alguien quiere iniciar un proyecto de programación? Busco compañeros para desarrollar una app.",
     authorId: student1.id,
     groupId: clubGroup.id,
-    visibility: "public",
   }).returning().then(r => r[0]);
 
   const post4 = await db.insert(posts).values({
     content: "Acabo de terminar la lectura del libro asignado. Las preguntas de reflexión están muy interesantes.",
     authorId: student2.id,
-    grade: "10",
-    visibility: "public",
   }).returning().then(r => r[0]);
 
   const post5 = await db.insert(posts).values({
     content: "Practicamos fútbol ayer y fue genial. ¡Los próximos entrenamientos serán aún mejores!",
     authorId: student3.id,
     groupId: sportsGroup.id,
-    visibility: "public",
   }).returning().then(r => r[0]);
 
   console.log("✅ Posts creados");
@@ -343,7 +333,6 @@ async function seed() {
       subject: "Matemáticas",
       description: "Apuntes de la unidad 1 de matemáticas",
       uploaderId: teacherUser.id,
-      visibility: "public",
       approved: true,
     },
     {
@@ -355,7 +344,6 @@ async function seed() {
       subject: "Historia",
       description: "Guía de estudio para el parcial",
       uploaderId: student1.id,
-      visibility: "public",
       approved: true,
     },
   ] as any);
