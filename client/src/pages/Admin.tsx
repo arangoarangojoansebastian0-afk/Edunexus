@@ -75,7 +75,7 @@ export default function Admin() {
   const [reviewNotes, setReviewNotes] = useState("");
 
   useEffect(() => {
-    if (user && user.role !== "admin") {
+    if (user && user.role !== "admin" && user.role !== "teacher") {
       toast({
         title: "Acceso denegado",
         description: "No tienes permisos para acceder a esta página.",
@@ -85,6 +85,9 @@ export default function Admin() {
     }
   }, [user, setLocation, toast]);
 
+  const isAdmin = user?.role === "admin";
+  const isTeacher = user?.role === "teacher";
+
   const { data: stats } = useQuery<{
     totalUsers: number;
     pendingVerifications: number;
@@ -93,22 +96,22 @@ export default function Admin() {
     pendingFiles: number;
   }>({
     queryKey: ["/api/admin/stats"],
-    enabled: user?.role === "admin",
+    enabled: isAdmin,
   });
 
   const { data: users, isLoading: usersLoading } = useQuery<User[]>({
     queryKey: ["/api/admin/users", userRoleFilter],
-    enabled: user?.role === "admin",
+    enabled: isAdmin,
   });
 
   const { data: reports, isLoading: reportsLoading } = useQuery<Report[]>({
     queryKey: ["/api/admin/reports", reportStatusFilter],
-    enabled: user?.role === "admin",
+    enabled: isAdmin,
   });
 
   const { data: pendingFiles, isLoading: filesLoading } = useQuery<FileType[]>({
     queryKey: ["/api/admin/files/pending"],
-    enabled: user?.role === "admin",
+    enabled: isAdmin,
   });
 
   const filteredUsers = users?.filter((u) => {
@@ -249,14 +252,27 @@ export default function Admin() {
     },
   });
 
-  if (user?.role !== "admin") {
+  if (user?.role !== "admin" && user?.role !== "teacher") {
     return null;
+  }
+
+  // Teachers only see badge management
+  if (isTeacher && !isAdmin) {
+    return (
+      <AppLayout title="Gestionar Insignias">
+        <div className="max-w-2xl mx-auto p-4 md:p-6">
+          <BadgeManager />
+        </div>
+      </AppLayout>
+    );
   }
 
   return (
     <AppLayout title="Panel de Administración">
       <div className="max-w-7xl mx-auto p-4 md:p-6">
         <div className="space-y-6">
+          {isAdmin && (
+            <>
           {/* Stats Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <Card>
@@ -693,6 +709,8 @@ export default function Admin() {
               </Card>
             </TabsContent>
           </Tabs>
+            </>
+          )}
 
           {/* Report Review Dialog */}
           <Dialog open={!!selectedReport} onOpenChange={() => setSelectedReport(null)}>
