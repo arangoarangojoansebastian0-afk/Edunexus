@@ -12,9 +12,13 @@ import {
   badges,
   userBadges,
 } from "@shared/schema";
+import { hashPassword } from "./authSimple";
 
 async function seed() {
   console.log("🌱 Iniciando seed de datos...");
+  
+  // Hash password "1234" for all seed users
+  const defaultPasswordHash = await hashPassword("1234");
 
   // Clear existing data
   await db.delete(userBadges);
@@ -39,6 +43,7 @@ async function seed() {
     verified: true,
     grade: null,
     bio: "Administrador de la plataforma",
+    passwordHash: defaultPasswordHash,
   }).returning().then(r => r[0]);
 
   const teacherUser = await db.insert(users).values({
@@ -50,6 +55,7 @@ async function seed() {
     verified: true,
     grade: null,
     bio: "Profesor de Matemáticas",
+    passwordHash: defaultPasswordHash,
   }).returning().then(r => r[0]);
 
   const student1 = await db.insert(users).values({
@@ -62,6 +68,7 @@ async function seed() {
     grade: "11",
     bio: "Estudiante de 11° grado",
     interests: ["deportes", "tecnología"],
+    passwordHash: defaultPasswordHash,
   }).returning().then(r => r[0]);
 
   const student2 = await db.insert(users).values({
@@ -74,6 +81,7 @@ async function seed() {
     grade: "10",
     bio: "Estudiante de 10° grado",
     interests: ["arte", "música"],
+    passwordHash: defaultPasswordHash,
   }).returning().then(r => r[0]);
 
   const student3 = await db.insert(users).values({
@@ -86,6 +94,7 @@ async function seed() {
     grade: "9",
     bio: "Estudiante de 9° grado",
     interests: ["ciencias", "robótica"],
+    passwordHash: defaultPasswordHash,
   }).returning().then(r => r[0]);
 
   console.log("✅ Usuarios creados");

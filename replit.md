@@ -275,11 +275,22 @@ Preferred communication style: Simple, everyday language.
 
 ## Testing the Badge System
 
+### Credenciales de Prueba (Default Password: "1234")
+- **Admin**: Admin System / admin@gmail.com / 1234
+- **Teacher**: Profesor Garcia / teacher@gmail.com / 1234 (teacher code: 1234)
+- **Student 1**: Juan Pérez / student1@gmail.com / 1234
+- **Student 2**: María López / student2@gmail.com / 1234
+- **Student 3**: Carlos Rodríguez / student3@gmail.com / 1234
+
+### Login por Nombre y Apellido:
+- Nombre: juan, Apellido: pérez, Contraseña: 1234
+
+### Testing Steps
 1. **Start the app**: `npm run dev`
-2. **Login**: Navigate to `/login` with teacher/admin credentials
+2. **Login**: Navigate to `/login` using credentials above (por Email o Por Nombre)
 3. **View Profiles**: Click on any student name in posts/comments
-4. **Assign Badges**: Click "Asignar Insignia" button in profile
-5. **See Badges**: Hover over badge icons to see descriptions
+4. **Assign Badges**: Click "Asignar Insignia" button (teacher/admin only)
+5. **See Badges**: Should see all 23 badges in selector, hover to see descriptions
 6. **Verify Database**: Check `badges` and `user_badges` tables in DB
 
 ## Development Notes
