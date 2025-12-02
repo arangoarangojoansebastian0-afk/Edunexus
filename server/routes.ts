@@ -1083,10 +1083,6 @@ export async function registerRoutes(
       }
       const userId = req.params.userId;
       const badgeId = req.params.badgeId;
-      const hasAlready = await storage.hasBadge(userId, badgeId);
-      if (hasAlready) {
-        return res.status(400).json({ message: "User already has this badge" });
-      }
       const userBadge = await storage.assignBadgeToUser(userId, badgeId);
       res.status(201).json(userBadge);
     } catch (error) {
