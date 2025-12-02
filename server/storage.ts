@@ -1072,19 +1072,28 @@ export class DatabaseStorage implements IStorage {
   }
 
   async assignBadgeToUser(userId: string, badgeId: string): Promise<UserBadge> {
-    const [created] = await db
-      .insert(userBadges)
-      .values({ userId, badgeId, id: randomUUID() })
-      .returning();
-    return created;
-  }
-
-  async hasBadge(userId: string, badgeId: string): Promise<boolean> {
+    // Check if user already has this badge
     const [existing] = await db
       .select()
       .from(userBadges)
       .where(and(eq(userBadges.userId, userId), eq(userBadges.badgeId, badgeId)));
-    return !!existing;
+    
+    if (existing) {
+      // Increment level
+      const [updated] = await db
+        .update(userBadges)
+        .set({ level: existing.level + 1 })
+        .where(eq(userBadges.id, existing.id))
+        .returning();
+      return updated;
+    }
+    
+    // Create new badge assignment with level 1
+    const [created] = await db
+      .insert(userBadges)
+      .values({ userId, badgeId, level: 1, id: randomUUID() })
+      .returning();
+    return created;
   }
 }
 
