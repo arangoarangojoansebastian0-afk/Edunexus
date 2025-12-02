@@ -19,6 +19,11 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -124,6 +129,36 @@ export default function Profile() {
   const { data: badges, refetch: refetchBadges } = useQuery<(UserBadge & { badge: BadgeType })[]>({
     queryKey: ["/api/users", profileUserId, "badges"],
     enabled: !!profileUserId,
+  });
+
+  const { data: allBadges } = useQuery<BadgeType[]>({
+    queryKey: ["/api/badges"],
+    enabled: !!authUser && (authUser.role === "teacher" || authUser.role === "admin"),
+  });
+
+  const [isAssignBadgeOpen, setIsAssignBadgeOpen] = useState(false);
+  const [selectedBadgeId, setSelectedBadgeId] = useState("");
+
+  const assignBadgeMutation = useMutation({
+    mutationFn: async (badgeId: string) => {
+      await apiRequest("POST", `/api/users/${profileUserId}/badges/${badgeId}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users", profileUserId, "badges"] });
+      setIsAssignBadgeOpen(false);
+      setSelectedBadgeId("");
+      toast({
+        title: "Insignia asignada",
+        description: "La insignia ha sido asignada al estudiante.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "No se pudo asignar la insignia.",
+        variant: "destructive",
+      });
+    },
   });
 
   const updateProfileMutation = useMutation({
@@ -391,41 +426,94 @@ export default function Profile() {
           </Card>
 
           {/* Badges */}
-          {badges && badges.length > 0 && (
+          {(badges && badges.length > 0) || (!isOwnProfile && authUser && (authUser.role === "teacher" || authUser.role === "admin") && displayUser?.role === "student") ? (
             <Card>
-              <CardHeader className="pb-3">
+              <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
                 <CardTitle className="text-base flex items-center gap-2">
                   <Award className="h-4 w-4" />
                   Insignias
                 </CardTitle>
+                {!isOwnProfile && authUser && (authUser.role === "teacher" || authUser.role === "admin") && displayUser?.role === "student" && (
+                  <Dialog open={isAssignBadgeOpen} onOpenChange={setIsAssignBadgeOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm" variant="outline" data-testid="button-assign-badge">
+                        Asignar Insignia
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Asignar Insignia</DialogTitle>
+                        <DialogDescription>
+                          Selecciona una insignia para asignarla a este estudiante.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <Select value={selectedBadgeId} onValueChange={setSelectedBadgeId}>
+                          <SelectTrigger data-testid="select-badge">
+                            <SelectValue placeholder="Elige una insignia..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {allBadges?.map((b) => (
+                              <SelectItem key={b.id} value={b.id}>
+                                {b.name} - {b.description}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <DialogFooter>
+                        <Button
+                          variant="outline"
+                          onClick={() => setIsAssignBadgeOpen(false)}
+                          data-testid="button-cancel-assign"
+                        >
+                          Cancelar
+                        </Button>
+                        <Button
+                          onClick={() => selectedBadgeId && assignBadgeMutation.mutate(selectedBadgeId)}
+                          disabled={!selectedBadgeId || assignBadgeMutation.isPending}
+                          data-testid="button-confirm-assign"
+                        >
+                          Asignar
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                )}
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-3">
-                  {badges.map((ub) => (
-                    <div
-                      key={ub.id}
-                      className="flex items-center gap-2 p-2 rounded-lg bg-muted/50"
-                      title={ub.badge.description || ""}
-                    >
-                      {ub.badge.iconUrl ? (
-                        <img
-                          src={ub.badge.iconUrl}
-                          alt={ub.badge.name}
-                          className="h-8 w-8"
-                        />
-                      ) : (
-                        <Award
-                          className="h-8 w-8"
-                          style={{ color: ub.badge.color || undefined }}
-                        />
-                      )}
-                      <span className="text-sm font-medium">{ub.badge.name}</span>
-                    </div>
+                  {badges?.map((ub) => (
+                    <Tooltip key={ub.id}>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 cursor-help hover-elevate">
+                          {ub.badge.iconUrl ? (
+                            <img
+                              src={ub.badge.iconUrl}
+                              alt={ub.badge.name}
+                              className="h-8 w-8"
+                            />
+                          ) : (
+                            <Award
+                              className="h-8 w-8"
+                              style={{ color: ub.badge.color || undefined }}
+                            />
+                          )}
+                          <span className="text-sm font-medium">{ub.badge.name}</span>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{ub.badge.description || "Sin descripción"}</p>
+                      </TooltipContent>
+                    </Tooltip>
                   ))}
                 </div>
+                {!badges || badges.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Sin insignias aún</p>
+                ) : null}
               </CardContent>
             </Card>
-          )}
+          ) : null}
 
           {/* Content Tabs */}
           <Tabs defaultValue="posts">
