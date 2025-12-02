@@ -90,7 +90,7 @@ async function seed() {
 
   console.log("✅ Usuarios creados");
 
-  // Create badges
+  // Create badges - Academic, Sports, Arts, Leadership, Interactions
   const badgeIntellect = await db.insert(badges).values({
     id: "badge-1",
     name: "Intelectual",
@@ -105,7 +105,160 @@ async function seed() {
     icon: "🤝",
   }).returning().then(r => r[0]);
 
-  console.log("✅ Badges creados");
+  // Academic Badges
+  const badgeMathGenius = await db.insert(badges).values({
+    id: "badge-math",
+    name: "Genio Matemático",
+    description: "Dominas las matemáticas y ayudas a otros en la materia",
+    icon: "🔢",
+  }).returning().then(r => r[0]);
+
+  const badgeScienceExplorer = await db.insert(badges).values({
+    id: "badge-science",
+    name: "Explorador Científico",
+    description: "Destacado en ciencias naturales y experimentación",
+    icon: "🔬",
+  }).returning().then(r => r[0]);
+
+  const badgeLiteraryMaster = await db.insert(badges).values({
+    id: "badge-literature",
+    name: "Maestro Literario",
+    description: "Excelente en literatura, lectura y escritura",
+    icon: "📚",
+  }).returning().then(r => r[0]);
+
+  const badgeHistorian = await db.insert(badges).values({
+    id: "badge-history",
+    name: "Historiador",
+    description: "Apasionado por la historia y las culturas",
+    icon: "🏛️",
+  }).returning().then(r => r[0]);
+
+  const badgeProgrammer = await db.insert(badges).values({
+    id: "badge-programmer",
+    name: "Programador Hacker",
+    description: "Experto en programación e informática",
+    icon: "💻",
+  }).returning().then(r => r[0]);
+
+  // Sports Badges
+  const badgeAthlete = await db.insert(badges).values({
+    id: "badge-athlete",
+    name: "Atleta Dedicado",
+    description: "Participante activo en deportes y entrenamientos",
+    icon: "🏆",
+  }).returning().then(r => r[0]);
+
+  const badgeChampion = await db.insert(badges).values({
+    id: "badge-champion",
+    name: "Campeón Deportivo",
+    description: "Ganaste competencias deportivas dentro o fuera del colegio",
+    icon: "🥇",
+  }).returning().then(r => r[0]);
+
+  // Arts Badges
+  const badgeArtist = await db.insert(badges).values({
+    id: "badge-artist",
+    name: "Artista Creativo",
+    description: "Talento destacado en artes visuales",
+    icon: "🎨",
+  }).returning().then(r => r[0]);
+
+  const badgeMusician = await db.insert(badges).values({
+    id: "badge-musician",
+    name: "Músico Talentoso",
+    description: "Experto en música e instrumentos",
+    icon: "🎵",
+  }).returning().then(r => r[0]);
+
+  const badgePerformer = await db.insert(badges).values({
+    id: "badge-performer",
+    name: "Actor Destacado",
+    description: "Participaste en presentaciones teatrales o eventos",
+    icon: "🎭",
+  }).returning().then(r => r[0]);
+
+  // Leadership Badges
+  const badgeLeader = await db.insert(badges).values({
+    id: "badge-leader",
+    name: "Líder Natural",
+    description: "Asumiste roles de liderazgo en proyectos y grupos",
+    icon: "👑",
+  }).returning().then(r => r[0]);
+
+  const badgeMentor = await db.insert(badges).values({
+    id: "badge-mentor",
+    name: "Mentor",
+    description: "Ayudas y enseñas a tus compañeros regularmente",
+    icon: "🧑‍🏫",
+  }).returning().then(r => r[0]);
+
+  const badgeOrganizer = await db.insert(badges).values({
+    id: "badge-organizer",
+    name: "Organizador",
+    description: "Planeaste y coordinaste eventos o actividades",
+    icon: "📋",
+  }).returning().then(r => r[0]);
+
+  // Interaction & Community Badges
+  const badgeSocialButterfly = await db.insert(badges).values({
+    id: "badge-social",
+    name: "Mariposa Social",
+    description: "Eres muy activo en la comunidad y conectas con muchos",
+    icon: "🦋",
+  }).returning().then(r => r[0]);
+
+  const badgeHelpingHand = await db.insert(badges).values({
+    id: "badge-helper",
+    name: "Mano Amiga",
+    description: "Siempre ayudas a quienes lo necesitan",
+    icon: "🤲",
+  }).returning().then(r => r[0]);
+
+  // Special Achievement Badges
+  const badgeRising = await db.insert(badges).values({
+    id: "badge-rising",
+    name: "Estrella en Ascenso",
+    description: "Tu desempeño mejoró notablemente durante el año",
+    icon: "⭐",
+  }).returning().then(r => r[0]);
+
+  const badgeExceptional = await db.insert(badges).values({
+    id: "badge-exceptional",
+    name: "Estudiante Excepcional",
+    description: "Desempeño académico y conductual excepcional",
+    icon: "✨",
+  }).returning().then(r => r[0]);
+
+  const badgeRobot = await db.insert(badges).values({
+    id: "badge-robot",
+    name: "Experto en Robótica",
+    description: "Destacado en robótica e ingeniería",
+    icon: "🤖",
+  }).returning().then(r => r[0]);
+
+  const badgeEnvironment = await db.insert(badges).values({
+    id: "badge-environment",
+    name: "Guardián del Ambiente",
+    description: "Promotor de sostenibilidad y cuidado del medio ambiente",
+    icon: "🌱",
+  }).returning().then(r => r[0]);
+
+  const badgeDebater = await db.insert(badges).values({
+    id: "badge-debater",
+    name: "Debatidor Perspicaz",
+    description: "Excelente en debate y argumentación",
+    icon: "💬",
+  }).returning().then(r => r[0]);
+
+  const badgeDreamTeam = await db.insert(badges).values({
+    id: "badge-dreamteam",
+    name: "Equipo de Ensueño",
+    description: "Trabajaste excepcionalmente bien en equipo",
+    icon: "👥",
+  }).returning().then(r => r[0]);
+
+  console.log("✅ Badges creados (25 insignias)");
 
   // Create groups
   const courseGroup = await db.insert(groups).values({
@@ -299,11 +452,21 @@ async function seed() {
 
   console.log("✅ Participantes de eventos agregados");
 
-  // Assign badges
+  // Assign badges to students
   await db.insert(userBadges).values([
     { id: "ub-1", userId: student1.id, badgeId: badgeIntellect.id },
     { id: "ub-2", userId: student1.id, badgeId: badgeCollab.id },
-    { id: "ub-3", userId: student2.id, badgeId: badgeCollab.id },
+    { id: "ub-3", userId: student1.id, badgeId: badgeProgrammer.id },
+    { id: "ub-4", userId: student1.id, badgeId: badgeAthlete.id },
+    { id: "ub-5", userId: student1.id, badgeId: badgeLeader.id },
+    { id: "ub-6", userId: student2.id, badgeId: badgeCollab.id },
+    { id: "ub-7", userId: student2.id, badgeId: badgeArtist.id },
+    { id: "ub-8", userId: student2.id, badgeId: badgeMusician.id },
+    { id: "ub-9", userId: student2.id, badgeId: badgeSocialButterfly.id },
+    { id: "ub-10", userId: student3.id, badgeId: badgeScienceExplorer.id },
+    { id: "ub-11", userId: student3.id, badgeId: badgeChampion.id },
+    { id: "ub-12", userId: student3.id, badgeId: badgeRobot.id },
+    { id: "ub-13", userId: student3.id, badgeId: badgeMentor.id },
   ]);
 
   console.log("✅ Badges asignados a usuarios");
