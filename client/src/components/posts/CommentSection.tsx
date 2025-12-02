@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -74,26 +75,28 @@ export function CommentSection({ postId, currentUserId }: CommentSectionProps) {
         <div className="space-y-3">
           {comments.map((comment) => (
             <Card key={comment.id} className="p-3">
-              <div className="flex gap-3">
-                <Avatar className="h-8 w-8 flex-shrink-0">
-                  <AvatarImage
-                    src={comment.author?.profileImageUrl || undefined}
-                    alt={getFullName(comment.author?.firstName, comment.author?.lastName)}
-                  />
-                  <AvatarFallback className="text-xs bg-primary text-primary-foreground">
-                    {getInitials(comment.author?.firstName, comment.author?.lastName)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">
-                    {getFullName(comment.author?.firstName, comment.author?.lastName)}
-                  </p>
+              <Link href={`/profile/${comment.authorId}`}>
+                <div className="flex gap-3 hover-elevate cursor-pointer">
+                  <Avatar className="h-8 w-8 flex-shrink-0">
+                    <AvatarImage
+                      src={comment.author?.profileImageUrl || undefined}
+                      alt={getFullName(comment.author?.firstName, comment.author?.lastName)}
+                    />
+                    <AvatarFallback className="text-xs bg-primary text-primary-foreground">
+                      {getInitials(comment.author?.firstName, comment.author?.lastName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">
+                      {getFullName(comment.author?.firstName, comment.author?.lastName)}
+                    </p>
                   <p className="text-xs text-muted-foreground">
                     {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true, locale: es })}
                   </p>
-                  <p className="text-sm mt-1 whitespace-pre-wrap">{comment.content}</p>
+                    <p className="text-sm mt-1 whitespace-pre-wrap">{comment.content}</p>
+                  </div>
                 </div>
-              </div>
+              </Link>
             </Card>
           ))}
         </div>

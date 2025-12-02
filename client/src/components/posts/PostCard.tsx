@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -77,20 +78,21 @@ export function PostCard({
   return (
     <Card className="hover-elevate" data-testid={`post-card-${post.id}`}>
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0 pb-3">
-        <div className="flex items-start gap-3">
-          <Avatar className="h-10 w-10">
-            <AvatarImage
-              src={post.author.profileImageUrl || undefined}
-              alt={authorName}
-              className="object-cover"
-            />
-            <AvatarFallback className="bg-primary text-primary-foreground text-sm">
-              {authorInitials}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex flex-col min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-medium text-sm">{authorName}</span>
+        <Link href={`/profile/${post.authorId}`}>
+          <div className="flex items-start gap-3 hover-elevate cursor-pointer">
+            <Avatar className="h-10 w-10">
+              <AvatarImage
+                src={post.author.profileImageUrl || undefined}
+                alt={authorName}
+                className="object-cover"
+              />
+              <AvatarFallback className="bg-primary text-primary-foreground text-sm">
+                {authorInitials}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium text-sm">{authorName}</span>
               {post.author.role !== "student" && (
                 <Badge variant="secondary" className="text-xs">
                   {formatRole(post.author.role)}
@@ -102,10 +104,11 @@ export function PostCard({
                   Fijado
                 </Badge>
               )}
+              </div>
+              <span className="text-xs text-muted-foreground">{timeAgo}</span>
             </div>
-            <span className="text-xs text-muted-foreground">{timeAgo}</span>
           </div>
-        </div>
+        </Link>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="h-8 w-8" data-testid="button-post-menu">
