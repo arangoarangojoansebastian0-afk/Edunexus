@@ -308,7 +308,6 @@ export const userBadges = pgTable(
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
     userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
     badgeId: varchar("badge_id").references(() => badges.id, { onDelete: "cascade" }).notNull(),
-    level: integer("level").default(1).notNull(),
     earnedAt: timestamp("earned_at").defaultNow().notNull(),
   },
   (table) => [
