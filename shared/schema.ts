@@ -963,7 +963,9 @@ export const insertCourseEnrollmentSchema = createInsertSchema(courseEnrollments
   enrolledAt: true,
 });
 
-export const insertActivitySchema = createInsertSchema(activities).omit({
+export const insertActivitySchema = createInsertSchema(activities, {
+  dueDate: z.string().transform(val => val ? new Date(val) : null).optional().nullable(),
+}).omit({
   id: true,
   createdAt: true,
   updatedAt: true,

@@ -1,0 +1,27 @@
+
+> rest-express@1.0.0 dev
+> NODE_ENV=development tsx server/index.ts
+
+[1G[0K(node:1777) Warning: SECURITY WARNING: The SSL modes 'prefer', 'require', and 'verify-ca' are treated as aliases for 'verify-full'.
+In the next major version (pg-connection-string v3.0.0 and pg v9.0.0), these modes will adopt standard libpq semantics, which have weaker security guarantees.
+
+To prepare for this change:
+- If you want the current behavior, explicitly use 'sslmode=verify-full'
+- If you want libpq compatibility now, use 'uselibpqcompat=true&sslmode=require'
+
+See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode definitions.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[migrate] Cannot connect to DB (will retry on next request): password authentication failed for user 'neondb_owner'
+1:16:33 AM [express] serving on port 5000
+Browserslist: browsers data (caniuse-lite) is 8 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+A PostCSS plugin did not pass the `from` option to `postcss.parse`. This may cause imported assets to be incorrectly transformed. If you've recently added a PostCSS plugin that raised this warning, please contact the package author to fix the issue.
+1:16:36 AM [express] GET /api/auth/user 401 in 2ms :: {"error":"Not authenticated"}
+1:16:44 AM [express] GET /api/auth/user 401 in 0ms :: {"error":"Not authenticated"}
+1:16:55 AM [express] GET /api/auth/user 401 in 1ms :: {"error":"Not authenticated"}
+1:19:08 AM [express] GET /api/auth/user 401 in 0ms :: {"error":"Not authenticated"}
+1:19:15 AM [express] GET /api/auth/user 401 in 1ms :: {"error":"Not authenticated"}
+1:19:17 AM [express] GET /api/auth/user 401 in 1ms :: {"error":"Not authenticated"}
+1:19:33 AM [express] POST /api/auth/register 400 in 423ms :: {"error":"password authentication failed for user 'neondb_owner'"}

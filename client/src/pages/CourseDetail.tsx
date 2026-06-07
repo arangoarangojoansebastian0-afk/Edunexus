@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -24,11 +24,27 @@ import { getFullName, getInitials } from "@/lib/authUtils";
 import {
   ArrowLeft, Plus, ClipboardList, Users, BarChart3, CalendarCheck,
   Loader2, Send, BookOpen, GraduationCap, Clock, CheckCircle2,
-  AlertCircle, FileText, Award, UserCheck,
+  AlertCircle, FileText, Award, UserCheck, Paperclip, X, Download,
 } from "lucide-react";
 import { format, isPast } from "date-fns";
 import { es } from "date-fns/locale";
 import type { CourseWithTeacher, Activity, SubmissionWithStudent, AttendanceWithStudent } from "@shared/schema";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function FileChip({ name, onRemove }: { name: string; onRemove?: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted text-xs font-medium max-w-xs">
+      <Paperclip className="h-3 w-3 shrink-0" />
+      <span className="truncate">{name}</span>
+      {onRemove && (
+        <button type="button" onClick={onRemove} className="shrink-0 hover:text-destructive">
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </span>
+  );
+}
 
 // ─── Create Activity ──────────────────────────────────────────────────────────
 
@@ -59,6 +75,9 @@ function CreateActivityDialog({
   onClose: () => void;
 }) {
   const { toast } = useToast();
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
+
   const form = useForm<CreateActivityForm>({
     resolver: zodResolver(createActivitySchema),
     defaultValues: {
@@ -72,19 +91,38 @@ function CreateActivityDialog({
   });
 
   const mutation = useMutation({
-    mutationFn: (data: CreateActivityForm) =>
-      apiRequest("POST", `/api/classroom/courses/${courseId}/activities`, {
-        ...data,
-        dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : null,
-      }),
+    mutationFn: async (data: CreateActivityForm) => {
+      const formData = new FormData();
+      formData.append("title", data.title);
+      formData.append("type", data.type);
+      formData.append("maxScore", String(data.maxScore));
+      formData.append("isPublished", String(data.isPublished));
+      if (data.description) formData.append("description", data.description);
+      if (data.dueDate) formData.append("dueDate", new Date(data.dueDate).toISOString());
+      attachments.forEach((f) => formData.append("attachments", f));
+
+      const res = await fetch(`/api/classroom/courses/${courseId}/activities`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (!res.ok) throw new Error("Error al crear");
+      return res.json();
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/classroom/courses", courseId, "activities"] });
       toast({ title: "Actividad creada" });
       form.reset();
+      setAttachments([]);
       onClose();
     },
     onError: () => toast({ title: "Error al crear actividad", variant: "destructive" }),
   });
+
+  const addFiles = (files: FileList | null) => {
+    if (!files) return;
+    setAttachments((prev) => [...prev, ...Array.from(files)]);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -160,6 +198,42 @@ function CreateActivityDialog({
                 </FormItem>
               )}
             />
+
+            {/* Attachments */}
+            <div>
+              <FormLabel>Archivos adjuntos (opcional)</FormLabel>
+              <div className="mt-1.5 space-y-2">
+                {attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {attachments.map((f, i) => (
+                      <FileChip
+                        key={i}
+                        name={f.name}
+                        onRemove={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                      />
+                    ))}
+                  </div>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <Paperclip className="h-3.5 w-3.5 mr-1.5" />
+                  Adjuntar archivos
+                </Button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                  onChange={(e) => addFiles(e.target.files)}
+                />
+              </div>
+            </div>
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
               <Button type="submit" disabled={mutation.isPending}>
@@ -187,18 +261,37 @@ function SubmitDialog({
 }) {
   const { toast } = useToast();
   const [content, setContent] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const mutation = useMutation({
-    mutationFn: () =>
-      apiRequest("POST", `/api/classroom/activities/${activity!.id}/submit`, { content }),
+    mutationFn: async () => {
+      const formData = new FormData();
+      formData.append("content", content);
+      files.forEach((f) => formData.append("attachments", f));
+
+      const res = await fetch(`/api/classroom/activities/${activity!.id}/submit`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (!res.ok) throw new Error("Error al entregar");
+      return res.json();
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/classroom/activities", activity!.id, "submissions"] });
       toast({ title: "Entrega realizada correctamente" });
       setContent("");
+      setFiles([]);
       onClose();
     },
     onError: () => toast({ title: "Error al entregar", variant: "destructive" }),
   });
+
+  const addFiles = (fl: FileList | null) => {
+    if (!fl) return;
+    setFiles((prev) => [...prev, ...Array.from(fl)]);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -207,19 +300,73 @@ function SubmitDialog({
           <DialogTitle>Entregar: {activity?.title}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
+          {/* Show activity attachments if any */}
+          {activity?.attachments && activity.attachments.length > 0 && (
+            <div className="rounded-md bg-muted/50 p-3">
+              <p className="text-xs font-medium text-muted-foreground mb-1.5">Archivos del docente:</p>
+              <div className="flex flex-wrap gap-1.5">
+                {activity.attachments.map((url, i) => (
+                  <a
+                    key={i}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-background border text-xs hover:bg-muted"
+                  >
+                    <Download className="h-3 w-3" />
+                    Archivo {i + 1}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
           <Textarea
             placeholder="Escribe tu respuesta aquí..."
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            rows={6}
+            rows={5}
             className="resize-none"
           />
+
+          {/* Student file attachments */}
+          <div>
+            <p className="text-xs font-medium mb-1.5">Adjuntar archivos (opcional)</p>
+            {files.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {files.map((f, i) => (
+                  <FileChip
+                    key={i}
+                    name={f.name}
+                    onRemove={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
+                  />
+                ))}
+              </div>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => fileRef.current?.click()}
+            >
+              <Paperclip className="h-3.5 w-3.5 mr-1.5" />
+              Adjuntar
+            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              className="hidden"
+              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+              onChange={(e) => addFiles(e.target.files)}
+            />
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || !content.trim()}
+            disabled={mutation.isPending || (!content.trim() && files.length === 0)}
           >
             {mutation.isPending ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -280,6 +427,28 @@ function GradeDialog({
               <p className="whitespace-pre-wrap">{submission.content}</p>
             </div>
           )}
+
+          {/* Student attachments */}
+          {submission?.attachments && submission.attachments.length > 0 && (
+            <div className="rounded-md bg-muted/50 p-3">
+              <p className="text-xs font-medium text-muted-foreground mb-1.5">Archivos entregados:</p>
+              <div className="flex flex-wrap gap-1.5">
+                {submission.attachments.map((url, i) => (
+                  <a
+                    key={i}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-background border text-xs hover:bg-muted"
+                  >
+                    <Download className="h-3 w-3" />
+                    Archivo {i + 1}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-3 items-end">
             <div className="flex-1">
               <label className="text-sm font-medium">Nota (máx. {maxScore})</label>
@@ -331,6 +500,7 @@ function AttendanceTab({
   const { toast } = useToast();
   const today = new Date().toISOString().split("T")[0];
   const [selectedDate, setSelectedDate] = useState(today);
+  const [selectedTime, setSelectedTime] = useState("07:00");
   const [attendanceMap, setAttendanceMap] = useState<Record<string, string>>({});
 
   const { data: records } = useQuery<AttendanceWithStudent[]>({
@@ -347,15 +517,23 @@ function AttendanceTab({
         records: Object.entries(attendanceMap).map(([studentId, status]) => ({
           studentId,
           status,
-          date: new Date(selectedDate).toISOString(),
+          date: new Date(`${selectedDate}T${selectedTime}:00`).toISOString(),
         })),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/classroom/courses", courseId, "attendance"] });
+      setAttendanceMap({});
       toast({ title: "Asistencia guardada" });
     },
     onError: () => toast({ title: "Error al guardar asistencia", variant: "destructive" }),
   });
+
+  // Mark all present shortcut
+  const markAllPresent = () => {
+    const all: Record<string, string> = {};
+    students.forEach(({ student }) => { all[student.id] = "present"; });
+    setAttendanceMap(all);
+  };
 
   const statusColor: Record<string, string> = {
     present: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
@@ -378,17 +556,37 @@ function AttendanceTab({
 
   return (
     <div className="space-y-4">
+      {/* Controls */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium">Fecha:</label>
           <Input
             type="date"
             value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
+            onChange={(e) => {
+              setSelectedDate(e.target.value);
+              setAttendanceMap({});
+            }}
             className="w-auto"
-            max={today}
           />
         </div>
+        {isTeacher && (
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium">Hora:</label>
+            <Input
+              type="time"
+              value={selectedTime}
+              onChange={(e) => setSelectedTime(e.target.value)}
+              className="w-28"
+            />
+          </div>
+        )}
+        {isTeacher && students.length > 0 && (
+          <Button size="sm" variant="outline" onClick={markAllPresent}>
+            <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+            Todos presentes
+          </Button>
+        )}
         {isTeacher && Object.keys(attendanceMap).length > 0 && (
           <Button size="sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
             {saveMutation.isPending ? (
@@ -400,6 +598,21 @@ function AttendanceTab({
           </Button>
         )}
       </div>
+
+      {/* Summary badges */}
+      {records && records.length > 0 && (
+        <div className="flex gap-2 flex-wrap text-xs">
+          {(["present", "absent", "late", "excused"] as const).map((s) => {
+            const count = records.filter((r) => r.status === s).length;
+            if (count === 0) return null;
+            return (
+              <span key={s} className={`px-2 py-0.5 rounded-full font-medium ${statusColor[s]}`}>
+                {statusLabel[s]}: {count}
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       {students.length === 0 ? (
         <p className="text-sm text-muted-foreground py-8 text-center">
@@ -553,9 +766,7 @@ export default function CourseDetail() {
               <h2 className="text-2xl font-bold">{course.name}</h2>
               <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
                 <GraduationCap className="h-4 w-4" />
-                <span>
-                  {course.teacher.firstName} {course.teacher.lastName}
-                </span>
+                <span>{course.teacher.firstName} {course.teacher.lastName}</span>
                 {course._count && (
                   <>
                     <span>·</span>
@@ -641,6 +852,23 @@ export default function CourseDetail() {
                                 {activity.description}
                               </p>
                             )}
+                            {/* Activity attachments */}
+                            {activity.attachments && activity.attachments.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 mt-2">
+                                {activity.attachments.map((url, i) => (
+                                  <a
+                                    key={i}
+                                    href={url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted text-xs hover:bg-muted/80"
+                                  >
+                                    <Download className="h-3 w-3" />
+                                    Archivo {i + 1}
+                                  </a>
+                                ))}
+                              </div>
+                            )}
                             <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
                               <span className="flex items-center gap-1">
                                 <Award className="h-3.5 w-3.5" />
@@ -666,7 +894,9 @@ export default function CourseDetail() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => {
-                                  setSelectedSubmissions(activity.id);
+                                  setSelectedSubmissions(
+                                    selectedSubmissions === activity.id ? null : activity.id
+                                  );
                                   setGradingActivity(activity);
                                 }}
                                 data-testid={`button-view-submissions-${activity.id}`}
@@ -720,6 +950,22 @@ export default function CourseDetail() {
                                           <p className="text-xs text-muted-foreground">
                                             {format(new Date(sub.submittedAt), "dd MMM, HH:mm", { locale: es })}
                                           </p>
+                                          {sub.attachments && sub.attachments.length > 0 && (
+                                            <div className="flex flex-wrap gap-1 mt-0.5">
+                                              {sub.attachments.map((url, i) => (
+                                                <a
+                                                  key={i}
+                                                  href={url}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  className="inline-flex items-center gap-0.5 text-xs text-primary hover:underline"
+                                                >
+                                                  <Paperclip className="h-3 w-3" />
+                                                  Archivo {i + 1}
+                                                </a>
+                                              ))}
+                                            </div>
+                                          )}
                                         </div>
                                       </div>
                                       <div className="flex items-center gap-2">

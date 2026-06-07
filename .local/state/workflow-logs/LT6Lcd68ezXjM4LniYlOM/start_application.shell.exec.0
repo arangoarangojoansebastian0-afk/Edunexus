@@ -1,0 +1,22 @@
+[1G[0K⠙[1G[0K
+> rest-express@1.0.0 dev
+> NODE_ENV=development tsx server/index.ts
+
+[1G[0K⠙[1G[0K10:21:47 PM [express] serving on port 5000
+Browserslist: browsers data (caniuse-lite) is 8 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+A PostCSS plugin did not pass the `from` option to `postcss.parse`. This may cause imported assets to be incorrectly transformed. If you've recently added a PostCSS plugin that raised this warning, please contact the package author to fix the issue.
+10:21:53 PM [express] GET /api/auth/user 401 in 3ms :: {"error":"Not authenticated"}
+10:21:55 PM [express] GET /api/auth/user 401 in 2ms :: {"error":"Not authenticated"}
+10:21:57 PM [express] GET /api/auth/user 401 in 0ms :: {"error":"Not authenticated"}
+10:22:09 PM [express] GET /api/auth/user 401 in 1ms :: {"error":"Not authenticated"}
+10:22:11 PM [express] POST /api/auth/login 401 in 229ms :: {"error":"password authentication failed for user 'neondb_owner'"}
+10:22:41 PM [express] GET /api/auth/user 401 in 1ms :: {"error":"Not authenticated"}
+10:22:48 PM [express] POST /api/auth/login 401 in 2ms :: {"error":"Invalid email or password"}
+10:22:55 PM [express] POST /api/auth/login 401 in 185ms :: {"error":"password authentication failed for user 'neondb_owner'"}
+10:23:04 PM [express] POST /api/auth/login 401 in 165ms :: {"error":"password authentication failed for user 'neondb_owner'"}
+10:23:25 PM [express] POST /api/auth/register 400 in 277ms :: {"error":"password authentication failed for user 'neondb_owner'"}
+10:23:36 PM [express] GET /api/auth/user 401 in 1ms :: {"error":"Not authenticated"}
+10:25:47 PM [express] GET /api/auth/user 401 in 0ms :: {"error":"Not authenticated"}

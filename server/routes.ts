@@ -1264,21 +1264,30 @@ export async function registerRoutes(
   });
 
   // POST /api/classroom/courses/:id/activities — create activity
-  app.post("/api/classroom/courses/:id/activities", requireAuth, async (req, res) => {
-    try {
-      const user = req.user!;
-      if (user.role !== "teacher" && user.role !== "admin") {
-        return res.status(403).json({ message: "Only teachers can create activities" });
-      }
-      const data = insertActivitySchema.parse({ ...req.body, courseId: req.params.id });
-      const activity = await storage.createActivity(data);
-      res.status(201).json(activity);
-    } catch (err) {
-      console.error("Error creating activity:", err);
-      res.status(500).json({ message: "Failed to create activity" });
+  app.post("/api/classroom/courses/:id/activities", requireAuth, upload.array("attachments", 5), async (req, res) => {
+  try {
+    const user = req.user!;
+    if (user.role !== "teacher" && user.role !== "admin") {
+      return res.status(403).json({ message: "Only teachers can create activities" });
     }
-  });
-
+    const files = (req.files as Express.Multer.File[]) || [];
+    const attachmentUrls = files.map((f) => `/uploads/${f.filename}`);
+    const body = {
+      ...req.body,
+      courseId: req.params.id,
+      dueDate: req.body.dueDate || null,
+      maxScore: req.body.maxScore ? Number(req.body.maxScore) : 100,
+      isPublished: req.body.isPublished === "true" || req.body.isPublished === true,
+      attachments: attachmentUrls,
+    };
+    const data = insertActivitySchema.parse(body);
+    const activity = await storage.createActivity(data);
+    res.status(201).json(activity);
+  } catch (err) {
+    console.error("Error creating activity:", err);
+    res.status(500).json({ message: "Failed to create activity" });
+  }
+});
   // PUT /api/classroom/activities/:id — update activity
   app.put("/api/classroom/activities/:id", requireAuth, async (req, res) => {
     try {
@@ -1310,21 +1319,24 @@ export async function registerRoutes(
   });
 
   // POST /api/classroom/activities/:id/submit — submit an activity
-  app.post("/api/classroom/activities/:id/submit", requireAuth, async (req, res) => {
-    try {
-      const data = insertSubmissionSchema.parse({
-        ...req.body,
-        activityId: req.params.id,
-        studentId: req.user!.id,
-        status: "submitted",
-      });
-      const submission = await storage.createSubmission(data);
-      res.status(201).json(submission);
-    } catch (err) {
-      console.error("Error submitting:", err);
-      res.status(500).json({ message: "Failed to submit" });
-    }
-  });
+ app.post("/api/classroom/activities/:id/submit", requireAuth, upload.array("attachments", 5), async (req, res) => {
+  try {
+    const files = (req.files as Express.Multer.File[]) || [];
+    const attachmentUrls = files.map((f) => `/uploads/${f.filename}`);
+    const data = insertSubmissionSchema.parse({
+      ...req.body,
+      activityId: req.params.id,
+      studentId: req.user!.id,
+      status: "submitted",
+      attachments: attachmentUrls,
+    });
+    const submission = await storage.createSubmission(data);
+    res.status(201).json(submission);
+  } catch (err) {
+    console.error("Error submitting:", err);
+    res.status(500).json({ message: "Failed to submit" });
+  }
+});
 
   // GET /api/classroom/activities/:id/submissions — all submissions for an activity (teacher)
   app.get("/api/classroom/activities/:id/submissions", requireAuth, async (req, res) => {
