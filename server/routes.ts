@@ -33,19 +33,7 @@ interface Request extends ExpressRequest {
 }
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => {
-      const uploadDir = path.join(process.cwd(), "uploads");
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-      }
-      cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-      const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-      cb(null, uniqueSuffix + "-" + file.originalname);
-    },
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowedTypes = [".pdf", ".docx", ".doc", ".jpg", ".jpeg", ".png"];
@@ -1274,7 +1262,9 @@ app.use(
       return res.status(403).json({ message: "Only teachers can create activities" });
     }
     const files = (req.files as Express.Multer.File[]) || [];
-    const attachmentUrls = files.map((f) => `/uploads/${f.filename}`);
+const attachmentUrls = await Promise.all(
+  files.map((f) => uploadToSupabase(f, "activities"))
+);
     const body = {
       ...req.body,
       courseId: req.params.id,
@@ -1325,7 +1315,9 @@ app.use(
  app.post("/api/classroom/activities/:id/submit", requireAuth, upload.array("attachments", 5), async (req, res) => {
   try {
     const files = (req.files as Express.Multer.File[]) || [];
-    const attachmentUrls = files.map((f) => `/uploads/${f.filename}`);
+const attachmentUrls = await Promise.all(
+  files.map((f) => uploadToSupabase(f, "submissions"))
+);
     const data = insertSubmissionSchema.parse({
       ...req.body,
       activityId: req.params.id,
