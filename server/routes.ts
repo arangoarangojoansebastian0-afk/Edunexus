@@ -67,6 +67,27 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+import { supabase } from "./supabase";
+
+const uploadToSupabase = async (file: Express.Multer.File, folder: string): Promise<string> => {
+  const fileName = `${folder}/${Date.now()}-${file.originalname.replace(/\s/g, "_")}`;
+  const { data, error } = await supabase.storage
+    .from("loyola-files")
+    .upload(fileName, file.buffer, {
+      contentType: file.mimetype,
+      upsert: false,
+    });
+
+  if (error) throw new Error(error.message);
+
+  const { data: urlData } = supabase.storage
+    .from("loyola-files")
+    .getPublicUrl(fileName);
+
+  return urlData.publicUrl;
+};
+
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
