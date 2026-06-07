@@ -88,19 +88,22 @@ export async function registerRoutes(
     checkInterval: 86400000,
   });
 
-  app.use(
-    session({
-      secret: process.env.SESSION_SECRET || "dev-secret-key",
-      store: memStore,
-      resave: false,
-      saveUninitialized: false,
-      cookie: {
-        secure: process.env.NODE_ENV === "production",
-        httpOnly: true,
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      },
-    })
-  );
+  app.set("trust proxy", 1);
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "dev-secret-key",
+    store: memStore,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      httpOnly: true,
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    },
+  })
+);
 
   // Middleware to load user from session
   app.use(async (req: Request, res: Response, next: NextFunction) => {
