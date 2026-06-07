@@ -47,21 +47,16 @@ export function FileViewer({ urls, label = "Archivos" }: { urls: string[]; label
       <Dialog open={!!selected} onOpenChange={() => setSelected(null)}>
         <DialogContent className="max-w-4xl h-[85vh] flex flex-col">
           <DialogHeader className="flex-row items-center justify-between shrink-0">
-            <DialogTitle className="truncate text-sm font-medium pr-4">
-              {selected ? getFileName(selected) : ""}
-            </DialogTitle>
-            
-              href={selected || ""}
-              download
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Button variant="outline" size="sm">
-                <Download className="h-4 w-4 mr-1.5" />
-                Descargar
-              </Button>
-            </a>
-          </DialogHeader>
+  <DialogTitle className="truncate text-sm font-medium pr-4">
+    {selected ? getFileName(selected) : ""}
+  </DialogTitle>
+  <a href={selected || "#"} download target="_blank" rel="noopener noreferrer" className="shrink-0">
+    <Button variant="outline" size="sm">
+      <Download className="h-4 w-4 mr-1.5" />
+      Descargar
+    </Button>
+  </a>
+</DialogHeader>
 
           <div className="flex-1 overflow-hidden rounded-md border bg-muted/20">
             {fileType === "image" && (
