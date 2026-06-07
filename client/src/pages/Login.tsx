@@ -39,7 +39,7 @@ export default function Login() {
           title: "Sesión iniciada",
           description: "Bienvenido a Comunidad Loyola",
         });
-        navigate("/");
+        window.location.href = "/";
       } else {
         const data = await res.json();
         toast({
