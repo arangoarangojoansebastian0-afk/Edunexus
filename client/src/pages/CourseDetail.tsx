@@ -1,3 +1,4 @@
+import { FileViewer } from "@/components/FileViewer";
 import { useState, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -853,22 +854,8 @@ export default function CourseDetail() {
                               </p>
                             )}
                             {/* Activity attachments */}
-                            {activity.attachments && activity.attachments.length > 0 && (
-                              <div className="flex flex-wrap gap-1.5 mt-2">
-                                {activity.attachments.map((url, i) => (
-                                  <a
-                                    key={i}
-                                    href={url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted text-xs hover:bg-muted/80"
-                                  >
-                                    <Download className="h-3 w-3" />
-                                    Archivo {i + 1}
-                                  </a>
-                                ))}
-                              </div>
-                            )}
+                            <FileViewer urls={activity.attachments || []} />
+
                             <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
                               <span className="flex items-center gap-1">
                                 <Award className="h-3.5 w-3.5" />
