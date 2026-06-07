@@ -2,7 +2,23 @@ import type { Express, Request as ExpressRequest, Response, NextFunction } from 
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuthRoutes } from "./authRoutes";
-import { insertPostSchema, insertGroupSchema, insertCommentSchema, insertEventSchema, insertReportSchema, insertMessageSchema, insertQuestionSchema, insertAnswerSchema, insertQaVoteSchema, insertNotificationPreferenceSchema } from "@shared/schema";
+import { master2000Provider } from "./providers/master2000";
+import {
+  insertPostSchema,
+  insertGroupSchema,
+  insertCommentSchema,
+  insertEventSchema,
+  insertReportSchema,
+  insertMessageSchema,
+  insertQuestionSchema,
+  insertAnswerSchema,
+  insertQaVoteSchema,
+  insertNotificationPreferenceSchema,
+  insertCourseSchema,
+  insertActivitySchema,
+  insertSubmissionSchema,
+  insertAttendanceSchema,
+} from "@shared/schema";
 import type { User } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
@@ -1106,6 +1122,312 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error converting post to event:", error);
       res.status(500).json({ message: "Failed to convert post" });
+    }
+  });
+
+  // === CLASSROOM ROUTES ===
+
+  // GET /api/classroom/courses — my courses (teacher: created, student: enrolled)
+  app.get("/api/classroom/courses", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      const data =
+        user.role === "teacher" || user.role === "admin"
+          ? await storage.getCoursesByTeacher(user.id)
+          : await storage.getEnrolledCourses(user.id);
+      res.json(data);
+    } catch (err) {
+      console.error("Error getting my courses:", err);
+      res.status(500).json({ message: "Failed to get courses" });
+    }
+  });
+
+  // GET /api/classroom/courses/all — all active courses
+  app.get("/api/classroom/courses/all", requireAuth, async (req, res) => {
+    try {
+      const data = await storage.getAllCourses();
+      res.json(data);
+    } catch (err) {
+      console.error("Error getting all courses:", err);
+      res.status(500).json({ message: "Failed to get courses" });
+    }
+  });
+
+  // GET /api/classroom/courses/:id — single course
+  app.get("/api/classroom/courses/:id", requireAuth, async (req, res) => {
+    try {
+      const course = await storage.getCourse(req.params.id);
+      if (!course) return res.status(404).json({ message: "Course not found" });
+      res.json(course);
+    } catch (err) {
+      console.error("Error getting course:", err);
+      res.status(500).json({ message: "Failed to get course" });
+    }
+  });
+
+  // POST /api/classroom/courses — create course
+  app.post("/api/classroom/courses", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      if (user.role !== "teacher" && user.role !== "admin") {
+        return res.status(403).json({ message: "Only teachers can create courses" });
+      }
+      const data = insertCourseSchema.parse({ ...req.body, teacherId: user.id });
+      const course = await storage.createCourse(data);
+      res.status(201).json(course);
+    } catch (err) {
+      console.error("Error creating course:", err);
+      res.status(500).json({ message: "Failed to create course" });
+    }
+  });
+
+  // PUT /api/classroom/courses/:id — update course
+  app.put("/api/classroom/courses/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      const course = await storage.getCourse(req.params.id);
+      if (!course) return res.status(404).json({ message: "Course not found" });
+      if (course.teacherId !== user.id && user.role !== "admin") {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      const updated = await storage.updateCourse(req.params.id, req.body);
+      res.json(updated);
+    } catch (err) {
+      console.error("Error updating course:", err);
+      res.status(500).json({ message: "Failed to update course" });
+    }
+  });
+
+  // DELETE /api/classroom/courses/:id — delete course
+  app.delete("/api/classroom/courses/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      const course = await storage.getCourse(req.params.id);
+      if (!course) return res.status(404).json({ message: "Course not found" });
+      if (course.teacherId !== user.id && user.role !== "admin") {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      await storage.deleteCourse(req.params.id);
+      res.json({ message: "Course deleted" });
+    } catch (err) {
+      console.error("Error deleting course:", err);
+      res.status(500).json({ message: "Failed to delete course" });
+    }
+  });
+
+  // POST /api/classroom/courses/:id/enroll — enroll current user
+  app.post("/api/classroom/courses/:id/enroll", requireAuth, async (req, res) => {
+    try {
+      const enrollment = await storage.enrollStudent(req.params.id, req.user!.id);
+      res.status(201).json(enrollment);
+    } catch (err) {
+      console.error("Error enrolling:", err);
+      res.status(500).json({ message: "Failed to enroll" });
+    }
+  });
+
+  // DELETE /api/classroom/courses/:id/enroll — unenroll current user
+  app.delete("/api/classroom/courses/:id/enroll", requireAuth, async (req, res) => {
+    try {
+      await storage.unenrollStudent(req.params.id, req.user!.id);
+      res.json({ message: "Unenrolled" });
+    } catch (err) {
+      console.error("Error unenrolling:", err);
+      res.status(500).json({ message: "Failed to unenroll" });
+    }
+  });
+
+  // GET /api/classroom/courses/:id/students — enrolled students
+  app.get("/api/classroom/courses/:id/students", requireAuth, async (req, res) => {
+    try {
+      const enrollments = await storage.getEnrollments(req.params.id);
+      res.json(enrollments);
+    } catch (err) {
+      console.error("Error getting students:", err);
+      res.status(500).json({ message: "Failed to get students" });
+    }
+  });
+
+  // GET /api/classroom/courses/:id/activities — list activities
+  app.get("/api/classroom/courses/:id/activities", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      const course = await storage.getCourse(req.params.id);
+      if (!course) return res.status(404).json({ message: "Course not found" });
+      const publishedOnly = user.role === "student" || course.teacherId !== user.id;
+      const data = await storage.getActivities(req.params.id, publishedOnly);
+      res.json(data);
+    } catch (err) {
+      console.error("Error getting activities:", err);
+      res.status(500).json({ message: "Failed to get activities" });
+    }
+  });
+
+  // POST /api/classroom/courses/:id/activities — create activity
+  app.post("/api/classroom/courses/:id/activities", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      if (user.role !== "teacher" && user.role !== "admin") {
+        return res.status(403).json({ message: "Only teachers can create activities" });
+      }
+      const data = insertActivitySchema.parse({ ...req.body, courseId: req.params.id });
+      const activity = await storage.createActivity(data);
+      res.status(201).json(activity);
+    } catch (err) {
+      console.error("Error creating activity:", err);
+      res.status(500).json({ message: "Failed to create activity" });
+    }
+  });
+
+  // PUT /api/classroom/activities/:id — update activity
+  app.put("/api/classroom/activities/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      if (user.role !== "teacher" && user.role !== "admin") {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      const updated = await storage.updateActivity(req.params.id, req.body);
+      res.json(updated);
+    } catch (err) {
+      console.error("Error updating activity:", err);
+      res.status(500).json({ message: "Failed to update activity" });
+    }
+  });
+
+  // DELETE /api/classroom/activities/:id — delete activity
+  app.delete("/api/classroom/activities/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      if (user.role !== "teacher" && user.role !== "admin") {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      await storage.deleteActivity(req.params.id);
+      res.json({ message: "Activity deleted" });
+    } catch (err) {
+      console.error("Error deleting activity:", err);
+      res.status(500).json({ message: "Failed to delete activity" });
+    }
+  });
+
+  // POST /api/classroom/activities/:id/submit — submit an activity
+  app.post("/api/classroom/activities/:id/submit", requireAuth, async (req, res) => {
+    try {
+      const data = insertSubmissionSchema.parse({
+        ...req.body,
+        activityId: req.params.id,
+        studentId: req.user!.id,
+        status: "submitted",
+      });
+      const submission = await storage.createSubmission(data);
+      res.status(201).json(submission);
+    } catch (err) {
+      console.error("Error submitting:", err);
+      res.status(500).json({ message: "Failed to submit" });
+    }
+  });
+
+  // GET /api/classroom/activities/:id/submissions — all submissions for an activity (teacher)
+  app.get("/api/classroom/activities/:id/submissions", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      if (user.role !== "teacher" && user.role !== "admin") {
+        return res.status(403).json({ message: "Only teachers can view all submissions" });
+      }
+      const data = await storage.getSubmissions(req.params.id);
+      res.json(data);
+    } catch (err) {
+      console.error("Error getting submissions:", err);
+      res.status(500).json({ message: "Failed to get submissions" });
+    }
+  });
+
+  // PATCH /api/classroom/submissions/:id/grade — grade a submission
+  app.patch("/api/classroom/submissions/:id/grade", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      if (user.role !== "teacher" && user.role !== "admin") {
+        return res.status(403).json({ message: "Only teachers can grade submissions" });
+      }
+      const { grade, feedback } = req.body;
+      if (typeof grade !== "number" || grade < 0) {
+        return res.status(400).json({ message: "Valid grade required" });
+      }
+      const graded = await storage.gradeSubmission(
+        req.params.id,
+        grade,
+        feedback || "",
+        user.id
+      );
+      res.json(graded);
+    } catch (err) {
+      console.error("Error grading submission:", err);
+      res.status(500).json({ message: "Failed to grade submission" });
+    }
+  });
+
+  // GET /api/classroom/courses/:id/attendance — attendance records
+  app.get("/api/classroom/courses/:id/attendance", requireAuth, async (req, res) => {
+    try {
+      const date = req.query.date ? new Date(req.query.date as string) : undefined;
+      const data = await storage.getAttendance(req.params.id, date);
+      res.json(data);
+    } catch (err) {
+      console.error("Error getting attendance:", err);
+      res.status(500).json({ message: "Failed to get attendance" });
+    }
+  });
+
+  // POST /api/classroom/courses/:id/attendance — bulk record attendance (teacher)
+  app.post("/api/classroom/courses/:id/attendance", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      if (user.role !== "teacher" && user.role !== "admin") {
+        return res.status(403).json({ message: "Only teachers can record attendance" });
+      }
+      const { records } = req.body;
+      if (!Array.isArray(records)) {
+        return res.status(400).json({ message: "records array required" });
+      }
+      const saved = await Promise.all(
+        records.map((r: { studentId: string; status: string; date: string; notes?: string }) =>
+          storage.recordAttendance({
+            studentId: r.studentId,
+            status: r.status,
+            date: new Date(r.date),
+            courseId: req.params.id,
+            recordedBy: user.id,
+            notes: r.notes || null,
+          })
+        )
+      );
+      res.status(201).json(saved);
+    } catch (err) {
+      console.error("Error recording attendance:", err);
+      res.status(500).json({ message: "Failed to record attendance" });
+    }
+  });
+
+  // === MASTER 2000 ROUTES ===
+
+  // GET /api/admin/master2000/status
+  app.get("/api/admin/master2000/status", requireAuth, requireAdmin, async (req, res) => {
+    res.json({
+      available: master2000Provider.isAvailable(),
+      message: master2000Provider.getStatusMessage(),
+    });
+  });
+
+  // POST /api/admin/master2000/sync
+  app.post("/api/admin/master2000/sync", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      if (!master2000Provider.isAvailable()) {
+        return res.status(503).json({ message: master2000Provider.getStatusMessage() });
+      }
+      const result = await master2000Provider.syncToLocalDB();
+      res.json(result);
+    } catch (err) {
+      console.error("Master 2000 sync error:", err);
+      res.status(500).json({ message: "Sync failed" });
     }
   });
 

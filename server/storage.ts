@@ -21,6 +21,11 @@ import {
   notifications,
   notificationPreferences,
   recognitions,
+  courses,
+  courseEnrollments,
+  activities,
+  submissions,
+  attendance,
   type User,
   type UpsertUser,
   type InsertUser,
@@ -62,6 +67,19 @@ import {
   type Recognition,
   type InsertRecognition,
   type RecognitionWithUsers,
+  type Course,
+  type InsertCourse,
+  type CourseEnrollment,
+  type InsertCourseEnrollment,
+  type Activity,
+  type InsertActivity,
+  type Submission,
+  type InsertSubmission,
+  type Attendance,
+  type InsertAttendance,
+  type CourseWithTeacher,
+  type SubmissionWithStudent,
+  type AttendanceWithStudent,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -176,6 +194,41 @@ export interface IStorage {
     pendingReports: number;
     pendingFiles: number;
   }>;
+
+  // Classroom - Courses
+  getCourse(id: string): Promise<CourseWithTeacher | undefined>;
+  getAllCourses(): Promise<CourseWithTeacher[]>;
+  getCoursesByTeacher(teacherId: string): Promise<CourseWithTeacher[]>;
+  getEnrolledCourses(studentId: string): Promise<CourseWithTeacher[]>;
+  createCourse(course: InsertCourse): Promise<Course>;
+  updateCourse(id: string, data: Partial<InsertCourse>): Promise<Course | undefined>;
+  deleteCourse(id: string): Promise<void>;
+
+  // Classroom - Enrollments
+  enrollStudent(courseId: string, studentId: string): Promise<CourseEnrollment>;
+  unenrollStudent(courseId: string, studentId: string): Promise<void>;
+  getEnrollments(courseId: string): Promise<(CourseEnrollment & { student: User })[]>;
+  isEnrolled(courseId: string, studentId: string): Promise<boolean>;
+
+  // Classroom - Activities
+  getActivity(id: string): Promise<Activity | undefined>;
+  getActivities(courseId: string, publishedOnly?: boolean): Promise<Activity[]>;
+  createActivity(activity: InsertActivity): Promise<Activity>;
+  updateActivity(id: string, data: Partial<InsertActivity>): Promise<Activity | undefined>;
+  deleteActivity(id: string): Promise<void>;
+
+  // Classroom - Submissions
+  getSubmission(activityId: string, studentId: string): Promise<Submission | undefined>;
+  getSubmissions(activityId: string): Promise<SubmissionWithStudent[]>;
+  getMySubmissions(studentId: string): Promise<Submission[]>;
+  createSubmission(submission: InsertSubmission): Promise<Submission>;
+  gradeSubmission(id: string, grade: number, feedback: string, gradedBy: string): Promise<Submission>;
+
+  // Classroom - Attendance
+  getAttendance(courseId: string, date?: Date): Promise<AttendanceWithStudent[]>;
+  getStudentAttendance(courseId: string, studentId: string): Promise<Attendance[]>;
+  recordAttendance(record: InsertAttendance): Promise<Attendance>;
+  getCourseStats(courseId: string): Promise<{ studentCount: number; activityCount: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1077,6 +1130,285 @@ export class DatabaseStorage implements IStorage {
       .values({ userId, badgeId, id: randomUUID() })
       .returning();
     return created;
+  }
+
+  // === CLASSROOM ===
+
+  private async enrichCourse(course: Course): Promise<CourseWithTeacher> {
+    const teacher = await this.getUser(course.teacherId);
+    const [studentCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(courseEnrollments)
+      .where(and(eq(courseEnrollments.courseId, course.id), eq(courseEnrollments.status, "active")));
+    const [activityCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(activities)
+      .where(eq(activities.courseId, course.id));
+    return {
+      ...course,
+      teacher: teacher!,
+      _count: {
+        students: Number(studentCount?.count || 0),
+        activities: Number(activityCount?.count || 0),
+      },
+    };
+  }
+
+  async getCourse(id: string): Promise<CourseWithTeacher | undefined> {
+    const [course] = await db.select().from(courses).where(eq(courses.id, id));
+    if (!course) return undefined;
+    return this.enrichCourse(course);
+  }
+
+  async getAllCourses(): Promise<CourseWithTeacher[]> {
+    const all = await db
+      .select()
+      .from(courses)
+      .where(eq(courses.isActive, true))
+      .orderBy(desc(courses.createdAt));
+    return Promise.all(all.map((c) => this.enrichCourse(c)));
+  }
+
+  async getCoursesByTeacher(teacherId: string): Promise<CourseWithTeacher[]> {
+    const all = await db
+      .select()
+      .from(courses)
+      .where(eq(courses.teacherId, teacherId))
+      .orderBy(desc(courses.createdAt));
+    return Promise.all(all.map((c) => this.enrichCourse(c)));
+  }
+
+  async getEnrolledCourses(studentId: string): Promise<CourseWithTeacher[]> {
+    const enrolled = await db
+      .select({ courseId: courseEnrollments.courseId })
+      .from(courseEnrollments)
+      .where(and(eq(courseEnrollments.studentId, studentId), eq(courseEnrollments.status, "active")));
+    if (enrolled.length === 0) return [];
+    const courseIds = enrolled.map((e) => e.courseId);
+    const all = await db
+      .select()
+      .from(courses)
+      .where(and(sql`${courses.id} = ANY(${courseIds})`, eq(courses.isActive, true)));
+    return Promise.all(all.map((c) => this.enrichCourse(c)));
+  }
+
+  async createCourse(course: InsertCourse): Promise<Course> {
+    const [created] = await db
+      .insert(courses)
+      .values({ id: randomUUID(), ...course })
+      .returning();
+    return created;
+  }
+
+  async updateCourse(id: string, data: Partial<InsertCourse>): Promise<Course | undefined> {
+    const [updated] = await db
+      .update(courses)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(courses.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteCourse(id: string): Promise<void> {
+    await db.delete(courses).where(eq(courses.id, id));
+  }
+
+  async enrollStudent(courseId: string, studentId: string): Promise<CourseEnrollment> {
+    const [existing] = await db
+      .select()
+      .from(courseEnrollments)
+      .where(and(eq(courseEnrollments.courseId, courseId), eq(courseEnrollments.studentId, studentId)));
+    if (existing) return existing;
+    const [enrollment] = await db
+      .insert(courseEnrollments)
+      .values({ id: randomUUID(), courseId, studentId, status: "active" })
+      .returning();
+    return enrollment;
+  }
+
+  async unenrollStudent(courseId: string, studentId: string): Promise<void> {
+    await db
+      .delete(courseEnrollments)
+      .where(and(eq(courseEnrollments.courseId, courseId), eq(courseEnrollments.studentId, studentId)));
+  }
+
+  async getEnrollments(courseId: string): Promise<(CourseEnrollment & { student: User })[]> {
+    const result = await db
+      .select()
+      .from(courseEnrollments)
+      .where(and(eq(courseEnrollments.courseId, courseId), eq(courseEnrollments.status, "active")))
+      .innerJoin(users, eq(courseEnrollments.studentId, users.id))
+      .orderBy(users.firstName);
+    return result.map((r) => ({ ...r.course_enrollments, student: r.users }));
+  }
+
+  async isEnrolled(courseId: string, studentId: string): Promise<boolean> {
+    const [enrollment] = await db
+      .select()
+      .from(courseEnrollments)
+      .where(and(eq(courseEnrollments.courseId, courseId), eq(courseEnrollments.studentId, studentId)));
+    return !!enrollment;
+  }
+
+  async getActivity(id: string): Promise<Activity | undefined> {
+    const [activity] = await db.select().from(activities).where(eq(activities.id, id));
+    return activity;
+  }
+
+  async getActivities(courseId: string, publishedOnly = false): Promise<Activity[]> {
+    return db
+      .select()
+      .from(activities)
+      .where(
+        publishedOnly
+          ? and(eq(activities.courseId, courseId), eq(activities.isPublished, true))
+          : eq(activities.courseId, courseId)
+      )
+      .orderBy(desc(activities.createdAt));
+  }
+
+  async createActivity(activity: InsertActivity): Promise<Activity> {
+    const [created] = await db
+      .insert(activities)
+      .values({ id: randomUUID(), ...activity })
+      .returning();
+    return created;
+  }
+
+  async updateActivity(id: string, data: Partial<InsertActivity>): Promise<Activity | undefined> {
+    const [updated] = await db
+      .update(activities)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(activities.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteActivity(id: string): Promise<void> {
+    await db.delete(activities).where(eq(activities.id, id));
+  }
+
+  async getSubmission(activityId: string, studentId: string): Promise<Submission | undefined> {
+    const [submission] = await db
+      .select()
+      .from(submissions)
+      .where(and(eq(submissions.activityId, activityId), eq(submissions.studentId, studentId)));
+    return submission;
+  }
+
+  async getSubmissions(activityId: string): Promise<SubmissionWithStudent[]> {
+    const result = await db
+      .select()
+      .from(submissions)
+      .where(eq(submissions.activityId, activityId))
+      .innerJoin(users, eq(submissions.studentId, users.id))
+      .orderBy(desc(submissions.submittedAt));
+    return result.map((r) => ({ ...r.submissions, student: r.users }));
+  }
+
+  async getMySubmissions(studentId: string): Promise<Submission[]> {
+    return db
+      .select()
+      .from(submissions)
+      .where(eq(submissions.studentId, studentId))
+      .orderBy(desc(submissions.submittedAt));
+  }
+
+  async createSubmission(submission: InsertSubmission): Promise<Submission> {
+    const existing = await this.getSubmission(submission.activityId, submission.studentId);
+    if (existing) {
+      const [updated] = await db
+        .update(submissions)
+        .set({ content: submission.content, submittedAt: new Date(), status: "submitted" })
+        .where(eq(submissions.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db
+      .insert(submissions)
+      .values({ id: randomUUID(), ...submission })
+      .returning();
+    return created;
+  }
+
+  async gradeSubmission(id: string, grade: number, feedback: string, gradedBy: string): Promise<Submission> {
+    const [updated] = await db
+      .update(submissions)
+      .set({ grade, feedback, gradedBy, gradedAt: new Date(), status: "graded" })
+      .where(eq(submissions.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getAttendance(courseId: string, date?: Date): Promise<AttendanceWithStudent[]> {
+    const result = date
+      ? await db
+          .select()
+          .from(attendance)
+          .innerJoin(users, eq(attendance.studentId, users.id))
+          .where(
+            and(
+              eq(attendance.courseId, courseId),
+              sql`DATE(${attendance.date}) = DATE(${date.toISOString()}::timestamptz)`
+            )
+          )
+      : await db
+          .select()
+          .from(attendance)
+          .innerJoin(users, eq(attendance.studentId, users.id))
+          .where(eq(attendance.courseId, courseId))
+          .orderBy(desc(attendance.date));
+    return result.map((r) => ({ ...r.attendance, student: r.users }));
+  }
+
+  async getStudentAttendance(courseId: string, studentId: string): Promise<Attendance[]> {
+    return db
+      .select()
+      .from(attendance)
+      .where(and(eq(attendance.courseId, courseId), eq(attendance.studentId, studentId)))
+      .orderBy(desc(attendance.date));
+  }
+
+  async recordAttendance(record: InsertAttendance): Promise<Attendance> {
+    const dateStr = record.date instanceof Date ? record.date.toISOString() : record.date;
+    const [existing] = await db
+      .select()
+      .from(attendance)
+      .where(
+        and(
+          eq(attendance.courseId, record.courseId),
+          eq(attendance.studentId, record.studentId),
+          sql`DATE(${attendance.date}) = DATE(${dateStr}::timestamptz)`
+        )
+      );
+    if (existing) {
+      const [updated] = await db
+        .update(attendance)
+        .set({ status: record.status, notes: record.notes })
+        .where(eq(attendance.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db
+      .insert(attendance)
+      .values({ id: randomUUID(), ...record })
+      .returning();
+    return created;
+  }
+
+  async getCourseStats(courseId: string): Promise<{ studentCount: number; activityCount: number }> {
+    const [studentCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(courseEnrollments)
+      .where(and(eq(courseEnrollments.courseId, courseId), eq(courseEnrollments.status, "active")));
+    const [activityCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(activities)
+      .where(eq(activities.courseId, courseId));
+    return {
+      studentCount: Number(studentCount?.count || 0),
+      activityCount: Number(activityCount?.count || 0),
+    };
   }
 }
 

@@ -32,14 +32,15 @@ import {
   GraduationCap,
   ChevronUp,
   Bell,
-  Grid3x3,
   Clock,
+  School,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { getFullName, getInitials, formatRole } from "@/lib/authUtils";
 
 const mainNavItems = [
   { title: "Inicio", url: "/", icon: Home },
+  { title: "Aula Virtual", url: "/classroom", icon: School },
   { title: "Grupos", url: "/groups", icon: Users },
   { title: "Biblioteca", url: "/library", icon: BookOpen },
   { title: "Asesorías", url: "/tutoring", icon: Calendar },
@@ -54,8 +55,13 @@ export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
 
-  const handleLogout = () => {
-    window.location.href = "/api/logout";
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    } finally {
+      localStorage.removeItem("communidad_loyola_user");
+      window.location.href = "/login";
+    }
   };
 
   const isAdmin = user?.role === "admin";

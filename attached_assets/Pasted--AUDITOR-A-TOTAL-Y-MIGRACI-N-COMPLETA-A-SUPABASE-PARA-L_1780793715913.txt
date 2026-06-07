@@ -1,0 +1,381 @@
+# AUDITORÍA TOTAL Y MIGRACIÓN COMPLETA A SUPABASE PARA LOYOLA COMMUNITY
+
+Analiza TODO el proyecto completo antes de modificar código.
+
+## Objetivo principal
+
+Loyola Community fue migrado parcialmente desde una arquitectura anterior hacia Supabase. Actualmente el registro funciona, pero muchas funcionalidades dejaron de operar correctamente.
+
+Necesito una auditoría exhaustiva de toda la aplicación y una migración completa, limpia y consistente para que TODAS las funcionalidades utilicen Supabase como backend principal.
+
+NO realices cambios rápidos ni parches temporales.
+
+Primero analiza.
+
+Después documenta.
+
+Finalmente implementa.
+
+---
+
+# FASE 1 - AUDITORÍA GENERAL
+
+Analiza:
+
+* server/
+* client/
+* shared/
+* schema.ts
+* storage.ts
+* routes.ts
+* auth.ts
+* authSimple.ts
+* db.ts
+* cualquier middleware de autenticación
+* sesiones
+* permisos
+* uploads
+* eventos
+* grupos
+* publicaciones
+* comentarios
+* archivos
+* mensajes
+* notificaciones
+* badges
+* reconocimientos
+* Q&A
+* estadísticas
+* panel administrativo
+
+Genera un informe indicando:
+
+## Funciones que funcionan
+
+Lista exacta.
+
+## Funciones parcialmente funcionales
+
+Lista exacta.
+
+## Funciones rotas
+
+Lista exacta.
+
+## Dependencias obsoletas
+
+Lista exacta.
+
+## Código muerto
+
+Lista exacta.
+
+## Rutas huérfanas
+
+Lista exacta.
+
+## Tablas faltantes
+
+Lista exacta.
+
+## Relaciones faltantes
+
+Lista exacta.
+
+---
+
+# FASE 2 - REVISIÓN DE SUPABASE
+
+Verifica:
+
+* conexión
+* autenticación
+* sesiones
+* políticas
+* almacenamiento
+* tablas
+* índices
+* relaciones
+* permisos
+
+Comprueba que todas las tablas definidas en schema.ts existan realmente en Supabase.
+
+Si faltan tablas:
+
+* generar migraciones
+* generar SQL
+* ejecutar creación
+
+No eliminar datos existentes.
+
+---
+
+# FASE 3 - AUTENTICACIÓN COMPLETA
+
+Actualmente existe authSimple.
+
+Analizar si:
+
+* rompe sesiones
+* rompe middleware
+* rompe permisos
+* rompe roles
+* rompe rutas protegidas
+
+Implementar sistema consistente.
+
+Objetivos:
+
+* Registro
+* Login
+* Logout
+* Persistencia de sesión
+* Recuperación de contraseña
+* Roles
+* Middleware de autenticación
+
+Roles:
+
+* student
+* teacher
+* admin
+
+Verificar que todas las rutas obtengan correctamente:
+
+user.id
+user.role
+
+y no dependan de sistemas anteriores.
+
+---
+
+# FASE 4 - REPARACIÓN DE FUNCIONALIDADES
+
+Verificar y reparar:
+
+## Publicaciones
+
+* crear
+* editar
+* eliminar
+* reaccionar
+* comentar
+
+## Grupos
+
+* crear
+* editar
+* eliminar
+* unirse
+* salir
+* listar miembros
+
+## Eventos
+
+* crear
+* editar
+* eliminar
+* inscribirse
+* cancelar inscripción
+
+## Archivos
+
+* subir
+* descargar
+* aprobar
+* rechazar
+
+Utilizar Supabase Storage.
+
+## Mensajes
+
+* enviar
+* recibir
+* historial
+
+## Preguntas y respuestas
+
+* preguntas
+* respuestas
+* votos
+
+## Reconocimientos
+
+* creación
+* consulta
+
+## Badges
+
+* asignación
+* visualización
+
+## Notificaciones
+
+* creación
+* lectura
+* preferencias
+
+---
+
+# FASE 5 - IMPLEMENTACIÓN DEL MÓDULO CLASSROOM
+
+Crear un módulo educativo completamente integrado.
+
+## Cursos
+
+* crear curso
+* editar curso
+* eliminar curso
+
+## Materias
+
+* asignar materia
+* editar materia
+
+## Clases
+
+* crear clase
+* programar clase
+* recursos
+
+## Actividades
+
+* tareas
+* proyectos
+* cuestionarios
+
+## Entregas
+
+* subir archivos
+* comentarios
+* retroalimentación
+
+## Calificaciones
+
+* registrar notas
+* editar notas
+* historial académico
+
+## Asistencia
+
+* registrar asistencia
+* consultar asistencia
+
+## Panel docente
+
+* cursos
+* estudiantes
+* notas
+* actividades
+
+## Panel estudiante
+
+* materias
+* tareas
+* notas
+* asistencia
+
+---
+
+# FASE 6 - INTEGRACIÓN MASTER 2000
+
+Crear capa de integración para Master 2000.
+
+Objetivo:
+
+Sincronizar información académica.
+
+Preparar arquitectura para:
+
+* estudiantes
+* docentes
+* grupos
+* materias
+* horarios
+* notas
+* asistencia
+
+Si no existe API disponible:
+
+crear capa adaptable mediante:
+
+Master2000Provider
+
+con interfaz desacoplada.
+
+No hardcodear nada.
+
+Preparar para futuras credenciales.
+
+---
+
+# FASE 7 - DASHBOARD ADMINISTRATIVO
+
+Crear dashboard real.
+
+Mostrar:
+
+* usuarios
+* estudiantes
+* docentes
+* grupos
+* publicaciones
+* eventos
+* archivos
+* reportes
+* estadísticas
+
+Todo alimentado desde Supabase.
+
+---
+
+# FASE 8 - SEGURIDAD
+
+Verificar:
+
+* autenticación
+* autorización
+* validaciones
+* sanitización
+* uploads
+* permisos
+* consultas SQL
+
+Eliminar vulnerabilidades.
+
+---
+
+# FASE 9 - RENDIMIENTO
+
+Optimizar:
+
+* consultas repetidas
+* N+1 queries
+* joins innecesarios
+* cargas masivas
+
+Agregar índices donde sea necesario.
+
+---
+
+# FASE 10 - INFORME FINAL
+
+Al finalizar entregar:
+
+## Cambios realizados
+
+## Archivos modificados
+
+## Tablas creadas
+
+## Migraciones ejecutadas
+
+## Funciones reparadas
+
+## Funciones nuevas
+
+## Problemas pendientes
+
+NO detenerse después del análisis.
+
+Después del informe comenzar inmediatamente la implementación completa hasta dejar el proyecto totalmente funcional sobre Supabase y listo para continuar el desarrollo del módulo Classroom y la futura integración con Master 2000.

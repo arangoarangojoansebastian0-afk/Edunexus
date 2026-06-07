@@ -803,3 +803,222 @@ export type RecognitionWithUsers = Recognition & {
   createdBy: User;
   recipient: User;
 };
+
+// === CLASSROOM MODULE ===
+
+export const courses = pgTable(
+  "courses",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    name: varchar("name", { length: 255 }).notNull(),
+    description: text("description"),
+    subject: varchar("subject", { length: 100 }).notNull(),
+    teacherId: varchar("teacher_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    grade: varchar("grade", { length: 50 }),
+    semester: varchar("semester", { length: 50 }),
+    academicYear: varchar("academic_year", { length: 20 }),
+    coverImageUrl: varchar("cover_image_url"),
+    groupId: varchar("group_id").references(() => groups.id, { onDelete: "set null" }),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_courses_teacher").on(table.teacherId),
+    index("idx_courses_active").on(table.isActive),
+  ]
+);
+
+export const courseEnrollments = pgTable(
+  "course_enrollments",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    courseId: varchar("course_id")
+      .references(() => courses.id, { onDelete: "cascade" })
+      .notNull(),
+    studentId: varchar("student_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    enrolledAt: timestamp("enrolled_at").defaultNow().notNull(),
+    status: varchar("status", { length: 50 }).default("active").notNull(),
+  },
+  (table) => [
+    index("idx_enrollments_course").on(table.courseId),
+    index("idx_enrollments_student").on(table.studentId),
+  ]
+);
+
+export const activities = pgTable(
+  "activities",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    courseId: varchar("course_id")
+      .references(() => courses.id, { onDelete: "cascade" })
+      .notNull(),
+    title: varchar("title", { length: 255 }).notNull(),
+    description: text("description"),
+    type: varchar("type", { length: 50 }).notNull(), // "assignment" | "project" | "quiz" | "exam"
+    dueDate: timestamp("due_date"),
+    maxScore: integer("max_score").default(100).notNull(),
+    attachments: text("attachments").array().default(sql`ARRAY[]::text[]`),
+    isPublished: boolean("is_published").default(false).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_activities_course").on(table.courseId)]
+);
+
+export const submissions = pgTable(
+  "submissions",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    activityId: varchar("activity_id")
+      .references(() => activities.id, { onDelete: "cascade" })
+      .notNull(),
+    studentId: varchar("student_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    content: text("content"),
+    attachments: text("attachments").array().default(sql`ARRAY[]::text[]`),
+    submittedAt: timestamp("submitted_at").defaultNow().notNull(),
+    grade: integer("grade"),
+    feedback: text("feedback"),
+    gradedAt: timestamp("graded_at"),
+    gradedBy: varchar("graded_by").references(() => users.id),
+    status: varchar("status", { length: 50 }).default("submitted").notNull(),
+  },
+  (table) => [
+    index("idx_submissions_activity").on(table.activityId),
+    index("idx_submissions_student").on(table.studentId),
+  ]
+);
+
+export const attendance = pgTable(
+  "attendance",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    courseId: varchar("course_id")
+      .references(() => courses.id, { onDelete: "cascade" })
+      .notNull(),
+    studentId: varchar("student_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    date: timestamp("date").notNull(),
+    status: varchar("status", { length: 50 }).notNull(), // "present" | "absent" | "late" | "excused"
+    notes: text("notes"),
+    recordedBy: varchar("recorded_by")
+      .references(() => users.id)
+      .notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_attendance_course").on(table.courseId),
+    index("idx_attendance_student").on(table.studentId),
+    index("idx_attendance_date").on(table.date),
+  ]
+);
+
+// Classroom Relations
+export const coursesRelations = relations(courses, ({ one, many }) => ({
+  teacher: one(users, { fields: [courses.teacherId], references: [users.id] }),
+  group: one(groups, { fields: [courses.groupId], references: [groups.id] }),
+  enrollments: many(courseEnrollments),
+  activities: many(activities),
+  attendanceRecords: many(attendance),
+}));
+
+export const courseEnrollmentsRelations = relations(courseEnrollments, ({ one }) => ({
+  course: one(courses, { fields: [courseEnrollments.courseId], references: [courses.id] }),
+  student: one(users, { fields: [courseEnrollments.studentId], references: [users.id] }),
+}));
+
+export const activitiesRelations = relations(activities, ({ one, many }) => ({
+  course: one(courses, { fields: [activities.courseId], references: [courses.id] }),
+  submissions: many(submissions),
+}));
+
+export const submissionsRelations = relations(submissions, ({ one }) => ({
+  activity: one(activities, { fields: [submissions.activityId], references: [activities.id] }),
+  student: one(users, { fields: [submissions.studentId], references: [users.id] }),
+  gradedByUser: one(users, { fields: [submissions.gradedBy], references: [users.id] }),
+}));
+
+export const attendanceRelations = relations(attendance, ({ one }) => ({
+  course: one(courses, { fields: [attendance.courseId], references: [courses.id] }),
+  student: one(users, { fields: [attendance.studentId], references: [users.id] }),
+  recorder: one(users, { fields: [attendance.recordedBy], references: [users.id] }),
+}));
+
+// Classroom Insert Schemas
+export const insertCourseSchema = createInsertSchema(courses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertCourseEnrollmentSchema = createInsertSchema(courseEnrollments).omit({
+  id: true,
+  enrolledAt: true,
+});
+
+export const insertActivitySchema = createInsertSchema(activities).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertSubmissionSchema = createInsertSchema(submissions).omit({
+  id: true,
+  submittedAt: true,
+  grade: true,
+  feedback: true,
+  gradedAt: true,
+  gradedBy: true,
+});
+
+export const insertAttendanceSchema = createInsertSchema(attendance).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Classroom Types
+export type Course = typeof courses.$inferSelect;
+export type InsertCourse = z.infer<typeof insertCourseSchema>;
+
+export type CourseEnrollment = typeof courseEnrollments.$inferSelect;
+export type InsertCourseEnrollment = z.infer<typeof insertCourseEnrollmentSchema>;
+
+export type Activity = typeof activities.$inferSelect;
+export type InsertActivity = z.infer<typeof insertActivitySchema>;
+
+export type Submission = typeof submissions.$inferSelect;
+export type InsertSubmission = z.infer<typeof insertSubmissionSchema>;
+
+export type Attendance = typeof attendance.$inferSelect;
+export type InsertAttendance = z.infer<typeof insertAttendanceSchema>;
+
+// Classroom Extended Types
+export type CourseWithTeacher = Course & {
+  teacher: User;
+  _count?: {
+    students: number;
+    activities: number;
+  };
+};
+
+export type ActivityWithSubmission = Activity & {
+  mySubmission?: Submission;
+  _count?: {
+    submissions: number;
+  };
+};
+
+export type SubmissionWithStudent = Submission & {
+  student: User;
+};
+
+export type AttendanceWithStudent = Attendance & {
+  student: User;
+};

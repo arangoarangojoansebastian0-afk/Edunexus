@@ -20,6 +20,8 @@ import Profile from "@/pages/Profile";
 import Admin from "@/pages/Admin";
 import Notifications from "@/pages/Notifications";
 import Settings from "@/pages/Settings";
+import Classroom from "@/pages/Classroom";
+import CourseDetail from "@/pages/CourseDetail";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -52,6 +54,8 @@ function Router() {
           <Route path="/admin" component={Admin} />
           <Route path="/notifications" component={Notifications} />
           <Route path="/settings" component={Settings} />
+          <Route path="/classroom" component={Classroom} />
+          <Route path="/classroom/:id" component={CourseDetail} />
         </>
       )}
       <Route component={NotFound} />
