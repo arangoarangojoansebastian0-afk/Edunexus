@@ -1,3 +1,4 @@
+import { pool } from "./db";
 import type { Express, Request as ExpressRequest, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
@@ -30,6 +31,12 @@ import MemoryStore from "memorystore";
 // Extend Express Request with user
 interface Request extends ExpressRequest {
   user?: User;
+}
+
+declare module "express-session" {
+  interface SessionData {
+    userId: string;
+  }
 }
 
 const upload = multer({
@@ -93,9 +100,12 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   // Session middleware
-  const memStore = new (MemoryStore(session))({
-    checkInterval: 86400000,
-  });
+ const connectPg = require("connect-pg-simple");
+const PgStore = connectPg(session);
+const pgStore = new PgStore({
+  pool,
+  createTableIfMissing: true,
+});
 
   app.set("trust proxy", 1);
 
