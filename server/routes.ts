@@ -206,6 +206,10 @@ app.use(
     }
   });
 
+
+
+
+  
   app.get("/api/users/:id/posts", requireAuth, async (req, res) => {
     try {
       const posts = await storage.getPostsByUser(req.params.id);
@@ -657,6 +661,26 @@ app.use(
       res.status(500).json({ message: "Failed to fetch events" });
     }
   });
+
+// GET /api/admin/subjects
+app.get("/api/admin/subjects", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const data = await storage.getSubjects();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to get subjects" });
+  }
+});
+
+// POST /api/admin/subjects
+app.post("/api/admin/subjects", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const subject = await storage.upsertSubject(req.body);
+    res.json(subject);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to save subject" });
+  }
+});
 
   app.post("/api/events", requireAuth, requireVerified, async (req, res) => {
     try {
