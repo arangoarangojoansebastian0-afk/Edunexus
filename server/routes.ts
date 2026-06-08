@@ -560,21 +560,20 @@ app.use(
       if (!file) {
         return res.status(400).json({ message: "No file uploaded" });
       }
-
-      const { subject, description } = req.body;
-      const fileData = {
-        uploaderId: userId,
-        fileName: file.originalname,
-        fileUrl: `/uploads/${file.filename}`,
-        storageKey: file.filename,
-        fileType: path.extname(file.originalname).slice(1),
-        fileSize: file.size,
-        subject: subject || null,
-        description: description || null,
-        visibility: "public" as const,
-        approved: true,
-      };
-
+  const fileUrl = await uploadToSupabase(file, "library");
+  const fileData = {
+    uploaderId: userId,
+    fileName: file.originalname,
+    fileUrl: fileUrl,
+    storageKey: fileUrl,
+    fileType: path.extname(file.originalname).slice(1),
+    fileSize: file.size,
+    subject: subject || null,
+    description: description || null,
+    visibility: "public" as const,
+    approved: true,
+  };
+      
       const newFile = await storage.createFile(fileData);
       res.status(201).json(newFile);
     } catch (error) {
