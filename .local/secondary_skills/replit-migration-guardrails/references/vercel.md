@@ -17,8 +17,8 @@ there. Update `deploy_config_tool` to `cd` into it:
 
 ## Ports & scripts
 
-- dev: `next dev -p 5000 -H 0.0.0.0`
-- start: `next start -p 5000 -H 0.0.0.0`
+- dev: `next dev -p 2000 -H 0.0.0.0`
+- start: `next start -p 2000 -H 0.0.0.0`
 
 ## Dev workflow
 

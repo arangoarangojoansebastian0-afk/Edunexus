@@ -27,7 +27,7 @@ export function createWorkflow(
 export { inngest, createStep, cloneStep };
 
 const inngestFunctions: InngestFunction.Any[] = [];
-const localMastraBaseUrl = `http://localhost:${process.env.PORT ?? "5000"}`;
+const localMastraBaseUrl = `http://localhost:${process.env.PORT ?? "2000"}`;
 const basePath =
   process.env.BASE_PATH && process.env.BASE_PATH !== "/"
     ? process.env.BASE_PATH

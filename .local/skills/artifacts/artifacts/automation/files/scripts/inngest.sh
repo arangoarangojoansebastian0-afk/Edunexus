@@ -3,7 +3,7 @@
 set -e
 
 INNGEST_CONFIG=".config/inngest/inngest.yaml"
-AUTOMATION_PORT="${AUTOMATION_PORT:-5000}"
+AUTOMATION_PORT="${AUTOMATION_PORT:-2000}"
 INNGEST_PORT="${PORT:-3000}"
 
 # Try to store Inngest data in Postgres if it's available. Otherwise, put it in SQLite.

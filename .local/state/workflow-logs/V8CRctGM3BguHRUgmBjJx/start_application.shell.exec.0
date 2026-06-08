@@ -2,5 +2,5 @@
 > rest-express@1.0.0 dev
 > NODE_ENV=development tsx server/index.ts
 
-[1G[0K10:29:34 PM [express] serving on port 5000
+[1G[0K10:29:34 PM [express] serving on port 2000
 10:29:38 PM [express] POST /api/temp/promote-joan 500 in 196ms :: {"message":"error: password authentication failed for user 'neondb_owner'"}

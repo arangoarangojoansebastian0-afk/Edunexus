@@ -84,7 +84,7 @@ echo "Chromium at: $CHROMIUM_PATH"
 - Always use `--no-sandbox` args
 - Use `wait_until="domcontentloaded"`(not`"networkidle"`)
 
-- Add `page.wait_for_timeout(5000)` after navigation
+- Add `page.wait_for_timeout(2000)` after navigation
 - Set `timeout=60000`on all`page.goto()` calls
 
 ---
@@ -227,7 +227,7 @@ html = f.read()
 
 import re
 
-for m in re.finditer(r'logo', html[:15000], re.IGNORECASE):
+for m in re.finditer(r'logo', html[:12000], re.IGNORECASE):
 
 idx = m.start()
 

@@ -43,7 +43,7 @@ await setPostMergeConfig({ scriptPath: "scripts/post-merge.sh", timeoutMs: 18000
 
 Sets the post-merge script path and/or timeout. Both parameters are optional — only provided values are updated. Note: `scriptPath` must be set (either already configured or provided in the same call) before setting `timeoutMs` alone, because `.replit` requires `path` in the `[postMerge]` section. Use `timeoutMs` when:
 
-- The script timed out — if the script naturally takes a long time (large `npm install`, slow migrations), increase the timeout so it succeeds on the next merge. Estimate a reasonable value from the script's expected runtime and add a buffer (e.g. if `npm install` takes 3s, set timeout to 5000 ms).
+- The script timed out — if the script naturally takes a long time (large `npm install`, slow migrations), increase the timeout so it succeeds on the next merge. Estimate a reasonable value from the script's expected runtime and add a buffer (e.g. if `npm install` takes 3s, set timeout to 2000 ms).
 - The script hangs — if the script hangs due to a bug (e.g. waiting for input), fix the script first, then consider lowering the timeout to catch future hangs early.
 
 ### Run post-merge setup

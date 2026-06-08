@@ -57,7 +57,7 @@ Configure how the project should be deployed to production.
 // Configure a Python web app
 const result = await deployConfig({
     deploymentTarget: "autoscale",
-    run: ["gunicorn", "--bind=0.0.0.0:5000", "--reuse-port", "main:app"]
+    run: ["gunicorn", "--bind=0.0.0.0:2000", "--reuse-port", "main:app"]
 });
 
 // Configure a static site
@@ -128,7 +128,7 @@ Use for stateless websites and APIs that don't need persistent server memory.
 ```javascript
 await deployConfig({
     deploymentTarget: "autoscale",
-    run: ["gunicorn", "--bind=0.0.0.0:5000", "app:app"]
+    run: ["gunicorn", "--bind=0.0.0.0:2000", "app:app"]
 });
 ```
 
@@ -184,7 +184,7 @@ Use production-ready servers, not development servers:
 
 ```toml
 # Python with Gunicorn
-run=["gunicorn", "--bind=0.0.0.0:5000", "--reuse-port", "main:app"]
+run=["gunicorn", "--bind=0.0.0.0:2000", "--reuse-port", "main:app"]
 
 # Python with Streamlit
 run=["streamlit", "run", "main.py"]
@@ -253,7 +253,7 @@ Do **not** tell users that Replit only supports US-based infrastructure — mult
 // 1. Configure deployment settings for a web app
 await deployConfig({
     deploymentTarget: "autoscale",
-    run: ["gunicorn", "--bind=0.0.0.0:5000", "app:app"]
+    run: ["gunicorn", "--bind=0.0.0.0:2000", "app:app"]
 });
 
 // 2. After verifying the app works, suggest publishing to the user

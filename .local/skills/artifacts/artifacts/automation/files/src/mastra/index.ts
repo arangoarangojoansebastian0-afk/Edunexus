@@ -115,7 +115,7 @@ class ProductionPinoLogger extends MastraLogger {
   }
 }
 
-const serverPort = Number(process.env.PORT ?? "5000");
+const serverPort = Number(process.env.PORT ?? "2000");
 
 export const mastra = new Mastra({
   storage: sharedPostgresStorage,

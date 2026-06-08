@@ -106,11 +106,11 @@ Configure or create a workflow. This is the primary way to set up background pro
 
 **Output Type Rules:**
 
-- **webview** - For web applications. MUST use port 5000.
+- **webview** - For web applications. MUST use port 2000.
 - **console** - For backend services, CLIs, TUIs. Can use any supported port.
 - **vnc** - For desktop/GUI apps (Electron, PyQt, etc.). No port needed.
 
-**Supported Ports:** 3000, 3001, 3002, 3003, 4200, 5000 (webview only), 5173, 6000, 6800, 8000, 8008, 8080, 8099, 9000
+**Supported Ports:** 3000, 3001, 3002, 3003, 4200, 2000 (webview only), 5173, 6000, 6800, 8000, 8008, 8080, 8099, 9000
 
 **Examples:**
 
@@ -119,7 +119,7 @@ Configure or create a workflow. This is the primary way to set up background pro
 await configureWorkflow({
     name: "Start application",
     command: "npm run dev",
-    waitForPort: 5000,
+    waitForPort: 2000,
     outputType: "webview"
 });
 
@@ -188,7 +188,7 @@ const result2 = await restartWorkflow({
 3. **Check logs on failure**: If restart fails, check workflow logs for error details
 4. **One restart at a time**: Avoid parallel restarts of the same workflow
 
-5. **Port 5000 for web apps**: Always use port 5000 with webview output type
+5. **Port 2000 for web apps**: Always use port 2000 with webview output type
 
 
 ## Common Workflow Names
@@ -206,7 +206,7 @@ The workflow functions may raise errors in these cases:
 - **Preview not available**: The application endpoint isn't responding with HTTP 200
 - **Workflow limit exceeded**: Maximum of 10 workflows reached
 
-- **Port/output type mismatch**: Port 5000 requires webview, webview requires port 5000
+- **Port/output type mismatch**: Port 2000 requires webview, webview requires port 2000
 
 
 When errors occur, check:
@@ -223,7 +223,7 @@ await configureWorkflow({
     name: "Start application",
     command: "npm run dev",
 
-    waitForPort: 5000,
+    waitForPort: 2000,
 
     outputType: "webview"
 });

@@ -115,7 +115,7 @@ function clearMetroCache() {
 async function checkMetroHealth() {
   try {
     const response = await fetch("http://localhost:8081/status", {
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(2000),
     });
     return response.ok;
   } catch {

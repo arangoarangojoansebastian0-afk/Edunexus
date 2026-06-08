@@ -25,7 +25,7 @@ Set `allowedHosts: true` in `angular.json` to allow the Replit proxy to access y
           "options": {
             "allowedHosts": true,
             "host": "0.0.0.0",
-            "port": 5000
+            "port": 2000
           }
         }
       }
@@ -59,7 +59,7 @@ ng generate component
 ## Workflow Configuration
 
 ```bash
-ng serve --host 0.0.0.0 --port 5000 --disable-host-check
+ng serve --host 0.0.0.0 --port 2000 --disable-host-check
 ```
 
 Or configure in `angular.json`:
@@ -69,7 +69,7 @@ Or configure in `angular.json`:
   "serve": {
     "options": {
       "host": "0.0.0.0",
-      "port": 5000,
+      "port": 2000,
       "disableHostCheck": true
     }
   }
@@ -82,7 +82,7 @@ Or configure in `angular.json`:
 
 1. Verify `allowedHosts: true` is set in `angular.json`
 2. Ensure the server is bound to `0.0.0.0` not `localhost`
-3. Check that port 5000 is being used
+3. Check that port 2000 is being used
 4. Restart the workflow after configuration changes
 
 ### CLI Commands Hang

@@ -1,3 +1,4 @@
+import { FileViewer } from "@/components/FileViewer";
 import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -241,6 +242,8 @@ export default function Library() {
     }
   };
 
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  
   return (
     <AppLayout title="Biblioteca Académica">
       <div className="max-w-7xl mx-auto p-4 md:p-6">
@@ -432,12 +435,21 @@ export default function Library() {
                   key={file.id}
                   file={file}
                   onDownload={handleDownload}
+                  onPreview={(file) => {
+                    console.log(file);
+                    if (file.fileUrl) {
+                      setPreviewUrls([file.fileUrl]);
+                    }
+                    
+                  }}
                   onDelete={handleDelete}
                   isOwner={user?.id === file.uploaderId}
                   isAdmin={user?.role === "admin"}
                   isModerator={user?.role === "teacher"}
+                  
                 />
               ))}
+              
             </div>
           ) : (
             <EmptyState
@@ -460,6 +472,12 @@ export default function Library() {
           )}
         </div>
       </div>
+      {previewUrls.length > 0 && (
+  <FileViewer
+    urls={previewUrls}
+    label="Vista previa"
+  />
+)}
     </AppLayout>
   );
 }

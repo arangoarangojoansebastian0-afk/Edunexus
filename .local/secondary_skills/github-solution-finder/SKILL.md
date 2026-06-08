@@ -34,7 +34,7 @@ Find battle-tested libraries instead of building from scratch. Use GitHub's sear
 <problem> language:<lang> stars:>500 pushed:>2025-06-01 archived:false
 
 # Find the dominant library (only a few results = clear winner)
-<problem> language:python stars:>5000
+<problem> language:python stars:>2000
 
 # Hidden gems (newer, not yet famous, but active)
 <problem> language:go stars:50..500 pushed:>2025-09-01 fork:false

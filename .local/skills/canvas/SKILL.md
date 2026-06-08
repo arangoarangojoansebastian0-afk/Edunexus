@@ -371,7 +371,7 @@ await applyCanvasActions({ actions: [
 - **Update** patches an existing shape, so it takes a partial `updates` object: `updates: { shapeType: "iframe", ... }` -- the field is `shapeType` (not `type`) because `type` is already the action discriminator
 - Do not copy the payload key from a create into an update or vice versa -- the wrong key passes validation but the action will fail when applied.
 
-To get the URL for a Replit dev server, run `echo $REPLIT_DOMAINS` in the shell to get the domain, then construct the full URL. For the main app on port 5000, no port suffix is needed. For other ports, append `:<port>`.
+To get the URL for a Replit dev server, run `echo $REPLIT_DOMAINS` in the shell to get the domain, then construct the full URL. For the main app on port 2000, no port suffix is needed. For other ports, append `:<port>`.
 
 - `url` -- Full `https://` URL to embed. Required when `state` is `"live"`.
 - `state` -- Lifecycle state. Always set this on create and when transitioning.
@@ -485,7 +485,7 @@ Pan and zoom the user's canvas viewport to center on specific shapes. **Only cal
 - **Use `state` for lifecycle** -- Set `"building"` on create (URL optional), `"modifying"` before edits, `"live"` when ready (URL required).
 - **URL must be `https`** -- `http` and `about:blank` are rejected.
 - **Resolve the domain first** -- run `echo $REPLIT_DOMAINS` in the shell, then build the URL from the result. Never pass a literal template string as the URL.
-- **Port rules:** no port suffix = port 5000 (main app). For other servers, append `:<port>`.
+- **Port rules:** no port suffix = port 2000 (main app). For other servers, append `:<port>`.
 - **External sites may block embedding** -- sites with `X-Frame-Options: DENY` or restrictive CSP headers will show a blank iframe. Replit dev URLs work fine.
 - **Never embed the main app URL for component previews** -- the main app URL shows the entire app with navigation, layout, and routing -- not an isolated component. Use the **mockup-sandbox** skill to set up a preview server, then embed `/preview/{folder}/{Component}` URLs. This gives you isolated components that can be iterated on independently. The mockup sandbox runs on port 8000 (append `:8000` to the domain).
 

@@ -33,7 +33,7 @@ Every web framework needs its development configuration set to allow all hosts. 
 
 ### Frontend Server Port
 
-Bind frontend servers to **0.0.0.0:5000**. Never bind anything else to port 5000.
+Bind frontend servers to **0.0.0.0:2000**. Never bind anything else to port 2000.
 
 ### No Docker or Virtual Environments
 

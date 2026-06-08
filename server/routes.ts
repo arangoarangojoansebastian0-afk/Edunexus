@@ -1,3 +1,4 @@
+import connectPgSimple from "connect-pg-simple";
 import { pool } from "./db";
 import type { Express, Request as ExpressRequest, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
@@ -26,7 +27,6 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import session from "express-session";
-import MemoryStore from "memorystore";
 
 // Extend Express Request with user
 interface Request extends ExpressRequest {
@@ -100,11 +100,12 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   // Session middleware
- const connectPg = require("connect-pg-simple");
-const PgStore = connectPg(session);
+
+const PgStore = connectPgSimple(session);
 const pgStore = new PgStore({
   pool,
-  createTableIfMissing: true,
+  tableName: "sessions",
+  createTableIfMissing: false,
 });
 
   app.set("trust proxy", 1);
@@ -112,7 +113,7 @@ const pgStore = new PgStore({
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "dev-secret-key",
-    store: memStore,
+    store: pgStore,
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -561,19 +562,21 @@ app.use(
         return res.status(400).json({ message: "No file uploaded" });
       }
 
+      const fileUrl = await uploadToSupabase(file, "library");
+
       const { subject, description } = req.body;
       const fileData = {
         uploaderId: userId,
-        fileName: file.originalname,
-        fileUrl: `/uploads/${file.filename}`,
-        storageKey: file.filename,
-        fileType: path.extname(file.originalname).slice(1),
-        fileSize: file.size,
-        subject: subject || null,
-        description: description || null,
-        visibility: "public" as const,
-        approved: true,
-      };
+         fileName: file.originalname,
+         fileUrl: fileUrl,
+         storageKey: fileUrl,
+         fileType: path.extname(file.originalname).slice(1),
+         fileSize: file.size,
+         subject: subject || null,
+         description: description || null,
+         visibility: "public" as const,
+         approved: true,
+       };
 
       
       const newFile = await storage.createFile(fileData);

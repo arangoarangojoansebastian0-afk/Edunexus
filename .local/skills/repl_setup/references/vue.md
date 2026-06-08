@@ -14,7 +14,7 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     host: '0.0.0.0',
-    port: 5000,
+    port: 2000,
     allowedHosts: true,
   },
 });
@@ -28,7 +28,7 @@ For older Vue CLI projects, configure `vue.config.js`:
 module.exports = {
   devServer: {
     host: '0.0.0.0',
-    port: 5000,
+    port: 2000,
     allowedHosts: 'all',
     // Or use disableHostCheck for older versions:
     // disableHostCheck: true,
@@ -44,7 +44,7 @@ For Nuxt 3, configure `nuxt.config.ts`:
 export default defineNuxtConfig({
   devServer: {
     host: '0.0.0.0',
-    port: 5000,
+    port: 2000,
   },
   vite: {
     server: {
@@ -60,7 +60,7 @@ For Nuxt 2, configure `nuxt.config.js`:
 export default {
   server: {
     host: '0.0.0.0',
-    port: 5000,
+    port: 2000,
   },
 };
 ```
@@ -85,7 +85,7 @@ export const useApi = () => {
 ### User Cannot See the Application
 
 1. Verify host configuration allows all hosts
-2. Confirm binding to `0.0.0.0` on port 5000
+2. Confirm binding to `0.0.0.0` on port 2000
 3. Restart workflow after configuration changes
 4. Check console logs for startup errors
 

@@ -42,7 +42,7 @@ page = browser.new_page(viewport={"width": 1440, "height": 900})
 
 page.goto(TARGET_URL, wait_until="domcontentloaded", timeout=60000)
 
-page.wait_for_timeout(5000)
+page.wait_for_timeout(2000)
 
 # Scroll full page to trigger lazy loading
 
@@ -590,7 +590,7 @@ width: svg.getAttribute('width') || svg.offsetWidth,
 
 height: svg.getAttribute('height') || svg.offsetHeight,
 
-html: svg.outerHTML.length < 5000 ? svg.outerHTML : '[TOO_LARGE]',
+html: svg.outerHTML.length < 2000 ? svg.outerHTML : '[TOO_LARGE]',
 
 parentText: svg.parentElement?.innerText?.trim().slice(0, 50) || '',
 

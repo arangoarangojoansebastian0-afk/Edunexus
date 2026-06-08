@@ -12,7 +12,7 @@ To prepare for this change:
 See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode definitions.
 (Use `node --trace-warnings ...` to show where the warning was created)
 [migrate] Cannot connect to DB (will retry on next request): password authentication failed for user 'neondb_owner'
-1:16:33 AM [express] serving on port 5000
+1:16:33 AM [express] serving on port 2000
 Browserslist: browsers data (caniuse-lite) is 8 months old. Please run:
   npx update-browserslist-db@latest
   Why you should do it regularly: https://github.com/browserslist/update-db#readme

@@ -27,7 +27,7 @@
 
 import { inngest } from "../src/mastra/inngest/client";
 
-const AUTOMATION_PORT = process.env.PORT ?? "5000";
+const AUTOMATION_PORT = process.env.PORT ?? "2000";
 const INNGEST_PORT = process.env.INNGEST_PORT ?? "3000";
 
 // ============================================================================

@@ -16,7 +16,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: '0.0.0.0',
-    port: 5000,
+    port: 2000,
     allowedHosts: true,
     // Or specify the Replit domains explicitly:
     // allowedHosts: ['.replit.dev', '.repl.co']
@@ -35,7 +35,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: '0.0.0.0',
-    port: 5000,
+    port: 2000,
     allowedHosts: true,
     strictPort: true,
   },
@@ -85,11 +85,11 @@ For development, you can configure a proxy in vite.config.ts:
 export default defineConfig({
   server: {
     host: '0.0.0.0',
-    port: 5000,
+    port: 2000,
     allowedHosts: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:2000',
         changeOrigin: true,
       },
     },
@@ -103,7 +103,7 @@ export default defineConfig({
 
 1. Verify `allowedHosts: true` is in vite.config.ts
 2. Confirm server is bound to `0.0.0.0` (not `127.0.0.1` or `localhost`)
-3. Check port is 5000
+3. Check port is 2000
 4. Restart the workflow after config changes
 
 ### Changes Not Appearing

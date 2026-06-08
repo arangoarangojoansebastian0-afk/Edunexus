@@ -134,7 +134,7 @@ Documented from real-world cloning projects. Each pitfall was encountered during
 
 **Problem**:`page.goto(url, wait_until="networkidle")`hangs forever on sites with persistent WebSocket/analytics connections.
 
-**Solution**: Use`wait_until="domcontentloaded"`+`page.wait_for_timeout(5000)`.
+**Solution**: Use`wait_until="domcontentloaded"`+`page.wait_for_timeout(2000)`.
 
 ## Pitfall 12: CDN Image 403 Errors
 
