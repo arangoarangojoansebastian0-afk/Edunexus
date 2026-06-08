@@ -14,11 +14,20 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // Enums
-export const userRoleEnum = pgEnum("user_role", ["student", "teacher", "admin"]);
+export const userRoleEnum = pgEnum("user_role", [
+  "student", 
+  "teacher", 
+  "director", 
+  "coordinator", 
+  "secretary", 
+  "admin"
+]);
 export const groupTypeEnum = pgEnum("group_type", ["course", "club"]);
 export const fileVisibilityEnum = pgEnum("file_visibility", ["public", "group", "private"]);
 export const reportStatusEnum = pgEnum("report_status", ["pending", "reviewed", "resolved", "dismissed"]);
 export const reportTargetTypeEnum = pgEnum("report_target_type", ["post", "comment", "file", "user"]);
+
+
 
 // Session storage table for Replit Auth
 export const sessions = pgTable(
@@ -385,7 +394,123 @@ export const recognitionsRelations = relations(recognitions, ({ one }) => ({
   }),
 }));
 
+export const institutionSettings = pgTable("institution_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  institutionName: varchar("institution_name", { length: 255 }),
+  logoUrl: text("logo_url"),
+  evaluationType: varchar("evaluation_type", { length: 20 }),
+  passingGrade: varchar("passing_grade"), // Se usa varchar o numeric según tu DB
+  academicYear: integer("academic_year"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const subjects = pgTable("subjects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: text("code").unique().notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  color: text("color"),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const grades = pgTable("grades", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 50 }).notNull(),
+  level: integer("level").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const academicGroups = pgTable("academic_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  gradeId: varchar("grade_id").references(() => grades.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 20 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const teacherCodes = pgTable("teacher_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  teacherId: varchar("teacher_id").references(() => users.id),
+  code: varchar("code", { length: 50 }).unique().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const staffCodes = pgTable("staff_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id),
+  code: varchar("code", { length: 50 }).unique().notNull(),
+  role: varchar("role", { length: 50 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// 1. Años académicos
+export const academicYears = pgTable("academic_years", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  year: integer("year").notNull().unique(), // Ej: 2026
+  isActive: boolean("is_active").default(false),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+});
+
+// 2. Periodos (Trimestres/Bimestres)
+export const academicPeriods = pgTable("academic_periods", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  academicYearId: varchar("academic_year_id").references(() => academicYears.id, { onDelete: "cascade" }).notNull(),
+  name: varchar("name", { length: 50 }).notNull(), // Ej: "Periodo 1"
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  isActive: boolean("is_active").default(false),
+});
+
+export const studentEnrollments = pgTable("student_enrollments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  groupId: varchar("group_id").references(() => academicGroups.id, { onDelete: "cascade" }).notNull(),
+  academicYearId: varchar("academic_year_id").references(() => academicYears.id).notNull(),
+  studentCode: varchar("student_code", { length: 50 }).unique(), // El código que mencionaste
+  status: varchar("status", { length: 50 }).default("enrolled").notNull(), 
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_enrollment_student").on(table.studentId),
+  index("idx_enrollment_group").on(table.groupId),
+  index("idx_enrollment_year").on(table.academicYearId),
+]);
+
 // Relations
+
+export const enrollmentsRelations = relations(studentEnrollments, ({ one }) => ({
+  student: one(users, { fields: [studentEnrollments.studentId], references: [users.id] }),
+  group: one(academicGroups, { fields: [studentEnrollments.groupId], references: [academicGroups.id] }),
+  academicYear: one(academicYears, { fields: [studentEnrollments.academicYearId], references: [academicYears.id] }),
+}));
+
+// 1. Relación de Profesores (Teachers)
+export const teacherCodesRelations = relations(teacherCodes, ({ one }) => ({
+  user: one(users, { fields: [teacherCodes.teacherId], references: [users.id] }),
+}));
+
+// 2. Relación de Administradores (Staff/Administrators)
+export const staffCodesRelations = relations(staffCodes, ({ one }) => ({
+  user: one(users, { fields: [staffCodes.userId], references: [users.id] }),
+}));
+
+// 3. Relación de Grados y Grupos Académicos
+export const gradesRelations = relations(grades, ({ many }) => ({
+  academicGroups: many(academicGroups),
+}));
+
+export const academicGroupsRelations = relations(academicGroups, ({ one }) => ({
+  grade: one(grades, { fields: [academicGroups.gradeId], references: [grades.id] }),
+}));
+
+// 4. Conexión de Subjects con el Sistema Académico
+// Esto permite que una materia sepa a qué grado o curso pertenece
+export const subjectsRelations = relations(subjects, ({ many }) => ({
+  // Aquí podrías vincularlo con los cursos del módulo Classroom
+  courses: many(courses), 
+}));
+
+
 export const usersRelations = relations(users, ({ many, one }) => ({
   posts: many(posts),
   comments: many(comments),
@@ -575,6 +700,11 @@ export const userBadgesRelations = relations(userBadges, ({ one }) => ({
 }));
 
 // Insert schemas
+
+
+export const insertAcademicYearSchema = createInsertSchema(academicYears).omit({ id: true });
+export const insertAcademicPeriodSchema = createInsertSchema(academicPeriods).omit({ id: true });
+export const insertStudentEnrollmentSchema = createInsertSchema(studentEnrollments).omit({ id: true, createdAt: true });
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
@@ -688,6 +818,13 @@ export const insertRecognitionSchema = createInsertSchema(recognitions).omit({
   createdAt: true,
   updatedAt: true,
 });
+
+export const insertSubjectSchema = createInsertSchema(subjects).omit({ id: true, createdAt: true });
+export const insertGradeSchema = createInsertSchema(grades).omit({ id: true, createdAt: true });
+export const insertAcademicGroupSchema = createInsertSchema(academicGroups).omit({ id: true, createdAt: true });
+export const insertInstitutionSettingsSchema = createInsertSchema(institutionSettings).omit({ id: true, createdAt: true });
+
+
 
 // Types
 export type User = typeof users.$inferSelect;
