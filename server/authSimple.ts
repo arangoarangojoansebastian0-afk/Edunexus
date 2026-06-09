@@ -1,5 +1,8 @@
 import bcrypt from "bcryptjs";
 import { storage } from "./storage";
+import { db } from "./db";
+import { staffCodes, teacherCodes } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 export interface AuthSession {
   userId: string;
@@ -17,25 +20,50 @@ export async function verifyPassword(
   return bcrypt.compare(password, hash);
 }
 
+type RegisterRole = "student" | "teacher" | "director" | "coordinator" | "secretary" | "admin";
+
 export async function registerUser(
   email: string,
   password: string,
   firstName: string,
   lastName: string,
-  role: "student" | "teacher" = "student",
-  teacherCode?: string
+  role: RegisterRole = "student",
+  accessCode?: string
 ) {
-  // Validate teacher code
-  if (role === "teacher") {
-    if (teacherCode !== "1234") {
-      throw new Error("Código de maestro inválido");
+  const staffRoles: RegisterRole[] = ["teacher", "director", "coordinator", "secretary", "admin"];
+
+  if (staffRoles.includes(role)) {
+    if (!accessCode) {
+      throw new Error("Se requiere un código de acceso para este rol");
+    }
+
+    if (role === "teacher") {
+      const found = await db
+        .select()
+        .from(teacherCodes)
+        .where(eq(teacherCodes.code, accessCode))
+        .limit(1);
+      if (found.length === 0) {
+        throw new Error("Código de maestro inválido");
+      }
+    } else {
+      const found = await db
+        .select()
+        .from(staffCodes)
+        .where(eq(staffCodes.code, accessCode))
+        .limit(1);
+      if (found.length === 0) {
+        throw new Error("Código de acceso inválido");
+      }
+      const staffEntry = found[0];
+      if (staffEntry.role && staffEntry.role !== role) {
+        throw new Error(`Este código no corresponde al rol de ${role}`);
+      }
     }
   }
 
-  // Hash password
   const passwordHash = await hashPassword(password);
 
-  // Create user
   const user = await storage.upsertUser({
     email,
     passwordHash,
@@ -53,31 +81,20 @@ export async function loginUser(
   password: string,
   lastName?: string
 ) {
-  // Get user by email or name
   let user;
   if (emailOrFirstName.includes("@")) {
-    // It's an email
     user = await storage.getUserByEmail(emailOrFirstName);
   } else if (lastName) {
-    // It's a name
     user = await storage.getUserByName(emailOrFirstName, lastName);
   } else {
     throw new Error("Invalid email or password");
   }
 
-  if (!user) {
-    throw new Error("Invalid email or password");
-  }
+  if (!user) throw new Error("Invalid email or password");
+  if (!user.passwordHash) throw new Error("Invalid email or password");
 
-  if (!user.passwordHash) {
-    throw new Error("Invalid email or password");
-  }
-
-  // Verify password
   const isValid = await verifyPassword(password, user.passwordHash);
-  if (!isValid) {
-    throw new Error("Invalid email or password");
-  }
+  if (!isValid) throw new Error("Invalid email or password");
 
   return user;
 }

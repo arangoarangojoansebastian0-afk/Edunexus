@@ -2,6 +2,15 @@ import { db } from "./db";
 import { eq, desc, and, sql, or, ilike, lt } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
+  institutionSettings,
+  subjects,
+  academicYears,
+  academicPeriods,
+  grades,
+  academicGroups,
+  studentEnrollments,
+  teacherCodes,
+  staffCodes,
   users,
   groups,
   groupMembers,
@@ -1408,7 +1417,201 @@ export class DatabaseStorage implements IStorage {
     return {
       studentCount: Number(studentCount?.count || 0),
       activityCount: Number(activityCount?.count || 0),
+
+      
     };
+
+    
+
+  }
+  // ─── INSTITUTION SETTINGS ───────────────────────────────────────────
+  async getInstitutionSettings() {
+    const [row] = await db.select().from(institutionSettings).limit(1);
+    return row || null;
+  }
+
+  async upsertInstitutionSettings(data: {
+    institutionName?: string;
+    logoUrl?: string;
+    evaluationType?: string;
+    passingGrade?: string;
+    academicYear?: number;
+  }) {
+    const existing = await this.getInstitutionSettings();
+    if (existing) {
+      const [updated] = await db
+        .update(institutionSettings)
+        .set(data)
+        .where(eq(institutionSettings.id, existing.id))
+        .returning();
+      return updated;
+    } else {
+      const [created] = await db
+        .insert(institutionSettings)
+        .values(data)
+        .returning();
+      return created;
+    }
+  }
+
+  // ─── SUBJECTS ────────────────────────────────────────────────────────
+  async getSubjects() {
+    return db.select().from(subjects).orderBy(subjects.name);
+  }
+
+  async upsertSubject(data: { id?: string; code: string; name: string; description?: string; color?: string; active?: boolean }) {
+    if (data.id) {
+      const [updated] = await db
+        .update(subjects)
+        .set({ name: data.name, description: data.description, color: data.color, active: data.active })
+        .where(eq(subjects.id, data.id))
+        .returning();
+      return updated;
+    } else {
+      const [created] = await db
+        .insert(subjects)
+        .values({ code: data.code, name: data.name, description: data.description, color: data.color, active: data.active ?? true })
+        .returning();
+      return created;
+    }
+  }
+
+  async deleteSubject(id: string) {
+    await db.delete(subjects).where(eq(subjects.id, id));
+  }
+
+  // ─── ACADEMIC YEARS ──────────────────────────────────────────────────
+  async getAcademicYears() {
+    return db.select().from(academicYears).orderBy(desc(academicYears.year));
+  }
+
+  async createAcademicYear(data: { year: number; startDate?: Date; endDate?: Date }) {
+    const [created] = await db.insert(academicYears).values(data).returning();
+    return created;
+  }
+
+  async setActiveAcademicYear(id: string) {
+    await db.update(academicYears).set({ isActive: false });
+    await db.update(academicYears).set({ isActive: true }).where(eq(academicYears.id, id));
+  }
+
+  async deleteAcademicYear(id: string) {
+    await db.delete(academicYears).where(eq(academicYears.id, id));
+  }
+
+  // ─── ACADEMIC PERIODS ────────────────────────────────────────────────
+  async getPeriodsByYear(yearId: string) {
+    return db.select().from(academicPeriods)
+      .where(eq(academicPeriods.academicYearId, yearId))
+      .orderBy(academicPeriods.startDate);
+  }
+
+  async createAcademicPeriod(data: { academicYearId: string; name: string; startDate: Date; endDate: Date }) {
+    const [created] = await db.insert(academicPeriods).values(data).returning();
+    return created;
+  }
+
+  async setActivePeriod(id: string) {
+    await db.update(academicPeriods).set({ isActive: false });
+    await db.update(academicPeriods).set({ isActive: true }).where(eq(academicPeriods.id, id));
+  }
+
+  async deleteAcademicPeriod(id: string) {
+    await db.delete(academicPeriods).where(eq(academicPeriods.id, id));
+  }
+
+  // ─── GRADES & ACADEMIC GROUPS ────────────────────────────────────────
+  async getGrades() {
+    return db.select().from(grades).orderBy(grades.level);
+  }
+
+  async createGrade(data: { name: string; level: number }) {
+    const [created] = await db.insert(grades).values(data).returning();
+    return created;
+  }
+
+  async deleteGrade(id: string) {
+    await db.delete(grades).where(eq(grades.id, id));
+  }
+
+  async getAcademicGroups() {
+    return db.select().from(academicGroups).orderBy(academicGroups.name);
+  }
+
+  async createAcademicGroup(data: { gradeId: string; name: string }) {
+    const [created] = await db.insert(academicGroups).values(data).returning();
+    return created;
+  }
+
+  async deleteAcademicGroup(id: string) {
+    await db.delete(academicGroups).where(eq(academicGroups.id, id));
+  }
+
+  // ─── STUDENT ENROLLMENTS ─────────────────────────────────────────────
+  async getStudentEnrollments(academicYearId?: string) {
+    const query = db
+      .select({
+        enrollment: studentEnrollments,
+        student: users,
+      })
+      .from(studentEnrollments)
+      .innerJoin(users, eq(studentEnrollments.studentId, users.id));
+    if (academicYearId) {
+      return query.where(eq(studentEnrollments.academicYearId, academicYearId));
+    }
+    return query;
+  }
+
+  async createStudentEnrollment(data: {
+    studentId: string;
+    groupId: string;
+    academicYearId: string;
+    studentCode?: string;
+  }) {
+    const [created] = await db.insert(studentEnrollments).values(data).returning();
+    return created;
+  }
+
+  async deleteStudentEnrollment(id: string) {
+    await db.delete(studentEnrollments).where(eq(studentEnrollments.id, id));
+  }
+
+  async expelStudent(userId: string) {
+    // Elimina todos los enrollments del estudiante
+    await db.delete(studentEnrollments).where(eq(studentEnrollments.studentId, userId));
+    // Bloquea la cuenta
+    await db.update(users).set({ isBlocked: true } as any).where(eq(users.id, userId));
+  }
+
+  async deleteUserPermanently(userId: string) {
+    await db.delete(users).where(eq(users.id, userId));
+  }
+
+  // ─── ACCESS CODES ────────────────────────────────────────────────────
+  async getTeacherCodes() {
+    return db.select().from(teacherCodes).orderBy(desc(teacherCodes.createdAt));
+  }
+
+  async createTeacherCode(code: string) {
+    const [created] = await db.insert(teacherCodes).values({ code }).returning();
+    return created;
+  }
+
+  async deleteTeacherCode(id: string) {
+    await db.delete(teacherCodes).where(eq(teacherCodes.id, id));
+  }
+
+  async getStaffCodes() {
+    return db.select().from(staffCodes).orderBy(desc(staffCodes.createdAt));
+  }
+
+  async createStaffCode(data: { code: string; role: string }) {
+    const [created] = await db.insert(staffCodes).values(data).returning();
+    return created;
+  }
+
+  async deleteStaffCode(id: string) {
+    await db.delete(staffCodes).where(eq(staffCodes.id, id));
   }
 }
 

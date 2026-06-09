@@ -28,6 +28,7 @@ import path from "path";
 import fs from "fs";
 import session from "express-session";
 
+
 // Extend Express Request with user
 interface Request extends ExpressRequest {
   user?: User;
@@ -98,7 +99,180 @@ const uploadToSupabase = async (file: Express.Multer.File, folder: string): Prom
 export async function registerRoutes(
   httpServer: Server,
   app: Express
-): Promise<Server> {
+
+  
+): 
+
+
+Promise<Server> {
+
+// ─── INSTITUTION SETTINGS ───────────────────────────────────────────
+  app.get("/api/admin/institution", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const config = await storage.getInstitutionSettings();
+      res.json(config);
+    } catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.patch("/api/admin/institution", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const config = await storage.upsertInstitutionSettings(req.body);
+      res.json(config);
+    } catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  // ─── SUBJECTS ────────────────────────────────────────────────────────
+  app.delete("/api/admin/subjects/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteSubject(req.params.id);
+      res.json({ success: true });
+    } catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  // ─── ACADEMIC YEARS ──────────────────────────────────────────────────
+  app.get("/api/admin/academic-years", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      res.json(await storage.getAcademicYears());
+    } catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.post("/api/admin/academic-years", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      res.json(await storage.createAcademicYear(req.body));
+    } catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.patch("/api/admin/academic-years/:id/activate", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await storage.setActiveAcademicYear(req.params.id);
+      res.json({ success: true });
+    } catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.delete("/api/admin/academic-years/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteAcademicYear(req.params.id);
+      res.json({ success: true });
+    } catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  // ─── ACADEMIC PERIODS ────────────────────────────────────────────────
+  app.get("/api/admin/academic-years/:yearId/periods", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      res.json(await storage.getPeriodsByYear(req.params.yearId));
+    } catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.post("/api/admin/academic-years/:yearId/periods", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      res.json(await storage.createAcademicPeriod({ ...req.body, academicYearId: req.params.yearId }));
+    } catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.patch("/api/admin/periods/:id/activate", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await storage.setActivePeriod(req.params.id);
+      res.json({ success: true });
+    } catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.delete("/api/admin/periods/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteAcademicPeriod(req.params.id);
+      res.json({ success: true });
+    } catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  // ─── GRADES & GROUPS ─────────────────────────────────────────────────
+  app.get("/api/admin/grades", requireAuth, requireAdmin, async (req, res) => {
+    try { res.json(await storage.getGrades()); }
+    catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.post("/api/admin/grades", requireAuth, requireAdmin, async (req, res) => {
+    try { res.json(await storage.createGrade(req.body)); }
+    catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.delete("/api/admin/grades/:id", requireAuth, requireAdmin, async (req, res) => {
+    try { await storage.deleteGrade(req.params.id); res.json({ success: true }); }
+    catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.get("/api/admin/academic-groups", requireAuth, requireAdmin, async (req, res) => {
+    try { res.json(await storage.getAcademicGroups()); }
+    catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.post("/api/admin/academic-groups", requireAuth, requireAdmin, async (req, res) => {
+    try { res.json(await storage.createAcademicGroup(req.body)); }
+    catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.delete("/api/admin/academic-groups/:id", requireAuth, requireAdmin, async (req, res) => {
+    try { await storage.deleteAcademicGroup(req.params.id); res.json({ success: true }); }
+    catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  // ─── ENROLLMENTS ─────────────────────────────────────────────────────
+  app.get("/api/admin/enrollments", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const yearId = req.query.yearId as string | undefined;
+      res.json(await storage.getStudentEnrollments(yearId));
+    } catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.post("/api/admin/enrollments", requireAuth, requireAdmin, async (req, res) => {
+    try { res.json(await storage.createStudentEnrollment(req.body)); }
+    catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.delete("/api/admin/enrollments/:id", requireAuth, requireAdmin, async (req, res) => {
+    try { await storage.deleteStudentEnrollment(req.params.id); res.json({ success: true }); }
+    catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.post("/api/admin/users/:id/expel", requireAuth, requireAdmin, async (req, res) => {
+    try { await storage.expelStudent(req.params.id); res.json({ success: true }); }
+    catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.delete("/api/admin/users/:id/permanent", requireAuth, requireAdmin, async (req, res) => {
+    try { await storage.deleteUserPermanently(req.params.id); res.json({ success: true }); }
+    catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  // ─── ACCESS CODES ────────────────────────────────────────────────────
+  app.get("/api/admin/codes/teacher", requireAuth, requireAdmin, async (req, res) => {
+    try { res.json(await storage.getTeacherCodes()); }
+    catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.post("/api/admin/codes/teacher", requireAuth, requireAdmin, async (req, res) => {
+    try { res.json(await storage.createTeacherCode(req.body.code)); }
+    catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.delete("/api/admin/codes/teacher/:id", requireAuth, requireAdmin, async (req, res) => {
+    try { await storage.deleteTeacherCode(req.params.id); res.json({ success: true }); }
+    catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.get("/api/admin/codes/staff", requireAuth, requireAdmin, async (req, res) => {
+    try { res.json(await storage.getStaffCodes()); }
+    catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.post("/api/admin/codes/staff", requireAuth, requireAdmin, async (req, res) => {
+    try { res.json(await storage.createStaffCode(req.body)); }
+    catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.delete("/api/admin/codes/staff/:id", requireAuth, requireAdmin, async (req, res) => {
+    try { await storage.deleteStaffCode(req.params.id); res.json({ success: true }); }
+    catch { res.status(500).json({ message: "Error" }); }
+  });
+  
   // Session middleware
 
 const PgStore = connectPgSimple(session);
@@ -124,6 +298,7 @@ app.use(
     },
   })
 );
+
 
   // Middleware to load user from session
   app.use(async (req: Request, res: Response, next: NextFunction) => {
@@ -1503,5 +1678,15 @@ const attachmentUrls = await Promise.all(
     require("express").static(uploadsDir)(req, res, next);
   });
 
+
+
+  // Tus otras rutas...
+  app.post("/api/login", async (req, res) => { /* ... */ });
+  app.get("/api/subjects", async (req, res) => { /* ... */ });
+
+   httpServer = createServer(app);
+
   return httpServer;
+
+  
 }
