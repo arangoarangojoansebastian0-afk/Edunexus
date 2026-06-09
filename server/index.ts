@@ -5,6 +5,7 @@ import { registerRoutes } from "./routes";
 import { runMigrations } from "./migrate";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import session from "express-session";
 
 const app = express();
 const httpServer = createServer(app);
@@ -22,6 +23,19 @@ app.use(
       req.rawBody = buf;
     },
   }),
+);
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "loyola-community-secret",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: false,
+      httpOnly: true,
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 días
+    },
+  })
 );
 
 app.use(express.urlencoded({ extended: false, limit: "50mb" }));

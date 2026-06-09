@@ -238,6 +238,14 @@ export interface IStorage {
   getStudentAttendance(courseId: string, studentId: string): Promise<Attendance[]>;
   recordAttendance(record: InsertAttendance): Promise<Attendance>;
   getCourseStats(courseId: string): Promise<{ studentCount: number; activityCount: number }>;
+
+ updateTeacherCode(id: string, code: string): Promise<any>;
+
+ updateStaffCode(
+  id: string,
+  data: { code?: string; role?: string }
+ ): Promise<any>;
+
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1597,6 +1605,15 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
+  async updateTeacherCode(id: string, code: string) {
+  const [updated] = await db
+    .update(teacherCodes)
+    .set({ code })
+    .where(eq(teacherCodes.id, id))
+    .returning();
+
+  return updated;
+}
   async deleteTeacherCode(id: string) {
     await db.delete(teacherCodes).where(eq(teacherCodes.id, id));
   }
@@ -1609,6 +1626,20 @@ export class DatabaseStorage implements IStorage {
     const [created] = await db.insert(staffCodes).values(data).returning();
     return created;
   }
+
+ 
+  async updateStaffCode(
+  id: string,
+  data: { code?: string; role?: string }
+) {
+  const [updated] = await db
+    .update(staffCodes)
+    .set(data)
+    .where(eq(staffCodes.id, id))
+    .returning();
+
+  return updated;
+}
 
   async deleteStaffCode(id: string) {
     await db.delete(staffCodes).where(eq(staffCodes.id, id));
