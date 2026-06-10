@@ -1,3 +1,0 @@
-- [DB Driver Switch](db-driver-switch.md) — switched from @neondatabase/serverless to pg; Neon credentials in DATABASE_URL are broken (password auth failed for neondb_owner)
-- [Classroom Module](classroom-module.md) — 5 new tables + full CRUD in storage.ts + routes.ts; auto-migration runs on startup via server/migrate.ts
-- [Master 2000 Integration](master2000-integration.md) — stub provider at server/providers/master2000.ts; activate with MASTER2000_API_URL + MASTER2000_API_KEY env vars
