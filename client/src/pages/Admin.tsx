@@ -724,8 +724,8 @@ function TabMaterias() {
   });
  
   const toggleActive = useMutation({
-    mutationFn: (s: any) =>
-      apiRequest("POST", `/api/admin/subjects/${s.id}/toggle`, { active: !s.active }),
+  mutationFn: (s: any) =>
+    apiRequest("POST", `/api/admin/subjects/${s.id}/toggle`, { active: !s.active }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/subjects"] });
       toast({ title: "Estado actualizado" });
@@ -2551,7 +2551,7 @@ function TabBoletines() {
  
 function TabClassroom() {
   const { data: courses = [], isLoading } = useQuery<any[]>({
-    queryKey: ["/api/courses"],
+    queryKey: ["/api/courses"],  // ahora existe el endpoint
   });
  
   return (

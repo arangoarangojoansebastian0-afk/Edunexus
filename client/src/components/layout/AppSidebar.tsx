@@ -1,4 +1,5 @@
 import { Link, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import {
   Sidebar,
   SidebarContent,
@@ -55,6 +56,11 @@ export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
 
+  
+  const { data: institution } = useQuery<{ institutionName: string }>({
+    queryKey: ["/api/admin/institution"],
+  });
+
   const handleLogout = async () => {
     try {
       await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
@@ -69,9 +75,12 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="p-4">
-        <Link href="/" className="flex items-center gap-2">
-          <GraduationCap className="h-8 w-8 text-primary" />
-          <span className="font-serif font-bold text-lg">Comunidad Loyola</span>
+        <Link href="/" className="flex items-center gap-2 min-w-0">
+          <GraduationCap className="h-8 w-8 text-primary shrink-0" />
+          <span className="font-serif font-bold text-lg capitalize truncate">
+            
+            {institution?.institutionName || "Comunidad"}
+          </span>
         </Link>
       </SidebarHeader>
 
@@ -212,3 +221,4 @@ export function AppSidebar() {
     </Sidebar>
   );
 }
+

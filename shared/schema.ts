@@ -9,6 +9,7 @@ import {
   jsonb,
   index,
   pgEnum,
+  time,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -26,8 +27,6 @@ export const groupTypeEnum = pgEnum("group_type", ["course", "club"]);
 export const fileVisibilityEnum = pgEnum("file_visibility", ["public", "group", "private"]);
 export const reportStatusEnum = pgEnum("report_status", ["pending", "reviewed", "resolved", "dismissed"]);
 export const reportTargetTypeEnum = pgEnum("report_target_type", ["post", "comment", "file", "user"]);
-
-
 
 // Session storage table for Replit Auth
 export const sessions = pgTable(
@@ -236,8 +235,8 @@ export const messages = pgTable(
     groupId: varchar("group_id").references(() => groups.id, { onDelete: "cascade" }).notNull(),
     senderId: varchar("sender_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
     content: text("content").notNull(),
-    mediaUrl: varchar("media_url"), // URL to voice, image, or document
-    mediaType: varchar("media_type"), // "voice", "image", "document"
+    mediaUrl: varchar("media_url"),
+    mediaType: varchar("media_type"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -290,7 +289,7 @@ export const qaVotes = pgTable(
     userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
     questionId: varchar("question_id").references(() => questions.id, { onDelete: "cascade" }),
     answerId: varchar("answer_id").references(() => answers.id, { onDelete: "cascade" }),
-    voteType: varchar("vote_type", { length: 50 }).notNull(), // "up" or "down"
+    voteType: varchar("vote_type", { length: 50 }).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -351,10 +350,10 @@ export const notifications = pgTable(
   {
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
     userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-    type: varchar("type", { length: 50 }).notNull(), // "post", "answer", "comment", "message"
+    type: varchar("type", { length: 50 }).notNull(),
     title: varchar("title", { length: 255 }).notNull(),
     message: text("message").notNull(),
-    relatedId: varchar("related_id"), // post_id, question_id, etc
+    relatedId: varchar("related_id"),
     read: boolean("read").default(false).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -382,25 +381,21 @@ export const recognitions = pgTable(
   ]
 );
 
-// Recognition relations
-export const recognitionsRelations = relations(recognitions, ({ one }) => ({
-  createdBy: one(users, {
-    fields: [recognitions.createdBy],
-    references: [users.id],
-  }),
-  recipient: one(users, {
-    fields: [recognitions.recipientId],
-    references: [users.id],
-  }),
-}));
+// ====== CORREGIDO & NUEVAS TABLAS ADMIN CORRESPONDIENTES A SUPABASE ======
 
 export const institutionSettings = pgTable("institution_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   institutionName: varchar("institution_name", { length: 255 }),
   logoUrl: text("logo_url"),
   evaluationType: varchar("evaluation_type", { length: 20 }),
-  passingGrade: varchar("passing_grade"), // Se usa varchar o numeric según tu DB
+  passingGrade: varchar("passing_grade"),
   academicYear: integer("academic_year"),
+  bannerUrl: text("banner_url"),
+  primaryColor: varchar("primary_color", { length: 50 }),
+  secondaryColor: varchar("secondary_color", { length: 50 }),
+  description: text("description"),
+  institutionCode: varchar("institution_code", { length: 50 }),
+  gradeScale: varchar("grade_scale", { length: 50 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -419,6 +414,9 @@ export const grades = pgTable("grades", {
   name: varchar("name", { length: 50 }).notNull(),
   level: integer("level").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  institution_id: integer("institution_id")
+    .notNull()
+    .references(() => institutionSettings.id, { onDelete: "cascade" }),
 });
 
 export const academicGroups = pgTable("academic_groups", {
@@ -443,20 +441,18 @@ export const staffCodes = pgTable("staff_codes", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// 1. Años académicos
 export const academicYears = pgTable("academic_years", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  year: integer("year").notNull().unique(), // Ej: 2026
+  year: integer("year").notNull().unique(),
   isActive: boolean("is_active").default(false),
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
 });
 
-// 2. Periodos (Trimestres/Bimestres)
 export const academicPeriods = pgTable("academic_periods", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   academicYearId: varchar("academic_year_id").references(() => academicYears.id, { onDelete: "cascade" }).notNull(),
-  name: varchar("name", { length: 50 }).notNull(), // Ej: "Periodo 1"
+  name: varchar("name", { length: 50 }).notNull(),
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date").notNull(),
   isActive: boolean("is_active").default(false),
@@ -467,7 +463,7 @@ export const studentEnrollments = pgTable("student_enrollments", {
   studentId: varchar("student_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   groupId: varchar("group_id").references(() => academicGroups.id, { onDelete: "cascade" }).notNull(),
   academicYearId: varchar("academic_year_id").references(() => academicYears.id).notNull(),
-  studentCode: varchar("student_code", { length: 50 }).unique(), // El código que mencionaste
+  studentCode: varchar("student_code", { length: 50 }).unique(),
   status: varchar("status", { length: 50 }).default("enrolled").notNull(), 
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
@@ -476,473 +472,38 @@ export const studentEnrollments = pgTable("student_enrollments", {
   index("idx_enrollment_year").on(table.academicYearId),
 ]);
 
-// Relations
-
-export const enrollmentsRelations = relations(studentEnrollments, ({ one }) => ({
-  student: one(users, { fields: [studentEnrollments.studentId], references: [users.id] }),
-  group: one(academicGroups, { fields: [studentEnrollments.groupId], references: [academicGroups.id] }),
-  academicYear: one(academicYears, { fields: [studentEnrollments.academicYearId], references: [academicYears.id] }),
-}));
-
-// 1. Relación de Profesores (Teachers)
-export const teacherCodesRelations = relations(teacherCodes, ({ one }) => ({
-  user: one(users, { fields: [teacherCodes.teacherId], references: [users.id] }),
-}));
-
-// 2. Relación de Administradores (Staff/Administrators)
-export const staffCodesRelations = relations(staffCodes, ({ one }) => ({
-  user: one(users, { fields: [staffCodes.userId], references: [users.id] }),
-}));
-
-// 3. Relación de Grados y Grupos Académicos
-export const gradesRelations = relations(grades, ({ many }) => ({
-  academicGroups: many(academicGroups),
-}));
-
-export const academicGroupsRelations = relations(academicGroups, ({ one }) => ({
-  grade: one(grades, { fields: [academicGroups.gradeId], references: [grades.id] }),
-}));
-
-// 4. Conexión de Subjects con el Sistema Académico
-// Esto permite que una materia sepa a qué grado o curso pertenece
-export const subjectsRelations = relations(subjects, ({ many }) => ({
-  // Aquí podrías vincularlo con los cursos del módulo Classroom
-  courses: many(courses), 
-}));
-
-
-export const usersRelations = relations(users, ({ many, one }) => ({
-  posts: many(posts),
-  comments: many(comments),
-  reactions: many(reactions),
-  files: many(files),
-  hostedEvents: many(events),
-  eventParticipations: many(eventParticipants),
-  groupMemberships: many(groupMembers),
-  messages: many(messages),
-  reports: many(reports),
-  userBadges: many(userBadges),
-  questions: many(questions),
-  answers: many(answers),
-  qaVotes: many(qaVotes),
-  notificationPreferences: one(notificationPreferences, {
-    fields: [users.id],
-    references: [notificationPreferences.userId],
-  }),
-  notifications: many(notifications),
-  recognitionsCreated: many(recognitions, { relationName: "createdBy" }),
-  recognitionsReceived: many(recognitions, { relationName: "recipient" }),
-}));
-
-export const groupsRelations = relations(groups, ({ one, many }) => ({
-  creator: one(users, {
-    fields: [groups.createdBy],
-    references: [users.id],
-  }),
-  members: many(groupMembers),
-  posts: many(posts),
-  files: many(files),
-  messages: many(messages),
-  questions: many(questions),
-}));
-
-export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
-  group: one(groups, {
-    fields: [groupMembers.groupId],
-    references: [groups.id],
-  }),
-  user: one(users, {
-    fields: [groupMembers.userId],
-    references: [users.id],
-  }),
-}));
-
-export const postsRelations = relations(posts, ({ one, many }) => ({
-  author: one(users, {
-    fields: [posts.authorId],
-    references: [users.id],
-  }),
-  group: one(groups, {
-    fields: [posts.groupId],
-    references: [groups.id],
-  }),
-  comments: many(comments),
-  reactions: many(reactions),
-}));
-
-export const commentsRelations = relations(comments, ({ one }) => ({
-  post: one(posts, {
-    fields: [comments.postId],
-    references: [posts.id],
-  }),
-  author: one(users, {
-    fields: [comments.authorId],
-    references: [users.id],
-  }),
-}));
-
-export const reactionsRelations = relations(reactions, ({ one }) => ({
-  post: one(posts, {
-    fields: [reactions.postId],
-    references: [posts.id],
-  }),
-  user: one(users, {
-    fields: [reactions.userId],
-    references: [users.id],
-  }),
-}));
-
-export const filesRelations = relations(files, ({ one }) => ({
-  uploader: one(users, {
-    fields: [files.uploaderId],
-    references: [users.id],
-  }),
-  group: one(groups, {
-    fields: [files.groupId],
-    references: [groups.id],
-  }),
-}));
-
-export const eventsRelations = relations(events, ({ one, many }) => ({
-  host: one(users, {
-    fields: [events.hostId],
-    references: [users.id],
-  }),
-  participants: many(eventParticipants),
-}));
-
-export const eventParticipantsRelations = relations(eventParticipants, ({ one }) => ({
-  event: one(events, {
-    fields: [eventParticipants.eventId],
-    references: [events.id],
-  }),
-  user: one(users, {
-    fields: [eventParticipants.userId],
-    references: [users.id],
-  }),
-}));
-
-export const reportsRelations = relations(reports, ({ one }) => ({
-  reporter: one(users, {
-    fields: [reports.reporterId],
-    references: [users.id],
-  }),
-  reviewer: one(users, {
-    fields: [reports.reviewedBy],
-    references: [users.id],
-  }),
-}));
-
-export const messagesRelations = relations(messages, ({ one }) => ({
-  group: one(groups, {
-    fields: [messages.groupId],
-    references: [groups.id],
-  }),
-  sender: one(users, {
-    fields: [messages.senderId],
-    references: [users.id],
-  }),
-}));
-
-export const questionsRelations = relations(questions, ({ one, many }) => ({
-  group: one(groups, {
-    fields: [questions.groupId],
-    references: [groups.id],
-  }),
-  author: one(users, {
-    fields: [questions.authorId],
-    references: [users.id],
-  }),
-  answers: many(answers),
-  votes: many(qaVotes),
-}));
-
-export const answersRelations = relations(answers, ({ one, many }) => ({
-  question: one(questions, {
-    fields: [answers.questionId],
-    references: [questions.id],
-  }),
-  author: one(users, {
-    fields: [answers.authorId],
-    references: [users.id],
-  }),
-  votes: many(qaVotes),
-}));
-
-export const qaVotesRelations = relations(qaVotes, ({ one }) => ({
-  user: one(users, {
-    fields: [qaVotes.userId],
-    references: [users.id],
-  }),
-  question: one(questions, {
-    fields: [qaVotes.questionId],
-    references: [questions.id],
-  }),
-  answer: one(answers, {
-    fields: [qaVotes.answerId],
-    references: [answers.id],
-  }),
-}));
-
-export const badgesRelations = relations(badges, ({ many }) => ({
-  userBadges: many(userBadges),
-}));
-
-export const userBadgesRelations = relations(userBadges, ({ one }) => ({
-  user: one(users, {
-    fields: [userBadges.userId],
-    references: [users.id],
-  }),
-  badge: one(badges, {
-    fields: [userBadges.badgeId],
-    references: [badges.id],
-  }),
-}));
-
-// Insert schemas
-
-
-export const insertAcademicYearSchema = createInsertSchema(academicYears).omit({ id: true });
-export const insertAcademicPeriodSchema = createInsertSchema(academicPeriods).omit({ id: true });
-export const insertStudentEnrollmentSchema = createInsertSchema(studentEnrollments).omit({ id: true, createdAt: true });
-export const insertUserSchema = createInsertSchema(users).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+export const classSchedules = pgTable("class_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  groupId: varchar("group_id").references(() => academicGroups.id, { onDelete: "cascade" }).notNull(),
+  subjectId: varchar("subject_id").references(() => subjects.id, { onDelete: "cascade" }).notNull(),
+  teacherId: varchar("teacher_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  dayOfWeek: integer("day_of_week").notNull(),
+  startTime: time("start_time").notNull(),
+  endTime: time("end_time").notNull(),
+  room: varchar("room", { length: 50 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const insertGroupSchema = createInsertSchema(groups).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+export const studentObservations = pgTable("student_observations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  teacherId: varchar("teacher_id").references(() => users.id).notNull(),
+  type: varchar("type", { length: 50 }).notNull(),
+  severity: varchar("severity", { length: 20 }),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const insertGroupMemberSchema = createInsertSchema(groupMembers).omit({
-  id: true,
-  joinedAt: true,
+export const teachingAssignments = pgTable("teaching_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  teacherId: varchar("teacher_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  subjectId: varchar("subject_id").references(() => subjects.id, { onDelete: "cascade" }).notNull(),
+  groupId: varchar("group_id").references(() => academicGroups.id, { onDelete: "cascade" }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const insertPostSchema = createInsertSchema(posts).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertCommentSchema = createInsertSchema(comments).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertReactionSchema = createInsertSchema(reactions).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertFileSchema = createInsertSchema(files).omit({
-  id: true,
-  createdAt: true,
-  downloadCount: true,
-});
-
-export const insertEventSchema = createInsertSchema(events)
-  .omit({
-    id: true,
-    createdAt: true,
-    updatedAt: true,
-  })
-  .extend({
-    startTime: z.coerce.date(),
-    endTime: z.coerce.date(),
-  });
-
-export const insertEventParticipantSchema = createInsertSchema(eventParticipants).omit({
-  id: true,
-  bookedAt: true,
-});
-
-export const insertReportSchema = createInsertSchema(reports).omit({
-  id: true,
-  createdAt: true,
-  resolvedAt: true,
-  reviewedBy: true,
-  reviewNotes: true,
-  status: true,
-});
-
-export const insertMessageSchema = createInsertSchema(messages).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertQuestionSchema = createInsertSchema(questions).omit({
-  id: true,
-  votes: true,
-  createdAt: true,
-});
-
-export const insertAnswerSchema = createInsertSchema(answers).omit({
-  id: true,
-  votes: true,
-  createdAt: true,
-});
-
-export const insertQaVoteSchema = createInsertSchema(qaVotes).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertBadgeSchema = createInsertSchema(badges).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertUserBadgeSchema = createInsertSchema(userBadges).omit({
-  id: true,
-  earnedAt: true,
-});
-
-export const insertNotificationPreferenceSchema = createInsertSchema(notificationPreferences).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertNotificationSchema = createInsertSchema(notifications).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertRecognitionSchema = createInsertSchema(recognitions).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertSubjectSchema = createInsertSchema(subjects).omit({ id: true, createdAt: true });
-export const insertGradeSchema = createInsertSchema(grades).omit({ id: true, createdAt: true });
-export const insertAcademicGroupSchema = createInsertSchema(academicGroups).omit({ id: true, createdAt: true });
-export const insertInstitutionSettingsSchema = createInsertSchema(institutionSettings).omit({ id: true, createdAt: true });
-
-
-
-// Types
-export type User = typeof users.$inferSelect;
-export type UpsertUser = typeof users.$inferInsert;
-export type InsertUser = z.infer<typeof insertUserSchema>;
-
-export type Group = typeof groups.$inferSelect;
-export type InsertGroup = z.infer<typeof insertGroupSchema>;
-
-export type GroupMember = typeof groupMembers.$inferSelect;
-export type InsertGroupMember = z.infer<typeof insertGroupMemberSchema>;
-
-export type Post = typeof posts.$inferSelect;
-export type InsertPost = z.infer<typeof insertPostSchema>;
-
-export type Comment = typeof comments.$inferSelect;
-export type InsertComment = z.infer<typeof insertCommentSchema>;
-
-export type Reaction = typeof reactions.$inferSelect;
-export type InsertReaction = z.infer<typeof insertReactionSchema>;
-
-export type File = typeof files.$inferSelect;
-export type InsertFile = z.infer<typeof insertFileSchema>;
-
-export type Event = typeof events.$inferSelect;
-export type InsertEvent = z.infer<typeof insertEventSchema>;
-
-export type EventParticipant = typeof eventParticipants.$inferSelect;
-export type InsertEventParticipant = z.infer<typeof insertEventParticipantSchema>;
-
-export type Report = typeof reports.$inferSelect;
-export type InsertReport = z.infer<typeof insertReportSchema>;
-
-export type Message = typeof messages.$inferSelect;
-export type InsertMessage = z.infer<typeof insertMessageSchema>;
-
-export type Question = typeof questions.$inferSelect;
-export type InsertQuestion = z.infer<typeof insertQuestionSchema>;
-
-export type Answer = typeof answers.$inferSelect;
-export type InsertAnswer = z.infer<typeof insertAnswerSchema>;
-
-export type QaVote = typeof qaVotes.$inferSelect;
-export type InsertQaVote = z.infer<typeof insertQaVoteSchema>;
-
-export type Badge = typeof badges.$inferSelect;
-export type InsertBadge = z.infer<typeof insertBadgeSchema>;
-
-export type UserBadge = typeof userBadges.$inferSelect;
-export type InsertUserBadge = z.infer<typeof insertUserBadgeSchema>;
-
-export type NotificationPreference = typeof notificationPreferences.$inferSelect;
-export type InsertNotificationPreference = z.infer<typeof insertNotificationPreferenceSchema>;
-
-export type Notification = typeof notifications.$inferSelect;
-export type InsertNotification = z.infer<typeof insertNotificationSchema>;
-
-export type Recognition = typeof recognitions.$inferSelect;
-export type InsertRecognition = z.infer<typeof insertRecognitionSchema>;
-
-// Extended types with relations
-export type PostWithAuthor = Post & {
-  author: User;
-  comments?: CommentWithAuthor[];
-  reactions?: Reaction[];
-  _count?: {
-    comments: number;
-    reactions: number;
-  };
-};
-
-export type CommentWithAuthor = Comment & {
-  author: User;
-};
-
-export type GroupWithMembers = Group & {
-  members?: GroupMember[];
-  _count?: {
-    members: number;
-    posts: number;
-  };
-};
-
-export type FileWithUploader = File & {
-  uploader: User;
-};
-
-export type EventWithHost = Event & {
-  host: User;
-  participants?: EventParticipant[];
-  _count?: {
-    participants: number;
-  };
-};
-
-export type MessageWithSender = Message & {
-  sender: User;
-};
-
-export type UserWithBadges = User & {
-  userBadges?: (UserBadge & { badge: Badge })[];
-};
-
-export type QuestionWithAnswers = Question & {
-  author: User;
-  answers: (Answer & { author: User })[];
-  _count?: {
-    answers: number;
-  };
-};
-
-export type RecognitionWithUsers = Recognition & {
-  createdBy: User;
-  recipient: User;
-};
-
-// === CLASSROOM MODULE ===
-
+// ====== CLASSROOM MODULE ======
 export const courses = pgTable(
   "courses",
   {
@@ -950,9 +511,7 @@ export const courses = pgTable(
     name: varchar("name", { length: 255 }).notNull(),
     description: text("description"),
     subject: varchar("subject", { length: 100 }).notNull(),
-    teacherId: varchar("teacher_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
+    teacherId: varchar("teacher_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
     grade: varchar("grade", { length: 50 }),
     semester: varchar("semester", { length: 50 }),
     academicYear: varchar("academic_year", { length: 20 }),
@@ -972,12 +531,8 @@ export const courseEnrollments = pgTable(
   "course_enrollments",
   {
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-    courseId: varchar("course_id")
-      .references(() => courses.id, { onDelete: "cascade" })
-      .notNull(),
-    studentId: varchar("student_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
+    courseId: varchar("course_id").references(() => courses.id, { onDelete: "cascade" }).notNull(),
+    studentId: varchar("student_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
     enrolledAt: timestamp("enrolled_at").defaultNow().notNull(),
     status: varchar("status", { length: 50 }).default("active").notNull(),
   },
@@ -991,12 +546,10 @@ export const activities = pgTable(
   "activities",
   {
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-    courseId: varchar("course_id")
-      .references(() => courses.id, { onDelete: "cascade" })
-      .notNull(),
+    courseId: varchar("course_id").references(() => courses.id, { onDelete: "cascade" }).notNull(),
     title: varchar("title", { length: 255 }).notNull(),
     description: text("description"),
-    type: varchar("type", { length: 50 }).notNull(), // "assignment" | "project" | "quiz" | "exam"
+    type: varchar("type", { length: 50 }).notNull(),
     dueDate: timestamp("due_date"),
     maxScore: integer("max_score").default(100).notNull(),
     attachments: text("attachments").array().default(sql`ARRAY[]::text[]`),
@@ -1011,12 +564,8 @@ export const submissions = pgTable(
   "submissions",
   {
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-    activityId: varchar("activity_id")
-      .references(() => activities.id, { onDelete: "cascade" })
-      .notNull(),
-    studentId: varchar("student_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
+    activityId: varchar("activity_id").references(() => activities.id, { onDelete: "cascade" }).notNull(),
+    studentId: varchar("student_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
     content: text("content"),
     attachments: text("attachments").array().default(sql`ARRAY[]::text[]`),
     submittedAt: timestamp("submitted_at").defaultNow().notNull(),
@@ -1036,18 +585,12 @@ export const attendance = pgTable(
   "attendance",
   {
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-    courseId: varchar("course_id")
-      .references(() => courses.id, { onDelete: "cascade" })
-      .notNull(),
-    studentId: varchar("student_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
+    courseId: varchar("course_id").references(() => courses.id, { onDelete: "cascade" }).notNull(),
+    studentId: varchar("student_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
     date: timestamp("date").notNull(),
-    status: varchar("status", { length: 50 }).notNull(), // "present" | "absent" | "late" | "excused"
+    status: varchar("status", { length: 50 }).notNull(),
     notes: text("notes"),
-    recordedBy: varchar("recorded_by")
-      .references(() => users.id)
-      .notNull(),
+    recordedBy: varchar("recorded_by").references(() => users.id).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -1057,7 +600,142 @@ export const attendance = pgTable(
   ]
 );
 
-// Classroom Relations
+// Relations definitions
+export const recognitionsRelations = relations(recognitions, ({ one }) => ({
+  createdBy: one(users, { fields: [recognitions.createdBy], references: [users.id], relationName: "createdBy" }),
+  recipient: one(users, { fields: [recognitions.recipientId], references: [users.id], relationName: "recipient" }),
+}));
+
+export const enrollmentsRelations = relations(studentEnrollments, ({ one }) => ({
+  student: one(users, { fields: [studentEnrollments.studentId], references: [users.id] }),
+  group: one(academicGroups, { fields: [studentEnrollments.groupId], references: [academicGroups.id] }),
+  academicYear: one(academicYears, { fields: [studentEnrollments.academicYearId], references: [academicYears.id] }),
+}));
+
+export const teacherCodesRelations = relations(teacherCodes, ({ one }) => ({
+  user: one(users, { fields: [teacherCodes.teacherId], references: [users.id] }),
+}));
+
+export const staffCodesRelations = relations(staffCodes, ({ one }) => ({
+  user: one(users, { fields: [staffCodes.userId], references: [users.id] }),
+}));
+
+export const gradesRelations = relations(grades, ({ many }) => ({
+  academicGroups: many(academicGroups),
+}));
+
+export const academicGroupsRelations = relations(academicGroups, ({ one }) => ({
+  grade: one(grades, { fields: [academicGroups.gradeId], references: [grades.id] }),
+}));
+
+export const subjectsRelations = relations(subjects, ({ many }) => ({
+  courses: many(courses), 
+}));
+
+export const usersRelations = relations(users, ({ many, one }) => ({
+  posts: many(posts),
+  comments: many(comments),
+  reactions: many(reactions),
+  files: many(files),
+  hostedEvents: many(events),
+  eventParticipations: many(eventParticipants),
+  groupMemberships: many(groupMembers),
+  messages: many(messages),
+  reports: many(reports),
+  userBadges: many(userBadges),
+  questions: many(questions),
+  answers: many(answers),
+  qaVotes: many(qaVotes),
+  notificationPreferences: one(notificationPreferences, { fields: [users.id], references: [notificationPreferences.userId] }),
+  notifications: many(notifications),
+  recognitionsCreated: many(recognitions, { relationName: "createdBy" }),
+  recognitionsReceived: many(recognitions, { relationName: "recipient" }),
+}));
+
+export const groupsRelations = relations(groups, ({ one, many }) => ({
+  creator: one(users, { fields: [groups.createdBy], references: [users.id] }),
+  members: many(groupMembers),
+  posts: many(posts),
+  files: many(files),
+  messages: many(messages),
+  questions: many(questions),
+}));
+
+export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
+  group: one(groups, { fields: [groupMembers.groupId], references: [groups.id] }),
+  user: one(users, { fields: [groupMembers.userId], references: [users.id] }),
+}));
+
+export const postsRelations = relations(posts, ({ one, many }) => ({
+  author: one(users, { fields: [posts.authorId], references: [users.id] }),
+  group: one(groups, { fields: [posts.groupId], references: [groups.id] }),
+  comments: many(comments),
+  reactions: many(reactions),
+}));
+
+export const commentsRelations = relations(comments, ({ one }) => ({
+  post: one(posts, { fields: [comments.postId], references: [posts.id] }),
+  author: one(users, { fields: [comments.authorId], references: [users.id] }),
+}));
+
+export const reactionsRelations = relations(reactions, ({ one }) => ({
+  post: one(posts, { fields: [reactions.postId], references: [posts.id] }),
+  user: one(users, { fields: [reactions.userId], references: [users.id] }),
+}));
+
+export const filesRelations = relations(files, ({ one }) => ({
+  uploader: one(users, { fields: [files.uploaderId], references: [users.id] }),
+  group: one(groups, { fields: [files.groupId], references: [groups.id] }),
+}));
+
+export const eventsRelations = relations(events, ({ one, many }) => ({
+  host: one(users, { fields: [events.hostId], references: [users.id] }),
+  participants: many(eventParticipants),
+}));
+
+export const eventParticipantsRelations = relations(eventParticipants, ({ one }) => ({
+  event: one(events, { fields: [eventParticipants.eventId], references: [events.id] }),
+  user: one(users, { fields: [eventParticipants.userId], references: [users.id] }),
+}));
+
+export const reportsRelations = relations(reports, ({ one }) => ({
+  reporter: one(users, { fields: [reports.reporterId], references: [users.id] }),
+  reviewer: one(users, { fields: [reports.reviewedBy], references: [users.id] }),
+}));
+
+export const messagesRelations = relations(messages, ({ one }) => ({
+  group: one(groups, { fields: [messages.groupId], references: [groups.id] }),
+  sender: one(users, { fields: [messages.senderId], references: [users.id] }),
+}));
+
+export const questionsRelations = relations(questions, ({ one, many }) => ({
+  group: one(groups, { fields: [questions.groupId], references: [groups.id] }),
+  author: one(users, { fields: [questions.authorId], references: [users.id] }),
+  answers: many(answers),
+  votes: many(qaVotes),
+}));
+
+export const answersRelations = relations(answers, ({ one, many }) => ({
+  question: one(questions, { fields: [answers.questionId], references: [questions.id] }),
+  author: one(users, { fields: [answers.authorId], references: [users.id] }),
+  votes: many(qaVotes),
+}));
+
+export const qaVotesRelations = relations(qaVotes, ({ one }) => ({
+  user: one(users, { fields: [qaVotes.userId], references: [users.id] }),
+  question: one(questions, { fields: [qaVotes.questionId], references: [questions.id] }),
+  answer: one(answers, { fields: [qaVotes.answerId], references: [answers.id] }),
+}));
+
+export const badgesRelations = relations(badges, ({ many }) => ({
+  userBadges: many(userBadges),
+}));
+
+export const userBadgesRelations = relations(userBadges, ({ one }) => ({
+  user: one(users, { fields: [userBadges.userId], references: [users.id] }),
+  badge: one(badges, { fields: [userBadges.badgeId], references: [badges.id] }),
+}));
+
 export const coursesRelations = relations(courses, ({ one, many }) => ({
   teacher: one(users, { fields: [courses.teacherId], references: [users.id] }),
   group: one(groups, { fields: [courses.groupId], references: [groups.id] }),
@@ -1088,76 +766,109 @@ export const attendanceRelations = relations(attendance, ({ one }) => ({
   recorder: one(users, { fields: [attendance.recordedBy], references: [users.id] }),
 }));
 
-// Classroom Insert Schemas
-export const insertCourseSchema = createInsertSchema(courses).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
+// Insert schemas
+export const insertAcademicYearSchema = createInsertSchema(academicYears).omit({ id: true });
+export const insertAcademicPeriodSchema = createInsertSchema(academicPeriods).omit({ id: true });
+export const insertStudentEnrollmentSchema = createInsertSchema(studentEnrollments).omit({ id: true, createdAt: true });
+export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertGroupSchema = createInsertSchema(groups).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertGroupMemberSchema = createInsertSchema(groupMembers).omit({ id: true, joinedAt: true });
+export const insertPostSchema = createInsertSchema(posts).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertCommentSchema = createInsertSchema(comments).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertReactionSchema = createInsertSchema(reactions).omit({ id: true, createdAt: true });
+export const insertFileSchema = createInsertSchema(files).omit({ id: true, createdAt: true, downloadCount: true });
+export const insertEventSchema = createInsertSchema(events).omit({ id: true, createdAt: true, updatedAt: true }).extend({ startTime: z.coerce.date(), endTime: z.coerce.date() });
+export const insertEventParticipantSchema = createInsertSchema(eventParticipants).omit({ id: true, bookedAt: true });
+export const insertReportSchema = createInsertSchema(reports).omit({ id: true, createdAt: true, resolvedAt: true, reviewedBy: true, reviewNotes: true, status: true });
+export const insertMessageSchema = createInsertSchema(messages).omit({ id: true, createdAt: true });
+export const insertQuestionSchema = createInsertSchema(questions).omit({ id: true, votes: true, createdAt: true });
+export const insertAnswerSchema = createInsertSchema(answers).omit({ id: true, votes: true, createdAt: true });
+export const insertQaVoteSchema = createInsertSchema(qaVotes).omit({ id: true, createdAt: true });
+export const insertBadgeSchema = createInsertSchema(badges).omit({ id: true, createdAt: true });
+export const insertUserBadgeSchema = createInsertSchema(userBadges).omit({ id: true, earnedAt: true });
+export const insertNotificationPreferenceSchema = createInsertSchema(notificationPreferences).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
+export const insertRecognitionSchema = createInsertSchema(recognitions).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertSubjectSchema = createInsertSchema(subjects).omit({ id: true, createdAt: true });
+export const insertGradeSchema = createInsertSchema(grades).omit({ id: true, createdAt: true });
+export const insertAcademicGroupSchema = createInsertSchema(academicGroups).omit({ id: true, createdAt: true });
+export const insertInstitutionSettingsSchema = createInsertSchema(institutionSettings).omit({ id: true, createdAt: true });
+export const insertClassScheduleSchema = createInsertSchema(classSchedules).omit({ id: true, createdAt: true });
+export const insertStudentObservationSchema = createInsertSchema(studentObservations).omit({ id: true, createdAt: true });
+export const insertTeachingAssignmentSchema = createInsertSchema(teachingAssignments).omit({ id: true, createdAt: true });
+export const insertCourseSchema = createInsertSchema(courses).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertCourseEnrollmentSchema = createInsertSchema(courseEnrollments).omit({ id: true, enrolledAt: true });
+export const insertActivitySchema = createInsertSchema(activities, { dueDate: z.string().transform(val => val ? new Date(val) : null).optional().nullable() }).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertSubmissionSchema = createInsertSchema(submissions).omit({ id: true, submittedAt: true, grade: true, feedback: true, gradedAt: true, gradedBy: true });
+export const insertAttendanceSchema = createInsertSchema(attendance).omit({ id: true, createdAt: true });
 
-export const insertCourseEnrollmentSchema = createInsertSchema(courseEnrollments).omit({
-  id: true,
-  enrolledAt: true,
-});
-
-export const insertActivitySchema = createInsertSchema(activities, {
-  dueDate: z.string().transform(val => val ? new Date(val) : null).optional().nullable(),
-}).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertSubmissionSchema = createInsertSchema(submissions).omit({
-  id: true,
-  submittedAt: true,
-  grade: true,
-  feedback: true,
-  gradedAt: true,
-  gradedBy: true,
-});
-
-export const insertAttendanceSchema = createInsertSchema(attendance).omit({
-  id: true,
-  createdAt: true,
-});
-
-// Classroom Types
+// Types
+export type User = typeof users.$inferSelect;
+export type UpsertUser = typeof users.$inferInsert;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type Group = typeof groups.$inferSelect;
+export type InsertGroup = z.infer<typeof insertGroupSchema>;
+export type GroupMember = typeof groupMembers.$inferSelect;
+export type InsertGroupMember = z.infer<typeof insertGroupMemberSchema>;
+export type Post = typeof posts.$inferSelect;
+export type InsertPost = z.infer<typeof insertPostSchema>;
+export type Comment = typeof comments.$inferSelect;
+export type InsertComment = z.infer<typeof insertCommentSchema>;
+export type Reaction = typeof reactions.$inferSelect;
+export type InsertReaction = z.infer<typeof insertReactionSchema>;
+export type File = typeof files.$inferSelect;
+export type InsertFile = z.infer<typeof insertFileSchema>;
+export type Event = typeof events.$inferSelect;
+export type InsertEvent = z.infer<typeof insertEventSchema>;
+export type EventParticipant = typeof eventParticipants.$inferSelect;
+export type InsertEventParticipant = z.infer<typeof insertEventParticipantSchema>;
+export type Report = typeof reports.$inferSelect;
+export type InsertReport = z.infer<typeof insertReportSchema>;
+export type Message = typeof messages.$inferSelect;
+export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type Question = typeof questions.$inferSelect;
+export type InsertQuestion = z.infer<typeof insertQuestionSchema>;
+export type Answer = typeof answers.$inferSelect;
+export type InsertAnswer = z.infer<typeof insertAnswerSchema>;
+export type QaVote = typeof qaVotes.$inferSelect;
+export type InsertQaVote = z.infer<typeof insertQaVoteSchema>;
+export type Badge = typeof badges.$inferSelect;
+export type InsertBadge = z.infer<typeof insertBadgeSchema>;
+export type UserBadge = typeof userBadges.$inferSelect;
+export type InsertUserBadge = z.infer<typeof insertUserBadgeSchema>;
+export type NotificationPreference = typeof notificationPreferences.$inferSelect;
+export type InsertNotificationPreference = z.infer<typeof insertNotificationPreferenceSchema>;
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Recognition = typeof recognitions.$inferSelect;
+export type InsertRecognition = z.infer<typeof insertRecognitionSchema>;
+export type InstitutionSettings = typeof institutionSettings.$inferSelect;
+export type InsertInstitutionSettings = z.infer<typeof insertInstitutionSettingsSchema>;
+export type ClassSchedule = typeof classSchedules.$inferSelect;
+export type StudentObservation = typeof studentObservations.$inferSelect;
+export type TeachingAssignment = typeof teachingAssignments.$inferSelect;
 export type Course = typeof courses.$inferSelect;
 export type InsertCourse = z.infer<typeof insertCourseSchema>;
-
 export type CourseEnrollment = typeof courseEnrollments.$inferSelect;
 export type InsertCourseEnrollment = z.infer<typeof insertCourseEnrollmentSchema>;
-
 export type Activity = typeof activities.$inferSelect;
 export type InsertActivity = z.infer<typeof insertActivitySchema>;
-
 export type Submission = typeof submissions.$inferSelect;
 export type InsertSubmission = z.infer<typeof insertSubmissionSchema>;
-
 export type Attendance = typeof attendance.$inferSelect;
 export type InsertAttendance = z.infer<typeof insertAttendanceSchema>;
 
-// Classroom Extended Types
-export type CourseWithTeacher = Course & {
-  teacher: User;
-  _count?: {
-    students: number;
-    activities: number;
-  };
-};
-
-export type ActivityWithSubmission = Activity & {
-  mySubmission?: Submission;
-  _count?: {
-    submissions: number;
-  };
-};
-
-export type SubmissionWithStudent = Submission & {
-  student: User;
-};
-
-export type AttendanceWithStudent = Attendance & {
-  student: User;
-};
+// Extended types with relations
+export type PostWithAuthor = Post & { author: User; comments?: CommentWithAuthor[]; reactions?: Reaction[]; _count?: { comments: number; reactions: number } };
+export type CommentWithAuthor = Comment & { author: User };
+export type GroupWithMembers = Group & { members?: GroupMember[]; _count?: { members: number; posts: number } };
+export type FileWithUploader = File & { uploader: User };
+export type EventWithHost = Event & { host: User; participants?: EventParticipant[]; _count?: { participants: number } };
+export type MessageWithSender = Message & { sender: User };
+export type UserWithBadges = User & { userBadges?: (UserBadge & { badge: Badge })[] };
+export type QuestionWithAnswers = Question & { author: User; answers: (Answer & { author: User })[]; _count?: { answers: number } };
+export type RecognitionWithUsers = Recognition & { createdBy: User; recipient: User };
+export type CourseWithTeacher = Course & { teacher: User; _count?: { students: number; activities: number } };
+export type ActivityWithSubmission = Activity & { mySubmission?: Submission; _count?: { submissions: number } };
+export type SubmissionWithStudent = Submission & { student: User };
+export type AttendanceWithStudent = Attendance & { student: User };

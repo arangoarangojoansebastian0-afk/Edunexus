@@ -25,24 +25,29 @@ import type { CourseWithTeacher } from "@shared/schema";
 
 const createCourseSchema = z.object({
   name: z.string().min(2, "El nombre debe tener al menos 2 caracteres"),
-  subject: z.string().min(2, "La asignatura es requerida"),
+  subject: z.string().min(1, "La asignatura es requerida"),
   description: z.string().optional(),
-  grade: z.string().optional(),
+  grade: z.string().min(1, "El grado es requerido"),
   semester: z.string().optional(),
   academicYear: z.string().optional(),
 });
 type CreateCourseForm = z.infer<typeof createCourseSchema>;
 
-const SUBJECTS = [
-  "Matemáticas", "Ciencias", "Historia", "Literatura", "Programación",
-  "Inglés", "Física", "Química", "Biología", "Geografía",
-  "Educación Física", "Arte", "Música", "Ética", "Otra",
-];
-
 const GRADES = ["6°", "7°", "8°", "9°", "10°", "11°", "Todos"];
 
 function CreateCourseDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { toast } = useToast();
+
+  // Consulta para obtener las asignaturas creadas dinámicamente en el panel de administración
+  const { data: subjects, isLoading: loadingSubjects } = useQuery<any[]>({
+    queryKey: ["/api/admin/subjects"],
+  });
+
+  // Consulta para obtener el sistema evaluativo actual de la institución
+  const { data: institution } = useQuery<any>({
+    queryKey: ["/api/admin/institution"],
+  });
+
   const form = useForm<CreateCourseForm>({
     resolver: zodResolver(createCourseSchema),
     defaultValues: {
@@ -69,6 +74,10 @@ function CreateCourseDialog({ open, onClose }: { open: boolean; onClose: () => v
       toast({ title: "Error al crear el curso", variant: "destructive" });
     },
   });
+
+  // Filtrar solo las materias que estén activadas por el administrador
+  const activeSubjects = subjects?.filter((s) => s.active) || [];
+  const maxGradeAllowed = institution?.maxGrade || 100;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -104,9 +113,17 @@ function CreateCourseDialog({ open, onClose }: { open: boolean; onClose: () => v
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {SUBJECTS.map((s) => (
-                        <SelectItem key={s} value={s}>{s}</SelectItem>
-                      ))}
+                      {loadingSubjects ? (
+                        <SelectItem value="loading" disabled>Cargando materias...</SelectItem>
+                      ) : activeSubjects.length === 0 ? (
+                        <SelectItem value="none" disabled>No hay materias activas creadas</SelectItem>
+                      ) : (
+                        activeSubjects.map((s) => (
+                          <SelectItem key={s.id || s.name} value={s.name}>
+                            {s.name}
+                          </SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -137,7 +154,7 @@ function CreateCourseDialog({ open, onClose }: { open: boolean; onClose: () => v
                 name="grade"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Grado</FormLabel>
+                    <FormLabel>Grado *</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
@@ -176,6 +193,20 @@ function CreateCourseDialog({ open, onClose }: { open: boolean; onClose: () => v
                 )}
               />
             </div>
+
+            {/* Banner Informativo del Sistema Evaluativo Institucional */}
+            <div className="bg-muted/60 rounded-lg p-3 text-xs text-muted-foreground border">
+              <span className="font-semibold block text-foreground mb-0.5">
+                Modelo evaluativo activo:
+              </span>
+              Este curso y sus tareas se regirán bajo el sistema{" "}
+              <span className="font-medium text-foreground capitalize">
+                {institution?.evaluationType || "cuantitativo"}
+              </span>{" "}
+              con un rango de calificación automático de{" "}
+              <span className="font-semibold text-primary">0 a {maxGradeAllowed}</span>.
+            </div>
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
               <Button type="submit" disabled={mutation.isPending} data-testid="button-create-course">

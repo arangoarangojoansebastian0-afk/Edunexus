@@ -34,9 +34,11 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/api": {
+      // Configuramos el proxy de forma robusta para interceptar de inmediato todo lo que empiece por /api
+      "^/api/.*": {
         target: "http://localhost:2000",
         changeOrigin: true,
+        secure: false,
       },
     },
     fs: {

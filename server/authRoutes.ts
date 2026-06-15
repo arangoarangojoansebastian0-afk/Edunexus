@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { registerUser, loginUser } from "./authSimple";
 import { z } from "zod";
+import { storage } from "./storage";
 
 const registerSchema = z.object({
   email: z.string().email("Email inválido"),
@@ -46,6 +47,48 @@ export function setupAuthRoutes(app: Express) {
       res.status(400).json({ error: message });
     }
   });
+
+// En authRoutes.ts - Dentro de setupAuthRoutes
+
+// Cambiamos explícitamente a /validate/:code para recibir el string del formulario
+app.get("/api/institutions/validate/:code", async (req, res) => {
+  try {
+    const { code } = req.params;
+    
+    // 1. Buscamos la institución por su código único de texto
+    const institution = await storage.getInstitutionByCode(code);
+
+    if (!institution) {
+      return res.status(404).json({ error: "Institución no encontrada con el código provisto." });
+    }
+
+    // 2. Forzamos y aseguramos que el ID sea un número antes de pasarlo a las otras consultas
+    const institutionIdNum = Number(institution.id);
+
+    if (isNaN(institutionIdNum)) {
+      return res.status(400).json({ error: "El ID de la institución no es un número válido." });
+    }
+
+    // 3. Al pasarle un número real, estas funciones de storage ya no fallarán
+    const gradesList = await storage.getGradesByInstitution(institutionIdNum);
+    const groupsList = await storage.getGroupsByInstitution(institutionIdNum);
+
+    // 4. Enviamos al frontend el objeto asegurando que el ID es numérico
+    res.json({
+      institution: {
+        id: institutionIdNum, // <--- ESTO ES UN NÚMERO SEGURO
+        name: institution.institutionName,
+        code: institution.institutionCode
+      },
+      grades: gradesList,
+      groups: groupsList
+    });
+  } catch (error) {
+    console.error("Error al obtener info del colegio:", error);
+    res.status(500).json({ error: "Error interno del servidor" });
+  }
+});
+
 
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     try {
