@@ -252,17 +252,15 @@ export class DatabaseStorage implements IStorage {
 
   // ─── ADICIONADOS PARA INSTITUTION STRUCTURE ──────────────────────────
 
-  async getInstitutionByCode(code: string) {
+async getInstitutionByCode(code: string) {
   const cleanCode = code ? code.trim() : "";
   if (!cleanCode) return null;
 
-  // Buscamos coincidencia exacta del código (que es texto en la columna)
   const [institution] = await db
     .select()
     .from(institutionSettings)
     .where(eq(institutionSettings.institutionCode, cleanCode));
-    
-  // Retorna el registro completo (donde institution.id es un número)
+
   return institution || null;
 }
 
