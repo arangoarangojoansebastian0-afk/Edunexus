@@ -12,6 +12,7 @@ const registerSchema = z.object({
     .enum(["student", "teacher", "director", "coordinator", "secretary", "admin"])
     .default("student"),
   accessCode: z.string().optional(),
+  institutionId: z.string().optional(), // <-- FIX: recibimos el ID de institución
 });
 
 const loginSchema = z.object({
@@ -30,7 +31,8 @@ export function setupAuthRoutes(app: Express) {
         data.firstName,
         data.lastName,
         data.role,
-        data.accessCode
+        data.accessCode,
+        data.institutionId  // <-- FIX: pasamos el institutionId
       );
 
       req.session.userId = user.id;
@@ -48,54 +50,46 @@ export function setupAuthRoutes(app: Express) {
     }
   });
 
-// En authRoutes.ts - Dentro de setupAuthRoutes
+  // FIX: endpoint limpio sin código duplicado ni console.log fuera del try
+  app.get("/api/institutionSettings/validate/:code", async (req, res) => {
+    try {
+      const { code } = req.params;
+      const cleanCode = code ? code.trim() : "";
 
-// Cambiamos explícitamente a /validate/:code para recibir el string del formulario
-app.get("/api/institutionSettings/validate/:code", async (req, res) => {
-  try {
-    const { code } = req.params;
+      console.log("Código recibido:", cleanCode);
 
-    const institution = await storage.getInstitutionByCode(code);
+      if (!cleanCode) {
+        return res.status(400).json({ error: "Código vacío" });
+      }
 
-    if (!institution) {
-      return res.status(404).json({
-        error: "Institución no encontrada con el código provisto."
+      const institution = await storage.getInstitutionByCode(cleanCode);
+
+      console.log("Institución encontrada:", institution);
+
+      if (!institution) {
+        return res.status(404).json({
+          error: "Institución no encontrada con el código provisto."
+        });
+      }
+
+      const gradesList = await storage.getGradesByInstitution(institution.id);
+      const groupsList = await storage.getGroupsByInstitution(institution.id);
+
+      res.json({
+        institution: {
+          id: institution.id,
+          name: institution.institutionName,
+          code: institution.institutionCode
+        },
+        grades: gradesList,
+        groups: groupsList
       });
+
+    } catch (error) {
+      console.error("Error al obtener info del colegio:", error);
+      res.status(500).json({ error: "Error interno del servidor" });
     }
-
-    const institutionId = institution.id;
-
-    const gradesList =
-      await storage.getGradesByInstitution(institutionId);
-
-    const groupsList =
-      await storage.getGroupsByInstitution(institutionId);
-
-    res.json({
-      institution: {
-        id: institution.id,
-        name: institution.institutionName,
-        code: institution.institutionCode
-      },
-      grades: gradesList,
-      groups: groupsList
-    });
-
-console.log("Código recibido:", code);
-
- await storage.getInstitutionByCode(code);
-
-console.log("Institución encontrada:", institution);
-
-  } catch (error) {
-    console.error("Error al obtener info del colegio:", error);
-
-    res.status(500).json({
-      error: "Error interno del servidor"
-    });
-  }
-});
-
+  });
 
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     try {

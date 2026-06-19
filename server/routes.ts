@@ -147,8 +147,8 @@ export async function registerRoutes(
       if (!institution) {
         return res.status(404).json({ error: "Colegio no encontrado" });
       }
-      const gradesData = await storage.getGradesByInstitution(Number(institution.id));
-      const groupsData = await storage.getGroupsByInstitution(Number(institution.id));
+      const gradesData = await storage.getGradesByInstitution(institution.id);
+      const groupsData = await storage.getGroupsByInstitution(institution.id);
       return res.json({
         institution,
         grades: gradesData,

@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { storage } from "./storage";
 import { db } from "./db";
 import { staffCodes, teacherCodes } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 export interface AuthSession {
   userId: string;
@@ -28,7 +28,8 @@ export async function registerUser(
   firstName: string,
   lastName: string,
   role: RegisterRole = "student",
-  accessCode?: string
+  accessCode?: string,
+  institutionId?: string  // <-- FIX: nuevo parámetro
 ) {
   const staffRoles: RegisterRole[] = ["teacher", "director", "coordinator", "secretary", "admin"];
 
@@ -37,11 +38,14 @@ export async function registerUser(
       throw new Error("Se requiere un código de acceso para este rol");
     }
 
+    // Normalizar accessCode: sin espacios y en mayúsculas para comparación case-insensitive
+    const normalizedCode = accessCode.trim().toUpperCase();
+
     if (role === "teacher") {
       const found = await db
         .select()
         .from(teacherCodes)
-        .where(eq(teacherCodes.code, accessCode))
+        .where(sql`UPPER(${teacherCodes.code}) = ${normalizedCode}`)
         .limit(1);
       if (found.length === 0) {
         throw new Error("Código de maestro inválido");
@@ -50,7 +54,7 @@ export async function registerUser(
       const found = await db
         .select()
         .from(staffCodes)
-        .where(eq(staffCodes.code, accessCode))
+        .where(sql`UPPER(${staffCodes.code}) = ${normalizedCode}`)
         .limit(1);
       if (found.length === 0) {
         throw new Error("Código de acceso inválido");
@@ -64,6 +68,7 @@ export async function registerUser(
 
   const passwordHash = await hashPassword(password);
 
+  // FIX: ahora se guarda institutionId en el usuario
   const user = await storage.upsertUser({
     email,
     passwordHash,
@@ -71,6 +76,7 @@ export async function registerUser(
     lastName,
     verified: true,
     role,
+    institutionId: institutionId || undefined,
   });
 
   return user;

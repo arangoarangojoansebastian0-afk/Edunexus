@@ -253,13 +253,14 @@ export class DatabaseStorage implements IStorage {
   // ─── ADICIONADOS PARA INSTITUTION STRUCTURE ──────────────────────────
 
 async getInstitutionByCode(code: string) {
-  const cleanCode = code ? code.trim() : "";
+  const cleanCode = code ? code.trim().toUpperCase() : "";
   if (!cleanCode) return null;
 
+  // Comparación case-insensitive: normalizamos ambos lados a mayúsculas
   const [institution] = await db
     .select()
     .from(institutionSettings)
-    .where(eq(institutionSettings.institutionCode, cleanCode));
+    .where(sql`UPPER(${institutionSettings.institutionCode}) = ${cleanCode}`);
 
   return institution || null;
 }

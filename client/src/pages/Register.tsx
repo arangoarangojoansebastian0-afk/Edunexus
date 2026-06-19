@@ -22,15 +22,13 @@ const roleOptions: { value: Role; label: string; description: string; needsCode:
 export default function Register() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { register } = useAuthContext();
+  const { refetchUser } = useAuthContext();
   const [isLoading, setIsLoading] = useState(false);
 
-  // Estados para el manejo del Colegio y datos académicos
   const [schoolCode, setSchoolCode] = useState("");
-  const [schoolData, setSchoolData] = useState<{ institution: { id: number; name: string }; grades: any[]; groups: any[] } | null>(null);
+  const [schoolData, setSchoolData] = useState<{ institution: { id: string; name: string; code: string }; grades: any[]; groups: any[] } | null>(null);
   const [isSearchingSchool, setIsSearchingSchool] = useState(false);
 
-  // Estado del formulario unificado
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -38,8 +36,9 @@ export default function Register() {
     lastName: "",
     role: "student" as Role,
     accessCode: "",
-    gradeId: "", 
-    groupId: "", 
+    gradeId: "",
+    groupId: "",
+    institutionId: "", // FIX: campo correcto sin typo
   });
 
   const selectedRole = roleOptions.find((r) => r.value === formData.role) || roleOptions[0];
@@ -53,55 +52,43 @@ export default function Register() {
     setFormData((prev) => ({ ...prev, role, accessCode: "", gradeId: "", groupId: "" }));
   };
 
-  // Función Fetch para extraer Grados y Grupos usando el School Code
   const handleVerifySchool = async () => {
-  if (!schoolCode.trim()) return;
-  
-  setIsSearchingSchool(true);
-  try {
-    // 1. Usamos la ruta especializada que busca por el código de texto único
-    const response = await fetch(`/api/institutionSettings/validate/${schoolCode.trim()}`);
-    
-    if (!response.ok) {
-      throw new Error("Colegio no encontrado");
-    }
-    
-    const data = await response.json();
+    if (!schoolCode.trim()) return;
 
-    // 2. Forzamos que el ID de la institución sea tratado estrictamente como un número
-    const structuredData = {
-      ...data,
-      institution: {
-        ...data.institution,
-        institutionId: data.institution.id // <--- ¡AQUÍ ASEGURAMOS EL ENTERO!
+    setIsSearchingSchool(true);
+    try {
+      const response = await fetch(`/api/institutionSettings/validate/${schoolCode.trim()}`);
+
+      if (!response.ok) {
+        throw new Error("Colegio no encontrado");
       }
-    };
 
-    // 3. Guardamos la estructura limpia en el estado del componente
-    setSchoolData(structuredData);
-    
-    // 4. Si manejas un estado del formulario general (como 'formData'), 
-    // inyecta el ID numérico de una vez para que viaje en el POST del registro final:
-    setFormData(prev => ({
-      ...prev,
-      institutioninstitutionId: data.institution.id
-    }));
-    
-    toast({
-      title: "Colegio verificado",
-      description: `Te estás registrando en: ${data.institution.name}`,
-    });
-  } catch (err) {
-    setSchoolData(null);
-    toast({
-      variant: "destructive",
-      title: "Error",
-      description: "El código de colegio no es válido o no existe.",
-    });
-  } finally {
-    setIsSearchingSchool(false);
-  }
-};
+      const data = await response.json();
+
+      setSchoolData(data);
+
+      // FIX: campo con nombre correcto "institutionId"
+      setFormData(prev => ({
+        ...prev,
+        institutionId: data.institution.id,
+      }));
+
+      toast({
+        title: "Colegio verificado",
+        description: `Te estás registrando en: ${data.institution.name}`,
+      });
+    } catch (err) {
+      setSchoolData(null);
+      setFormData(prev => ({ ...prev, institutionId: "" }));
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "El código de colegio no es válido o no existe.",
+      });
+    } finally {
+      setIsSearchingSchool(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,10 +101,10 @@ export default function Register() {
         firstName: formData.firstName,
         lastName: formData.lastName,
         role: formData.role,
-        schoolCode: schoolCode, 
         accessCode: selectedRole.needsCode ? formData.accessCode : undefined,
-        gradeId: formData.role === "student" ? Number(formData.gradeId) : null,
-        groupId: formData.role === "student" ? Number(formData.groupId) : null,
+        institutionId: formData.institutionId || undefined, // FIX: enviamos institutionId al backend
+        gradeId: formData.role === "student" ? formData.gradeId : null,
+        groupId: formData.role === "student" ? formData.groupId : null,
       };
 
       const response = await fetch("/api/auth/register", {
@@ -135,7 +122,8 @@ export default function Register() {
         title: "Registro exitoso",
         description: "Tu cuenta ha sido creada correctamente.",
       });
-      
+
+      await refetchUser(); // FIX: actualiza el contexto de auth antes de redirigir
       setLocation("/");
     } catch (err) {
       toast({
@@ -187,7 +175,7 @@ export default function Register() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
-              
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="firstName">Nombre</Label>
@@ -238,7 +226,7 @@ export default function Register() {
                 />
               </div>
 
-              {/* 1. INPUT DEL CÓDIGO DEL COLEGIO */}
+              {/* INPUT DEL CÓDIGO DEL COLEGIO */}
               <div className="space-y-2">
                 <Label htmlFor="schoolCode">Código de la Institución (Colegio)</Label>
                 <div className="flex gap-2">
@@ -247,26 +235,30 @@ export default function Register() {
                     type="text"
                     placeholder="Ej: SCH001"
                     value={schoolCode}
-                    onChange={(e) => setSchoolCode(e.target.value.toUpperCase())}
+                    onChange={(e) => setSchoolCode(e.target.value)}
                     disabled={isSearchingSchool}
                     required
                   />
-                  <Button 
-                    type="button" 
-                    variant="secondary" 
+                  <Button
+                    type="button"
+                    variant="secondary"
                     onClick={handleVerifySchool}
                     disabled={isSearchingSchool || !schoolCode}
                   >
                     {isSearchingSchool ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verificar"}
                   </Button>
                 </div>
+                {schoolData && (
+                  <p className="text-xs text-green-600 font-medium">
+                    ✓ Institución verificada: {schoolData.institution.name}
+                  </p>
+                )}
               </div>
 
-              {/* 2. SELECTORES DE GRADO Y GRUPO (Estilizados tipo Shadcn) */}
+              {/* SELECTORES DE GRADO Y GRUPO */}
               {formData.role === "student" && schoolData && (
                 <div className="grid grid-cols-2 gap-4 border border-slate-200 p-4 rounded-xl bg-slate-50/50 animate-in fade-in duration-200">
-                  
-                  {/* Selector de Grados */}
+
                   <div className="space-y-2">
                     <Label htmlFor="gradeId" className="text-slate-700 font-medium">Grado / Año</Label>
                     <div className="relative">
@@ -291,7 +283,6 @@ export default function Register() {
                     </div>
                   </div>
 
-                  {/* Selector de Grupos */}
                   <div className="space-y-2">
                     <Label htmlFor="groupId" className="text-slate-700 font-medium">Grupo / Salón</Label>
                     <div className="relative">
@@ -305,7 +296,7 @@ export default function Register() {
                       >
                         <option value="" className="text-slate-400">Selecciona grupo</option>
                         {schoolData.groups
-                          .filter((group) => !formData.gradeId || Number(group.gradeId) === Number(formData.gradeId))
+                          .filter((group) => !formData.gradeId || group.gradeId === formData.gradeId)
                           .map((group) => (
                             <option key={group.id} value={group.id} className="text-slate-800">
                               {group.name}
@@ -322,7 +313,7 @@ export default function Register() {
                 </div>
               )}
 
-              {/* ROLES TOTALMENTE LIBRES (Sin recuadro exterior ni barras de scroll) */}
+              {/* ROLES */}
               <div className="space-y-2">
                 <Label className="text-slate-700 font-medium">Tipo de cuenta</Label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
