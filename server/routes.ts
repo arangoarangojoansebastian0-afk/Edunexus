@@ -537,16 +537,22 @@ export async function registerRoutes(
 
   // ─── ADMIN PANEL & CONFIGURATIONS ────────────────────────────────────
 
-  app.get("/api/admin/institution", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/institution", requireAuth, async (req, res) => {
     try {
-      const config = await storage.getInstitutionSettings();
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      const config = await storage.getInstitutionSettings(req.user.institutionId);
       res.json(config);
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
   app.patch("/api/admin/institution", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const config = await storage.upsertInstitutionSettings(req.body);
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      const config = await storage.upsertInstitutionSettings(req.user.institutionId, req.body);
       res.json(config);
     } catch { res.status(500).json({ message: "Error" }); }
   });
@@ -611,12 +617,22 @@ export async function registerRoutes(
   });
 
   app.get("/api/admin/grades", requireAuth, requireAdmin, async (req, res) => {
-    try { res.json(await storage.getGrades()); }
+    try {
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      res.json(await storage.getGrades(req.user.institutionId));
+    }
     catch { res.status(500).json({ message: "Error" }); }
   });
 
   app.post("/api/admin/grades", requireAuth, requireAdmin, async (req, res) => {
-    try { res.json(await storage.createGrade(req.body)); }
+    try {
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      res.json(await storage.createGrade(req.body, req.user.institutionId));
+    }
     catch { res.status(500).json({ message: "Error" }); }
   });
 
@@ -626,12 +642,22 @@ export async function registerRoutes(
   });
 
   app.get("/api/admin/academic-groups", requireAuth, requireAdmin, async (req, res) => {
-    try { res.json(await storage.getAcademicGroups()); }
+    try {
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      res.json(await storage.getAcademicGroups(req.user.institutionId));
+    }
     catch { res.status(500).json({ message: "Error" }); }
   });
 
   app.post("/api/admin/academic-groups", requireAuth, requireAdmin, async (req, res) => {
-    try { res.json(await storage.createAcademicGroup(req.body)); }
+    try {
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      res.json(await storage.createAcademicGroup(req.body, req.user.institutionId));
+    }
     catch { res.status(500).json({ message: "Error" }); }
   });
 
@@ -642,14 +668,22 @@ export async function registerRoutes(
 
   app.get("/api/admin/enrollments", requireAuth, requireAdmin, async (req, res) => {
     try {
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
       const yearId = req.query.yearId as string | undefined;
-      const enrollments = await storage.getStudentEnrollments(yearId);
+      const enrollments = await storage.getStudentEnrollments(req.user.institutionId, yearId);
       res.json(enrollments);
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
   app.post("/api/admin/enrollments", requireAuth, requireAdmin, async (req, res) => {
-    try { res.json(await storage.createStudentEnrollment(req.body)); }
+    try {
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      res.json(await storage.createStudentEnrollment({ ...req.body, institutionId: req.user.institutionId }));
+    }
     catch { res.status(500).json({ message: "Error" }); }
   });
 
@@ -669,20 +703,31 @@ export async function registerRoutes(
   });
 
   app.get("/api/admin/codes/teacher", requireAuth, requireAdmin, async (req, res) => {
-    try { res.json(await storage.getTeacherCodes()); }
+    try {
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      res.json(await storage.getTeacherCodes(req.user.institutionId));
+    }
     catch { res.status(500).json({ message: "Error" }); }
   });
 
   app.post("/api/admin/codes/teacher", requireAuth, requireAdmin, async (req, res) => {
-    try { res.json(await storage.createTeacherCode(req.body.code)); }
+    try {
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      const { code, expiresAt } = req.body;
+      res.json(await storage.createTeacherCode({ code, institutionId: req.user.institutionId, expiresAt: expiresAt || null }));
+    }
     catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.put("/api/admin/codes/teacher/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/codes/teacher/:id/deactivate", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const updated = await storage.updateTeacherCode(req.params.id, req.body.code);
-      res.json(updated);
-    } catch { res.status(500).json({ message: "Error updating teacher code" }); }
+      await storage.deactivateTeacherCode(req.params.id);
+      res.json({ success: true });
+    } catch { res.status(500).json({ message: "Error deactivating teacher code" }); }
   });
 
   app.delete("/api/admin/codes/teacher/:id", requireAuth, requireAdmin, async (req, res) => {
@@ -691,20 +736,31 @@ export async function registerRoutes(
   });
 
   app.get("/api/admin/codes/staff", requireAuth, requireAdmin, async (req, res) => {
-    try { res.json(await storage.getStaffCodes()); }
+    try {
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      res.json(await storage.getStaffCodes(req.user.institutionId));
+    }
     catch { res.status(500).json({ message: "Error" }); }
   });
 
   app.post("/api/admin/codes/staff", requireAuth, requireAdmin, async (req, res) => {
-    try { res.json(await storage.createStaffCode(req.body)); }
+    try {
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      const { code, role, expiresAt } = req.body;
+      res.json(await storage.createStaffCode({ code, role, institutionId: req.user.institutionId, expiresAt: expiresAt || null }));
+    }
     catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.put("/api/admin/codes/staff/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/codes/staff/:id/deactivate", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const updated = await storage.updateStaffCode(req.params.id, req.body);
-      res.json(updated);
-    } catch { res.status(500).json({ message: "Error updating staff code" }); }
+      await storage.deactivateStaffCode(req.params.id);
+      res.json({ success: true });
+    } catch { res.status(500).json({ message: "Error deactivating staff code" }); }
   });
 
   app.delete("/api/admin/codes/staff/:id", requireAuth, requireAdmin, async (req, res) => {
@@ -713,7 +769,12 @@ export async function registerRoutes(
   });
 
   app.get("/api/admin/institutional-stats", requireAuth, requireAdmin, async (req, res) => {
-    try { res.json(await storage.getInstitutionalStats()); } catch { res.status(500).json({ message: "Error" }); }
+    try {
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      res.json(await storage.getInstitutionalStats(req.user.institutionId));
+    } catch { res.status(500).json({ message: "Error" }); }
   });
 
   app.post("/api/admin/subjects/:id/toggle", requireAuth, requireAdmin, async (req, res) => {
@@ -729,11 +790,21 @@ export async function registerRoutes(
   });
 
   app.get("/api/admin/schedules", requireAuth, requireAdmin, async (req, res) => {
-    try { res.json(await storage.getSchedules()); } catch { res.status(500).json({ message: "Error" }); }
+    try {
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      res.json(await storage.getSchedules(req.user.institutionId));
+    } catch { res.status(500).json({ message: "Error" }); }
   });
 
   app.get("/api/courses", requireAuth, requireAdmin, async (req, res) => {
-    try { res.json(await storage.getAllCoursesForAdmin()); } catch { res.status(500).json({ message: "Error" }); }
+    try {
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      res.json(await storage.getAllCoursesForAdmin(req.user.institutionId));
+    } catch { res.status(500).json({ message: "Error" }); }
   });
 
   app.post("/api/admin/teacher-assignments", requireAuth, requireAdmin, async (req, res) => {
@@ -742,7 +813,10 @@ export async function registerRoutes(
 
   app.get("/api/admin/subjects", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const data = await storage.getSubjects();
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      const data = await storage.getSubjects(req.user.institutionId);
       res.json(data);
     } catch (err) {
       res.status(500).json({ message: "Failed to get subjects" });
@@ -751,10 +825,46 @@ export async function registerRoutes(
 
   app.post("/api/admin/subjects", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const subject = await storage.upsertSubject(req.body);
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      const subject = await storage.upsertSubject(req.body, req.user.institutionId);
       res.json(subject);
     } catch (err) {
       res.status(500).json({ message: "Failed to save subject" });
+    }
+  });
+
+  app.get("/api/admin/users/:role", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { role } = req.params;
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      const usersList = await storage.getUsersByRoleAndInstitution(role, req.user.institutionId);
+      res.json(usersList);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  app.get("/api/admin/library", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      res.json(await storage.getLibraryFiles(req.user.institutionId));
+    } catch {
+      res.status(500).json({ message: "Failed to fetch library files" });
+    }
+  });
+
+  app.delete("/api/admin/files/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteFile(req.params.id);
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ message: "Error deleting file" });
     }
   });
 

@@ -60,7 +60,7 @@ export default function Register() {
   setIsSearchingSchool(true);
   try {
     // 1. Usamos la ruta especializada que busca por el código de texto único
-    const response = await fetch(`/api/institutions/validate/${schoolCode.trim()}`);
+    const response = await fetch(`/api/institutionSettings/validate/${schoolCode.trim()}`);
     
     if (!response.ok) {
       throw new Error("Colegio no encontrado");

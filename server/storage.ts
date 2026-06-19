@@ -96,8 +96,8 @@ import {
 
 export interface IStorage {
   getInstitutionByCode(code: string): Promise<any | undefined>;
-  getGradesByInstitution(institutionId: number): Promise<any[]>;
-  getGroupsByInstitution(institutionId: number): Promise<any[]>;
+  getGradesByInstitution(institutionId: string): Promise<any[]>;
+  getGroupsByInstitution(institutionId: string): Promise<any[]>;
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   getUserByName(firstName: string, lastName: string): Promise<User | undefined>;
@@ -198,28 +198,28 @@ export interface IStorage {
   getStudentAttendance(courseId: string, studentId: string): Promise<Attendance[]>;
   recordAttendance(record: InsertAttendance): Promise<Attendance>;
   getCourseStats(courseId: string): Promise<{ studentCount: number; activityCount: number }>;
-  getTeacherCodes(): Promise<any[]>;
-  createTeacherCode(code: string): Promise<any>;
-  updateTeacherCode(id: string, code: string): Promise<any>;
+  getTeacherCodes(institutionId: string): Promise<any[]>;
+  createTeacherCode(data: { code: string; institutionId: string; expiresAt?: Date | null }): Promise<any>;
   deleteTeacherCode(id: string): Promise<void>;
-  getStaffCodes(): Promise<any[]>;
-  createStaffCode(data: { code: string; role: string }): Promise<any>;
-  updateStaffCode(id: string, data: { code?: string; role?: string }): Promise<any>;
+  deactivateTeacherCode(id: string): Promise<void>;
+  getStaffCodes(institutionId: string): Promise<any[]>;
+  createStaffCode(data: { code: string; role: string; institutionId: string; expiresAt?: Date | null }): Promise<any>;
   deleteStaffCode(id: string): Promise<void>;
-  getInstitutionSettings(): Promise<any>;
-  upsertInstitutionSettings(data: any): Promise<any>;
-  getInstitutionalStats(): Promise<any>;
-  getSchedules(): Promise<ClassSchedule[]>;
+  deactivateStaffCode(id: string): Promise<void>;
+  getInstitutionSettings(institutionId: string): Promise<any>;
+  upsertInstitutionSettings(institutionId: string, data: any): Promise<any>;
+  getInstitutionalStats(institutionId: string): Promise<any>;
+  getSchedules(institutionId: string): Promise<ClassSchedule[]>;
   createSchedule(data: any): Promise<ClassSchedule>;
   deleteSchedule(id: string): Promise<void>;
-  getObservations(studentId?: string): Promise<StudentObservation[]>;
+  getObservations(studentId?: string, institutionId?: string): Promise<StudentObservation[]>;
   createObservation(data: any): Promise<StudentObservation>;
   deleteObservation(id: string): Promise<void>;
   createTeacherAssignment(data: any): Promise<TeachingAssignment>;
-  getLibraryFiles(): Promise<FileWithUploader[]>;
-  getAllCoursesForAdmin(): Promise<CourseWithTeacher[]>;
-  getSubjects(): Promise<any[]>;
-  upsertSubject(data: any): Promise<any>;
+  getLibraryFiles(institutionId: string): Promise<FileWithUploader[]>;
+  getAllCoursesForAdmin(institutionId: string): Promise<CourseWithTeacher[]>;
+  getSubjects(institutionId: string): Promise<any[]>;
+  upsertSubject(data: any, institutionId: string): Promise<any>;
   deleteSubject(id: string): Promise<void>;
   toggleSubjectActive(id: string, active: boolean): Promise<void>;
   getAcademicYears(): Promise<any[]>;
@@ -231,19 +231,21 @@ export interface IStorage {
   createAcademicPeriod(data: any): Promise<any>;
   setActivePeriod(id: string): Promise<void>;
   deleteAcademicPeriod(id: string): Promise<void>;
-  getGrades(): Promise<any[]>;
-  createGrade(data: any): Promise<any>;
+  getGrades(institutionId: string): Promise<any[]>;
+  createGrade(data: any, institutionId: string): Promise<any>;
   deleteGrade(id: string): Promise<void>;
-  getAcademicGroups(): Promise<any[]>;
-  createAcademicGroup(data: any): Promise<any>;
+  getAcademicGroups(institutionId: string): Promise<any[]>;
+  createAcademicGroup(data: any, institutionId: string): Promise<any>;
   deleteAcademicGroup(id: string): Promise<void>;
-  getStudentEnrollments(academicYearId?: string): Promise<any[]>;
+  getStudentEnrollments(institutionId: string, academicYearId?: string): Promise<any[]>;
   createStudentEnrollment(data: any): Promise<any>;
   deleteStudentEnrollment(id: string): Promise<void>;
   expelStudent(userId: string): Promise<void>;
   reintegrateStudent(userId: string): Promise<void>;
   deleteUserPermanently(userId: string): Promise<void>;
   getReportCards(params: { yearId: string; groupId: string; periodId?: string }): Promise<any>;
+  getUsersByRoleAndInstitution(role: string, institutionId: string): Promise<User[]>;
+  getUsersByInstitution(institutionId: string): Promise<User[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -264,21 +266,35 @@ export class DatabaseStorage implements IStorage {
   return institution || null;
 }
 
-  async getGradesByInstitution(institutionId: number) {
-  try {
-    return await db
-      .select()
-      .from(grades)
-      //  Cambiado a 'institution_id' para que coincida exactamente con tu propiedad en schema.ts
-      .where(eq(grades.institution_id, institutionId)); 
-  } catch (err) {
-    console.error("Error directo en getGradesByInstitution:", err);
-    return [];
+  async getGradesByInstitution(institutionId: string) {
+    try {
+      return await db
+        .select()
+        .from(grades)
+        .where(eq(grades.institutionId, institutionId)); 
+    } catch (err) {
+      console.error("Error directo en getGradesByInstitution:", err);
+      return [];
+    }
   }
-}
 
-  async getGroupsByInstitution(institutionId: number): Promise<any[]> {
-    return db.select().from(academicGroups).orderBy(academicGroups.name);
+  async getGroupsByInstitution(institutionId: string): Promise<any[]> {
+    try {
+      return await db
+        .select({
+          id: academicGroups.id,
+          name: academicGroups.name,
+          gradeId: academicGroups.gradeId,
+          createdAt: academicGroups.createdAt,
+        })
+        .from(academicGroups)
+        .innerJoin(grades, eq(academicGroups.gradeId, grades.id))
+        .where(eq(grades.institutionId, institutionId))
+        .orderBy(academicGroups.name);
+    } catch (err) {
+      console.error("Error directo en getGroupsByInstitution:", err);
+      return [];
+    }
   }
 
   // ─── USER METHODS ────────────────────────────────────────────────────
@@ -1427,8 +1443,8 @@ export class DatabaseStorage implements IStorage {
 
   // ─── ADMIN SYSTEM METHODS ────────────────────────────────────────────
 
-  async getInstitutionSettings(): Promise<any> {
-    const [row] = await db.select().from(institutionSettings).limit(1);
+  async getInstitutionSettings(institutionId: string): Promise<any> {
+    const [row] = await db.select().from(institutionSettings).where(eq(institutionSettings.id, institutionId)).limit(1);
     if (!row) return null;
     return {
       id: row.id,
@@ -1446,7 +1462,7 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async upsertInstitutionSettings(data: any): Promise<any> {
+  async upsertInstitutionSettings(institutionId: string, data: any): Promise<any> {
     const payload = {
       institutionName: data.institutionName,
       logoUrl: data.logoUrl,
@@ -1461,34 +1477,41 @@ export class DatabaseStorage implements IStorage {
       gradeScale: data.gradeScale,
     };
 
-    const existing = await db.select().from(institutionSettings).limit(1);
+    const existing = await db.select().from(institutionSettings).where(eq(institutionSettings.id, institutionId)).limit(1);
     if (existing.length > 0) {
       const [updated] = await db
         .update(institutionSettings)
         .set(payload)
-        .where(eq(institutionSettings.id, existing[0].id))
+        .where(eq(institutionSettings.id, institutionId))
         .returning();
       return updated;
     } else {
       const [created] = await db
         .insert(institutionSettings)
-        .values({ id: randomUUID(), ...payload })
+        .values({ id: institutionId, ...payload })
         .returning();
       return created;
     }
   }
 
-  async getInstitutionalStats(): Promise<any> {
-    const [students] = await db.select({ count: sql<number>`count(*)` }).from(users).where(eq(users.role, 'student'));
-    const [teachers] = await db.select({ count: sql<number>`count(*)` }).from(users).where(eq(users.role, 'teacher'));
-    const [staff] = await db.select({ count: sql<number>`count(*)` }).from(users).where(sql`role IN ('director','coordinator','secretary','admin')`);
-    const [subjectsCount] = await db.select({ count: sql<number>`count(*)` }).from(subjects);
-    const [gradesCount] = await db.select({ count: sql<number>`count(*)` }).from(grades);
-    const [groupsCount] = await db.select({ count: sql<number>`count(*)` }).from(academicGroups);
-    const [enrollments] = await db.select({ count: sql<number>`count(*)` }).from(studentEnrollments);
-    const [coursesCount] = await db.select({ count: sql<number>`count(*)` }).from(courses);
-    const [activitiesCount] = await db.select({ count: sql<number>`count(*)` }).from(activities);
-    const [obsCount] = await db.select({ count: sql<number>`count(*)` }).from(studentObservations);
+  async getInstitutionalStats(institutionId: string): Promise<any> {
+    const [students] = await db.select({ count: sql<number>`count(*)` }).from(users).where(and(eq(users.role, 'student'), eq(users.institutionId, institutionId)));
+    const [teachers] = await db.select({ count: sql<number>`count(*)` }).from(users).where(and(eq(users.role, 'teacher'), eq(users.institutionId, institutionId)));
+    const [staff] = await db.select({ count: sql<number>`count(*)` }).from(users).where(and(sql`role IN ('director','coordinator','secretary','admin')`, eq(users.institutionId, institutionId)));
+    const [subjectsCount] = await db.select({ count: sql<number>`count(*)` }).from(subjects).where(eq(subjects.institutionId, institutionId));
+    const [gradesCount] = await db.select({ count: sql<number>`count(*)` }).from(grades).where(eq(grades.institutionId, institutionId));
+    const [groupsCount] = await db.select({ count: sql<number>`count(*)` }).from(academicGroups).where(eq(academicGroups.institutionId, institutionId));
+    const [enrollments] = await db.select({ count: sql<number>`count(*)` }).from(studentEnrollments).where(eq(studentEnrollments.institutionId, institutionId));
+    const [coursesCount] = await db.select({ count: sql<number>`count(*)` }).from(courses)
+      .innerJoin(users, eq(courses.teacherId, users.id))
+      .where(eq(users.institutionId, institutionId));
+    const [activitiesCount] = await db.select({ count: sql<number>`count(*)` }).from(activities)
+      .innerJoin(courses, eq(activities.courseId, courses.id))
+      .innerJoin(users, eq(courses.teacherId, users.id))
+      .where(eq(users.institutionId, institutionId));
+    const [obsCount] = await db.select({ count: sql<number>`count(*)` }).from(studentObservations)
+      .innerJoin(users, eq(studentObservations.studentId, users.id))
+      .where(eq(users.institutionId, institutionId));
 
     return {
       students: Number(students?.count || 0),
@@ -1508,8 +1531,23 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getSchedules(): Promise<ClassSchedule[]> {
-    return db.select().from(classSchedules).orderBy(classSchedules.dayOfWeek, classSchedules.startTime);
+  async getSchedules(institutionId: string): Promise<ClassSchedule[]> {
+    return db
+      .select({
+        id: classSchedules.id,
+        groupId: classSchedules.groupId,
+        subjectId: classSchedules.subjectId,
+        teacherId: classSchedules.teacherId,
+        dayOfWeek: classSchedules.dayOfWeek,
+        startTime: classSchedules.startTime,
+        endTime: classSchedules.endTime,
+        room: classSchedules.room,
+        createdAt: classSchedules.createdAt,
+      })
+      .from(classSchedules)
+      .innerJoin(academicGroups, eq(classSchedules.groupId, academicGroups.id))
+      .where(eq(academicGroups.institutionId, institutionId))
+      .orderBy(classSchedules.dayOfWeek, classSchedules.startTime);
   }
 
   async createSchedule(data: any): Promise<ClassSchedule> {
@@ -1540,9 +1578,26 @@ export class DatabaseStorage implements IStorage {
     await db.delete(classSchedules).where(eq(classSchedules.id, id));
   }
 
-  async getObservations(studentId?: string): Promise<StudentObservation[]> {
+  async getObservations(studentId?: string, institutionId?: string): Promise<StudentObservation[]> {
     if (studentId) {
       return db.select().from(studentObservations).where(eq(studentObservations.studentId, studentId)).orderBy(desc(studentObservations.createdAt));
+    }
+    if (institutionId) {
+      return db
+        .select({
+          id: studentObservations.id,
+          studentId: studentObservations.studentId,
+          teacherId: studentObservations.teacherId,
+          type: studentObservations.type,
+          severity: studentObservations.severity,
+          title: studentObservations.title,
+          description: studentObservations.description,
+          createdAt: studentObservations.createdAt,
+        })
+        .from(studentObservations)
+        .innerJoin(users, eq(studentObservations.studentId, users.id))
+        .where(eq(users.institutionId, institutionId))
+        .orderBy(desc(studentObservations.createdAt));
     }
     return db.select().from(studentObservations).orderBy(desc(studentObservations.createdAt));
   }
@@ -1574,19 +1629,21 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async getLibraryFiles(): Promise<FileWithUploader[]> {
-    return this.getAllFiles(true);
+  async getLibraryFiles(institutionId: string): Promise<FileWithUploader[]> {
+    const all = await this.getAllFiles(true);
+    return all.filter(f => f.uploader.institutionId === institutionId);
   }
 
-  async getAllCoursesForAdmin(): Promise<CourseWithTeacher[]> {
-    return this.getAllCourses();
+  async getAllCoursesForAdmin(institutionId: string): Promise<CourseWithTeacher[]> {
+    const all = await this.getAllCourses();
+    return all.filter(c => c.teacher.institutionId === institutionId);
   }
 
-  async getSubjects() {
-    return db.select().from(subjects).orderBy(subjects.name);
+  async getSubjects(institutionId: string) {
+    return db.select().from(subjects).where(eq(subjects.institutionId, institutionId)).orderBy(subjects.name);
   }
 
-  async upsertSubject(data: { id?: string; code: string; name: string; description?: string; color?: string; active?: boolean }) {
+  async upsertSubject(data: { id?: string; code: string; name: string; description?: string; color?: string; active?: boolean }, institutionId: string) {
     if (data.id) {
       const [updated] = await db
         .update(subjects)
@@ -1597,7 +1654,7 @@ export class DatabaseStorage implements IStorage {
     } else {
       const [created] = await db
         .insert(subjects)
-        .values({ code: data.code, name: data.name, description: data.description, color: data.color, active: data.active ?? true })
+        .values({ code: data.code, name: data.name, description: data.description, color: data.color, active: data.active ?? true, institutionId })
         .returning();
       return created;
     }
@@ -1654,12 +1711,12 @@ export class DatabaseStorage implements IStorage {
     await db.delete(academicPeriods).where(eq(academicPeriods.id, id));
   }
 
-  async getGrades() {
-    return db.select().from(grades).orderBy(grades.level);
+  async getGrades(institutionId: string) {
+    return db.select().from(grades).where(eq(grades.institutionId, institutionId)).orderBy(grades.level);
   }
 
-  async createGrade(data: { name: string; level: number }) {
-    const [created] = await db.insert(grades).values(data).returning();
+  async createGrade(data: { name: string; level: number }, institutionId: string) {
+    const [created] = await db.insert(grades).values({ ...data, institutionId }).returning();
     return created;
   }
 
@@ -1667,12 +1724,12 @@ export class DatabaseStorage implements IStorage {
     await db.delete(grades).where(eq(grades.id, id));
   }
 
-  async getAcademicGroups() {
-    return db.select().from(academicGroups).orderBy(academicGroups.name);
+  async getAcademicGroups(institutionId: string) {
+    return db.select().from(academicGroups).where(eq(academicGroups.institutionId, institutionId)).orderBy(academicGroups.name);
   }
 
-  async createAcademicGroup(data: { gradeId: string; name: string }) {
-    const [created] = await db.insert(academicGroups).values(data).returning();
+  async createAcademicGroup(data: { gradeId: string; name: string }, institutionId: string) {
+    const [created] = await db.insert(academicGroups).values({ ...data, institutionId }).returning();
     return created;
   }
 
@@ -1680,21 +1737,22 @@ export class DatabaseStorage implements IStorage {
     await db.delete(academicGroups).where(eq(academicGroups.id, id));
   }
 
-  async getStudentEnrollments(academicYearId?: string) {
+  async getStudentEnrollments(institutionId: string, academicYearId?: string) {
     const query = db
       .select({
         enrollment: studentEnrollments,
         student: users,
       })
       .from(studentEnrollments)
-      .innerJoin(users, eq(studentEnrollments.studentId, users.id));
+      .innerJoin(users, eq(studentEnrollments.studentId, users.id))
+      .where(eq(studentEnrollments.institutionId, institutionId));
     if (academicYearId) {
       return query.where(eq(studentEnrollments.academicYearId, academicYearId));
     }
     return query;
   }
 
-  async createStudentEnrollment(data: { studentId: string; groupId: string; academicYearId: string; studentCode?: string }) {
+  async createStudentEnrollment(data: { studentId: string; groupId: string; academicYearId: string; studentCode?: string; institutionId: string }) {
     const [created] = await db.insert(studentEnrollments).values(data).returning();
     return created;
   }
@@ -1722,40 +1780,107 @@ export class DatabaseStorage implements IStorage {
 
   // ─── REGISTRATION CODES METHODS ──────────────────────────────────────
 
-  async getTeacherCodes(): Promise<any[]> {
-    return db.select().from(teacherCodes);
+  async getTeacherCodes(institutionId: string): Promise<any[]> {
+    return db
+      .select({
+        id: teacherCodes.id,
+        code: teacherCodes.code,
+        isUsed: teacherCodes.isUsed,
+        usedAt: teacherCodes.usedAt,
+        expiresAt: teacherCodes.expiresAt,
+        createdAt: teacherCodes.createdAt,
+        teacher: {
+          id: users.id,
+          email: users.email,
+          firstName: users.firstName,
+          lastName: users.lastName
+        }
+      })
+      .from(teacherCodes)
+      .leftJoin(users, eq(teacherCodes.teacherId, users.id))
+      .where(eq(teacherCodes.institutionId, institutionId));
   }
 
-  async createTeacherCode(code: string): Promise<any> {
-    const [created] = await db.insert(teacherCodes).values({ id: randomUUID(), code, expiresAt: null }).returning();
+  async createTeacherCode(data: { code: string; institutionId: string; expiresAt?: Date | null }): Promise<any> {
+    const [created] = await db.insert(teacherCodes).values({
+      id: randomUUID(),
+      code: data.code,
+      institutionId: data.institutionId,
+      expiresAt: data.expiresAt || null,
+      isUsed: false,
+    }).returning();
     return created;
-  }
-
-  async updateTeacherCode(id: string, code: string): Promise<any> {
-    const [updated] = await db.update(teacherCodes).set({ code }).where(eq(teacherCodes.id, id)).returning();
-    return updated;
   }
 
   async deleteTeacherCode(id: string): Promise<void> {
     await db.delete(teacherCodes).where(eq(teacherCodes.id, id));
   }
 
-  async getStaffCodes(): Promise<any[]> {
-    return db.select().from(staffCodes);
+  async deactivateTeacherCode(id: string): Promise<void> {
+    await db.update(teacherCodes).set({ expiresAt: new Date() }).where(eq(teacherCodes.id, id));
   }
 
-  async createStaffCode(data: { code: string; role: string }): Promise<any> {
-    const [created] = await db.insert(staffCodes).values({ id: randomUUID(), code: data.code, role: data.role as any }).returning();
+  async getStaffCodes(institutionId: string): Promise<any[]> {
+    return db
+      .select({
+        id: staffCodes.id,
+        code: staffCodes.code,
+        role: staffCodes.role,
+        isUsed: staffCodes.isUsed,
+        usedAt: staffCodes.usedAt,
+        expiresAt: staffCodes.expiresAt,
+        createdAt: staffCodes.createdAt,
+        user: {
+          id: users.id,
+          email: users.email,
+          firstName: users.firstName,
+          lastName: users.lastName
+        }
+      })
+      .from(staffCodes)
+      .leftJoin(users, eq(staffCodes.userId, users.id))
+      .where(eq(staffCodes.institutionId, institutionId));
+  }
+
+  async createStaffCode(data: { code: string; role: string; institutionId: string; expiresAt?: Date | null }): Promise<any> {
+    const [created] = await db.insert(staffCodes).values({
+      id: randomUUID(),
+      code: data.code,
+      role: data.role,
+      institutionId: data.institutionId,
+      expiresAt: data.expiresAt || null,
+      isUsed: false,
+    }).returning();
     return created;
-  }
-
-  async updateStaffCode(id: string, data: { code?: string; role?: string }): Promise<any> {
-    const [updated] = await db.update(staffCodes).set({ code: data.code, role: data.role as any }).where(eq(staffCodes.id, id)).returning();
-    return updated;
   }
 
   async deleteStaffCode(id: string): Promise<void> {
     await db.delete(staffCodes).where(eq(staffCodes.id, id));
+  }
+
+  async deactivateStaffCode(id: string): Promise<void> {
+    await db.update(staffCodes).set({ expiresAt: new Date() }).where(eq(staffCodes.id, id));
+  }
+
+  async getUsersByRoleAndInstitution(role: string, institutionId: string): Promise<User[]> {
+    return db
+      .select()
+      .from(users)
+      .where(
+        and(
+          eq(users.role, role as any),
+          eq(users.institutionId, institutionId)
+        )
+      )
+      .orderBy(users.firstName);
+  }
+
+  async getUsersByInstitution(institutionId: string): Promise<User[]> {
+    return db
+      .select()
+      .from(users)
+      .where(eq(users.institutionId, institutionId))
+      .orderBy(users.firstName);
   }
 }
 

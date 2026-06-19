@@ -51,7 +51,7 @@ export function setupAuthRoutes(app: Express) {
 // En authRoutes.ts - Dentro de setupAuthRoutes
 
 // Cambiamos explícitamente a /validate/:code para recibir el string del formulario
-app.get("/api/institutions/validate/:code", async (req, res) => {
+app.get("/api/institutionSettings/validate/:code", async (req, res) => {
   try {
     const { code } = req.params;
     
