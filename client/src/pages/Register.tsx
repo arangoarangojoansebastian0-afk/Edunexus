@@ -73,7 +73,7 @@ export default function Register() {
       ...data,
       institution: {
         ...data.institution,
-        id: Number(data.institution.id) // <--- ¡AQUÍ ASEGURAMOS EL ENTERO!
+        institutionId: data.institution.id // <--- ¡AQUÍ ASEGURAMOS EL ENTERO!
       }
     };
 
@@ -84,7 +84,7 @@ export default function Register() {
     // inyecta el ID numérico de una vez para que viaje en el POST del registro final:
     setFormData(prev => ({
       ...prev,
-      institutionId: Number(data.institution.id)
+      institutioninstitutionId: data.institution.id
     }));
     
     toast({

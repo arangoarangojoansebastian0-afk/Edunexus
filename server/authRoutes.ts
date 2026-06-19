@@ -54,38 +54,45 @@ export function setupAuthRoutes(app: Express) {
 app.get("/api/institutionSettings/validate/:code", async (req, res) => {
   try {
     const { code } = req.params;
-    
-    // 1. Buscamos la institución por su código único de texto
+
     const institution = await storage.getInstitutionByCode(code);
 
     if (!institution) {
-      return res.status(404).json({ error: "Institución no encontrada con el código provisto." });
+      return res.status(404).json({
+        error: "Institución no encontrada con el código provisto."
+      });
     }
 
-    // 2. Forzamos y aseguramos que el ID sea un número antes de pasarlo a las otras consultas
-    const institutionIdNum = Number(institution.id);
+    const institutionId = institution.id;
 
-    if (isNaN(institutionIdNum)) {
-      return res.status(400).json({ error: "El ID de la institución no es un número válido." });
-    }
+    const gradesList =
+      await storage.getGradesByInstitution(institutionId);
 
-    // 3. Al pasarle un número real, estas funciones de storage ya no fallarán
-    const gradesList = await storage.getGradesByInstitution(institutionIdNum);
-    const groupsList = await storage.getGroupsByInstitution(institutionIdNum);
+    const groupsList =
+      await storage.getGroupsByInstitution(institutionId);
 
-    // 4. Enviamos al frontend el objeto asegurando que el ID es numérico
     res.json({
       institution: {
-        id: institutionIdNum, // <--- ESTO ES UN NÚMERO SEGURO
+        id: institution.id,
         name: institution.institutionName,
         code: institution.institutionCode
       },
       grades: gradesList,
       groups: groupsList
     });
+
+console.log("Código recibido:", code);
+
+ await storage.getInstitutionByCode(code);
+
+console.log("Institución encontrada:", institution);
+
   } catch (error) {
     console.error("Error al obtener info del colegio:", error);
-    res.status(500).json({ error: "Error interno del servidor" });
+
+    res.status(500).json({
+      error: "Error interno del servidor"
+    });
   }
 });
 
