@@ -695,11 +695,15 @@ async getInstitutionByCode(code: string) {
     return { ...file.files, uploader: file.users };
   }
 
-  async getAllFiles(approved = true): Promise<FileWithUploader[]> {
+  async getAllFiles(approved = true, institutionId?: string): Promise<FileWithUploader[]> {
+    const conditions = [eq(files.approved, approved)];
+    if (institutionId) {
+      conditions.push(eq(users.institutionId, institutionId));
+    }
     const allFiles = await db
       .select()
       .from(files)
-      .where(eq(files.approved, approved))
+      .where(and(...conditions))
       .innerJoin(users, eq(files.uploaderId, users.id))
       .orderBy(desc(files.createdAt));
 
@@ -717,8 +721,8 @@ async getInstitutionByCode(code: string) {
     return userFiles.map((f) => ({ ...f.files, uploader: f.users }));
   }
 
-  async getPendingFiles(): Promise<FileWithUploader[]> {
-    return this.getAllFiles(false);
+  async getPendingFiles(institutionId?: string): Promise<FileWithUploader[]> {
+    return this.getAllFiles(false, institutionId);
   }
 
   async createFile(file: InsertFile): Promise<File> {
@@ -889,13 +893,23 @@ async getInstitutionByCode(code: string) {
     return report;
   }
 
-  async getAllReports(status?: string): Promise<Report[]> {
-    if (status && status !== "all") {
-      return db
-        .select()
+  async getAllReports(status?: string, institutionId?: string): Promise<Report[]> {
+    const conditions = [];
+    if (status && status !== "all") conditions.push(eq(reports.status, status as any));
+    if (institutionId) conditions.push(eq(users.institutionId, institutionId));
+
+    if (institutionId) {
+      const rows = await db
+        .select({ report: reports })
         .from(reports)
-        .where(eq(reports.status, status as any))
+        .innerJoin(users, eq(reports.reporterId, users.id))
+        .where(conditions.length ? and(...conditions) : undefined)
         .orderBy(desc(reports.createdAt));
+      return rows.map((r) => r.report);
+    }
+
+    if (conditions.length) {
+      return db.select().from(reports).where(and(...conditions)).orderBy(desc(reports.createdAt));
     }
     return db.select().from(reports).orderBy(desc(reports.createdAt));
   }
@@ -1667,17 +1681,19 @@ async getInstitutionByCode(code: string) {
     await db.update(subjects).set({ active }).where(eq(subjects.id, id));
   }
 
-  async getAcademicYears() {
-    return db.select().from(academicYears).orderBy(desc(academicYears.year));
+  async getAcademicYears(institutionId: string) {
+    return db.select().from(academicYears)
+      .where(eq(academicYears.institutionId, institutionId))
+      .orderBy(desc(academicYears.year));
   }
 
-  async createAcademicYear(data: { year: number; startDate?: Date; endDate?: Date }) {
-    const [created] = await db.insert(academicYears).values(data).returning();
+  async createAcademicYear(data: { year: number; startDate?: Date; endDate?: Date }, institutionId: string) {
+    const [created] = await db.insert(academicYears).values({ ...data, institutionId }).returning();
     return created;
   }
 
-  async setActiveAcademicYear(id: string) {
-    await db.update(academicYears).set({ isActive: false });
+  async setActiveAcademicYear(id: string, institutionId: string) {
+    await db.update(academicYears).set({ isActive: false }).where(eq(academicYears.institutionId, institutionId));
     await db.update(academicYears).set({ isActive: true }).where(eq(academicYears.id, id));
   }
 
@@ -1702,7 +1718,9 @@ async getInstitutionByCode(code: string) {
   }
 
   async setActivePeriod(id: string) {
-    await db.update(academicPeriods).set({ isActive: false });
+    const [period] = await db.select().from(academicPeriods).where(eq(academicPeriods.id, id));
+    if (!period) return;
+    await db.update(academicPeriods).set({ isActive: false }).where(eq(academicPeriods.academicYearId, period.academicYearId));
     await db.update(academicPeriods).set({ isActive: true }).where(eq(academicPeriods.id, id));
   }
 

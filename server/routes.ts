@@ -566,19 +566,28 @@ export async function registerRoutes(
 
   app.get("/api/admin/academic-years", requireAuth, requireAdmin, async (req, res) => {
     try {
-      res.json(await storage.getAcademicYears());
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      res.json(await storage.getAcademicYears(req.user.institutionId));
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
   app.post("/api/admin/academic-years", requireAuth, requireAdmin, async (req, res) => {
     try {
-      res.json(await storage.createAcademicYear(req.body));
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      res.json(await storage.createAcademicYear(req.body, req.user.institutionId));
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
   app.patch("/api/admin/academic-years/:id/activate", requireAuth, requireAdmin, async (req, res) => {
     try {
-      await storage.setActiveAcademicYear(req.params.id);
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      await storage.setActiveAcademicYear(req.params.id, req.user.institutionId);
       res.json({ success: true });
     } catch { res.status(500).json({ message: "Error" }); }
   });
@@ -909,7 +918,10 @@ export async function registerRoutes(
 
   app.get("/api/admin/files/pending", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const files = await storage.getPendingFiles();
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      const files = await storage.getPendingFiles(req.user.institutionId);
       res.json(files);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch files" });
@@ -1016,8 +1028,11 @@ export async function registerRoutes(
 
   app.get("/api/admin/reports", requireAuth, requireAdmin, async (req, res) => {
     try {
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
       const status = req.query.status as string | undefined;
-      const reports = await storage.getAllReports(status);
+      const reports = await storage.getAllReports(status, req.user.institutionId);
       res.json(reports);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch reports" });

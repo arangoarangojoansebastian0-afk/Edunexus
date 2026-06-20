@@ -463,11 +463,15 @@ export const staffCodes = pgTable("staff_codes", {
 
 export const academicYears = pgTable("academic_years", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  year: integer("year").notNull().unique(),
+  institutionId: varchar("institution_id")
+    .references(() => institutionSettings.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
   isActive: boolean("is_active").default(false),
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
-});
+}, (table) => ({
+  uniqueYearPerInstitution: index("idx_unique_year_per_institution").on(table.institutionId, table.year),
+}));
 
 export const academicPeriods = pgTable("academic_periods", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
