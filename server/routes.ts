@@ -17,6 +17,7 @@ import {
   insertCourseSchema,
   insertActivitySchema,
   insertSubmissionSchema,
+  insertGradebookEntrySchema,
 } from "@shared/schema";
 import type { User } from "@shared/schema";
 import { z } from "zod";
@@ -385,7 +386,7 @@ export async function registerRoutes(
   app.post("/api/groups", requireAuth, requireVerified, async (req, res) => {
     try {
       const userId = req.user!.id;
-      const data = insertGroupSchema.parse({ ...req.body, createdBy: userId });
+      const data = insertGroupSchema.parse({ ...req.body, createdBy: userId, institutionId: req.user!.institutionId });
       const group = await storage.createGroup(data);
       await storage.addGroupMember({ groupId: group.id, userId, role: "admin" });
       res.status(201).json(group);
@@ -786,6 +787,167 @@ export async function registerRoutes(
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
+  // ─── INDICADORES DE GESTIÓN (detalle) ────────────────────────────────
+  app.get("/api/admin/indicators/attendance-trend", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      const groupBy = (req.query.groupBy as "period" | "week") || "week";
+      res.json(await storage.getAttendanceTrend(req.user.institutionId, groupBy));
+    } catch (e) { res.status(500).json({ message: "Error al calcular asistencia" }); }
+  });
+
+  app.get("/api/admin/indicators/performance", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      const [bySubject, byGroup] = await Promise.all([
+        storage.getPerformanceBySubject(req.user.institutionId),
+        storage.getPerformanceByGroup(req.user.institutionId),
+      ]);
+      res.json({ bySubject, byGroup });
+    } catch (e) { res.status(500).json({ message: "Error al calcular rendimiento" }); }
+  });
+
+  app.get("/api/admin/indicators/at-risk", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      const students = await storage.getStudentsAtRisk(req.user.institutionId);
+      res.json(students);
+    } catch (e) { res.status(500).json({ message: "Error al calcular estudiantes en riesgo" }); }
+  });
+
+  app.get("/api/admin/indicators/recent-activity", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      const gradeId = req.query.gradeId as string | undefined;
+      const groupId = req.query.groupId as string | undefined;
+      const activities = await storage.getRecentActivities(req.user.institutionId, { gradeId, groupId });
+      res.json(activities);
+    } catch (e) { res.status(500).json({ message: "Error al obtener actividad reciente" }); }
+  });
+
+  // ─── OBSERVADOR DEL ESTUDIANTE ────────────────────────────────────────
+  // El frontend espera: { id, type, description, commitment?, followUp?, studentName, createdAt }
+  // La tabla student_observations no tiene commitment/followUp como columnas propias,
+  // así que se guardan codificados dentro de "description" con un separador, y se
+  // desempaquetan al leer.
+  const packObservation = (description: string, commitment?: string, followUp?: string) => {
+    const parts = [description || ""];
+    if (commitment) parts.push(`__COMMITMENT__:${commitment}`);
+    if (followUp) parts.push(`__FOLLOWUP__:${followUp}`);
+    return parts.join("\n");
+  };
+  const unpackObservation = (raw: string) => {
+    const lines = (raw || "").split("\n");
+    let description = "";
+    let commitment: string | undefined;
+    let followUp: string | undefined;
+    for (const line of lines) {
+      if (line.startsWith("__COMMITMENT__:")) commitment = line.replace("__COMMITMENT__:", "");
+      else if (line.startsWith("__FOLLOWUP__:")) followUp = line.replace("__FOLLOWUP__:", "");
+      else description += (description ? "\n" : "") + line;
+    }
+    return { description, commitment, followUp };
+  };
+
+  app.get("/api/admin/observations", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      const studentId = req.query.studentId as string | undefined;
+      const raw = studentId
+        ? await storage.getObservationsByStudent(studentId)
+        : await storage.getObservationsByInstitution(req.user.institutionId);
+
+      const result = await Promise.all(raw.map(async (obs: any) => {
+        const { description, commitment, followUp } = unpackObservation(obs.description);
+        const student = obs.student || (await storage.getUser(obs.studentId));
+        return {
+          id: obs.id,
+          type: obs.type,
+          description,
+          commitment,
+          followUp,
+          studentId: obs.studentId,
+          studentName: student ? `${student.firstName} ${student.lastName}` : "Estudiante",
+          createdAt: obs.createdAt,
+        };
+      }));
+      res.json(result);
+    } catch (e) { res.status(500).json({ message: "Error al obtener observaciones" }); }
+  });
+
+  app.post("/api/admin/observations", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      const { studentId, type, description, commitment, followUp } = req.body;
+      if (!studentId || !description) {
+        return res.status(400).json({ error: "Estudiante y descripción son obligatorios" });
+      }
+      const created = await storage.createObservation({
+        institutionId: req.user.institutionId,
+        studentId,
+        teacherId: req.user.id,
+        type: type || "positive",
+        severity: type === "negative" ? "high" : "light",
+        title: type === "positive" ? "Observación positiva" : type === "negative" ? "Observación negativa" : "Observación",
+        description: packObservation(description, commitment, followUp),
+      });
+      res.status(201).json(created);
+    } catch (e) { res.status(500).json({ message: "Error al crear observación" }); }
+  });
+
+  app.delete("/api/admin/observations/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      await storage.deleteObservation(req.params.id, req.user.institutionId);
+      res.json({ success: true });
+    } catch (e) { res.status(500).json({ message: "Error al eliminar observación" }); }
+  });
+
+  // ─── BOLETINES / CALIFICACIONES (GRADEBOOK) ──────────────────────────
+  app.get("/api/admin/gradebook", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      const { groupId, subjectId, academicPeriodId, studentId } = req.query as Record<string, string | undefined>;
+      const entries = await storage.getGradebookEntries(req.user.institutionId, { groupId, subjectId, academicPeriodId, studentId });
+      res.json(entries);
+    } catch (e) { res.status(500).json({ message: "Error al obtener calificaciones" }); }
+  });
+
+  app.post("/api/admin/gradebook", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      const data = insertGradebookEntrySchema.parse({
+        ...req.body,
+        institutionId: req.user.institutionId,
+        recordedBy: req.user.id,
+      });
+      const entry = await storage.upsertGradebookEntry(data);
+      res.status(201).json(entry);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ errors: error.errors });
+      res.status(500).json({ message: "Error al guardar calificación" });
+    }
+  });
+
+  app.get("/api/admin/report-card/:studentId/:periodId", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const entries = await storage.getStudentReportCard(req.params.studentId, req.params.periodId);
+      res.json(entries);
+    } catch (e) { res.status(500).json({ message: "Error al generar boletín" }); }
+  });
+
+  // Consolidado de boletín por grupo: usado por TabBoletines (vista de tabla)
+  app.get("/api/admin/report-cards", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      const { groupId, periodId } = req.query as Record<string, string | undefined>;
+      if (!groupId) return res.status(400).json({ error: "groupId requerido" });
+
+      const result = await storage.getReportCardsByGroup(req.user.institutionId, groupId, periodId);
+      res.json(result);
+    } catch (e) { res.status(500).json({ message: "Error al generar boletines del grupo" }); }
+  });
+
   app.post("/api/admin/subjects/:id/toggle", requireAuth, requireAdmin, async (req, res) => {
     try { await storage.toggleSubjectActive(req.params.id, req.body.active); res.json({ success: true }); } catch { res.status(500).json({ message: "Error" }); }
   });
@@ -899,6 +1061,7 @@ export async function registerRoutes(
       const { subject, description } = req.body;
       const fileData = {
         uploaderId: userId,
+        institutionId: req.user!.institutionId,
         fileName: file.originalname,
         fileUrl: fileUrl,
         storageKey: fileUrl,
@@ -962,11 +1125,13 @@ export async function registerRoutes(
   app.post("/api/events", requireAuth, requireVerified, async (req, res) => {
     try {
       const userId = req.user!.id;
-      const data = insertEventSchema.parse({ ...req.body, hostId: userId });
+      const data = insertEventSchema.parse({ ...req.body, hostId: userId, institutionId: req.user!.institutionId });
       const event = await storage.createEvent(data);
-      
-      const allUsers = await storage.getAllUsers();
-      for (const user of allUsers) {
+
+      const institutionUsers = req.user!.institutionId
+        ? await storage.getUsersByInstitution(req.user!.institutionId)
+        : [];
+      for (const user of institutionUsers) {
         if (user.id !== userId) {
           await storage.createNotification({
             userId: user.id,
@@ -1018,7 +1183,7 @@ export async function registerRoutes(
   app.post("/api/reports", requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id;
-      const data = insertReportSchema.parse({ ...req.body, reporterId: userId });
+      const data = insertReportSchema.parse({ ...req.body, reporterId: userId, institutionId: req.user!.institutionId });
       const report = await storage.createReport(data);
       res.status(201).json(report);
     } catch (error) {
@@ -1193,7 +1358,7 @@ export async function registerRoutes(
       if (user.role !== "teacher" && user.role !== "admin") {
         return res.status(403).json({ message: "Only teachers can create courses" });
       }
-      const data = insertCourseSchema.parse({ ...req.body, teacherId: user.id });
+      const data = insertCourseSchema.parse({ ...req.body, teacherId: user.id, institutionId: user.institutionId });
       const course = await storage.createCourse(data);
       res.status(201).json(course);
     } catch (err) {

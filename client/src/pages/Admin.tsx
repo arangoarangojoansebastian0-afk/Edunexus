@@ -45,14 +45,19 @@ function StatCard({
   label,
   value,
   color = "text-primary",
+  onClick,
 }: {
   icon: any;
   label: string;
   value: any;
   color?: string;
+  onClick?: () => void;
 }) {
   return (
-    <Card>
+    <Card
+      className={onClick ? "cursor-pointer hover:border-primary/50 transition-colors" : ""}
+      onClick={onClick}
+    >
       <CardContent className="p-4 flex items-center gap-3">
         <div className={`p-2 rounded-lg bg-muted ${color}`}>
           <Icon className="h-5 w-5" />
@@ -72,7 +77,8 @@ function TabDashboard() {
   const { data: stats, isLoading } = useQuery<any>({
     queryKey: ["/api/admin/institutional-stats"],
   });
- 
+  const [openPanel, setOpenPanel] = useState<null | "attendance" | "performance" | "atrisk" | "activity">(null);
+
   if (isLoading) {
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -82,7 +88,7 @@ function TabDashboard() {
       </div>
     );
   }
- 
+
   const mainStats = [
     { icon: Users, label: "Estudiantes", value: stats?.students, color: "text-blue-600" },
     { icon: UserCheck, label: "Docentes", value: stats?.teachers, color: "text-green-600" },
@@ -95,34 +101,38 @@ function TabDashboard() {
     { icon: FileText, label: "Actividades", value: stats?.activities, color: "text-pink-600" },
     { icon: Bell, label: "Observaciones", value: stats?.observations, color: "text-teal-600" },
   ];
- 
+
   const indicators = [
     {
+      panelKey: "attendance" as const,
       label: "Asistencia promedio",
       value: stats?.attendanceRate ? `${stats.attendanceRate}%` : "—",
       icon: CheckCircle,
       color: "text-green-600",
     },
     {
+      panelKey: "performance" as const,
       label: "Rendimiento académico",
       value: stats?.avgGrade ?? "—",
       icon: TrendingUp,
       color: "text-blue-600",
     },
     {
+      panelKey: "atrisk" as const,
       label: "Estudiantes en riesgo",
       value: stats?.atRisk ?? "—",
       icon: AlertTriangle,
       color: "text-amber-600",
     },
     {
+      panelKey: "activity" as const,
       label: "Actividad reciente (7d)",
       value: stats?.recentActivity ?? "—",
       icon: BarChart2,
       color: "text-purple-600",
     },
   ];
- 
+
   return (
     <div className="space-y-6">
       <div>
@@ -135,23 +145,254 @@ function TabDashboard() {
           ))}
         </div>
       </div>
- 
+
       <div>
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
           Indicadores de gestión
         </h2>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {indicators.map((s) => (
-            <StatCard key={s.label} {...s} />
+            <StatCard key={s.label} icon={s.icon} label={s.label} value={s.value} color={s.color} onClick={() => setOpenPanel(s.panelKey)} />
           ))}
         </div>
+        <p className="text-xs text-muted-foreground mt-2">Haz clic en un indicador para ver el detalle.</p>
       </div>
+
+      <AttendancePanel open={openPanel === "attendance"} onOpenChange={(o) => setOpenPanel(o ? "attendance" : null)} />
+      <PerformancePanel open={openPanel === "performance"} onOpenChange={(o) => setOpenPanel(o ? "performance" : null)} />
+      <AtRiskPanel open={openPanel === "atrisk"} onOpenChange={(o) => setOpenPanel(o ? "atrisk" : null)} />
+      <RecentActivityPanel open={openPanel === "activity"} onOpenChange={(o) => setOpenPanel(o ? "activity" : null)} />
     </div>
   );
 }
- 
+
+// ─── PANEL: Asistencia promedio por periodo o semana ──────────────────────────
+
+function AttendancePanel({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const [groupBy, setGroupBy] = useState<"week" | "period">("week");
+  const { data, isLoading } = useQuery<{ label: string; rate: number }[]>({
+    queryKey: ["/api/admin/indicators/attendance-trend", groupBy],
+    queryFn: () => fetch(`/api/admin/indicators/attendance-trend?groupBy=${groupBy}`, { credentials: "include" }).then(r => r.json()),
+    enabled: open,
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><CheckCircle className="h-4 w-4 text-green-600" /> Asistencia promedio institucional</DialogTitle>
+        </DialogHeader>
+        <div className="flex gap-2 mb-2">
+          <Button size="sm" variant={groupBy === "week" ? "default" : "outline"} onClick={() => setGroupBy("week")}>Por semana</Button>
+          <Button size="sm" variant={groupBy === "period" ? "default" : "outline"} onClick={() => setGroupBy("period")}>Por periodo</Button>
+        </div>
+        {isLoading ? (
+          <Skeleton className="h-48 w-full" />
+        ) : !data?.length ? (
+          <p className="text-sm text-muted-foreground text-center py-8">No hay registros de asistencia todavía.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{groupBy === "week" ? "Semana" : "Periodo"}</TableHead>
+                <TableHead className="text-right">Asistencia</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.map((row) => (
+                <TableRow key={row.label}>
+                  <TableCell className="text-sm">{row.label}</TableCell>
+                  <TableCell className="text-right font-semibold">{row.rate}%</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── PANEL: Rendimiento académico por materia y por grupo ─────────────────────
+
+function PerformancePanel({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const { data, isLoading } = useQuery<{ bySubject: any[]; byGroup: any[] }>({
+    queryKey: ["/api/admin/indicators/performance"],
+    enabled: open,
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><TrendingUp className="h-4 w-4 text-blue-600" /> Rendimiento académico</DialogTitle>
+        </DialogHeader>
+        {isLoading ? (
+          <Skeleton className="h-48 w-full" />
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Por materia</h3>
+              {!data?.bySubject?.length ? (
+                <p className="text-sm text-muted-foreground py-4">Sin calificaciones registradas.</p>
+              ) : (
+                <Table>
+                  <TableHeader><TableRow><TableHead>Materia</TableHead><TableHead className="text-right">Prom.</TableHead></TableRow></TableHeader>
+                  <TableBody>
+                    {data.bySubject.map((s: any) => (
+                      <TableRow key={s.subjectId}>
+                        <TableCell className="text-sm">{s.subjectName}</TableCell>
+                        <TableCell className="text-right font-semibold">{(s.avgGrade / 10).toFixed(1)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+            <div>
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Por grupo</h3>
+              {!data?.byGroup?.length ? (
+                <p className="text-sm text-muted-foreground py-4">Sin calificaciones registradas.</p>
+              ) : (
+                <Table>
+                  <TableHeader><TableRow><TableHead>Grupo</TableHead><TableHead className="text-right">Prom.</TableHead></TableRow></TableHeader>
+                  <TableBody>
+                    {data.byGroup.map((g: any) => (
+                      <TableRow key={g.groupId}>
+                        <TableCell className="text-sm">{g.groupName}</TableCell>
+                        <TableCell className="text-right font-semibold">{(g.avgGrade / 10).toFixed(1)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── PANEL: Estudiantes en riesgo (detalle con motivo) ─────────────────────────
+
+function AtRiskPanel({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const { data, isLoading } = useQuery<{ student: User; reason: string; detail: string }[]>({
+    queryKey: ["/api/admin/indicators/at-risk"],
+    enabled: open,
+  });
+
+  const reasonColor: Record<string, string> = {
+    "Bajo rendimiento académico": "text-red-600",
+    "Ausentismo": "text-amber-600",
+    "Observación grave": "text-purple-600",
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-amber-600" /> Estudiantes en riesgo</DialogTitle>
+        </DialogHeader>
+        {isLoading ? (
+          <Skeleton className="h-48 w-full" />
+        ) : !data?.length ? (
+          <p className="text-sm text-muted-foreground text-center py-8">No hay estudiantes en riesgo identificados actualmente.</p>
+        ) : (
+          <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+            {data.map((item, i) => (
+              <Card key={`${item.student.id}-${i}`}>
+                <CardContent className="p-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-8 w-8">
+                      <AvatarFallback>{getInitials(item.student.firstName, item.student.lastName)}</AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="text-sm font-medium">{getFullName(item.student.firstName, item.student.lastName)}</p>
+                      <p className={`text-xs ${reasonColor[item.reason] || "text-muted-foreground"}`}>{item.reason}</p>
+                    </div>
+                  </div>
+                  <span className="text-xs text-muted-foreground text-right max-w-[40%]">{item.detail}</span>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── PANEL: Actividad reciente, filtrable por grado/grupo ──────────────────────
+
+function RecentActivityPanel({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const [gradeId, setGradeId] = useState("");
+  const [groupId, setGroupId] = useState("");
+  const { data: grades = [] } = useQuery<any[]>({ queryKey: ["/api/admin/grades"], enabled: open });
+  const { data: groups = [] } = useQuery<any[]>({ queryKey: ["/api/admin/academic-groups"], enabled: open });
+
+  const { data, isLoading } = useQuery<any[]>({
+    queryKey: ["/api/admin/indicators/recent-activity", gradeId, groupId],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (gradeId) params.set("gradeId", gradeId);
+      if (groupId) params.set("groupId", groupId);
+      return fetch(`/api/admin/indicators/recent-activity?${params}`, { credentials: "include" }).then(r => r.json());
+    },
+    enabled: open,
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><BarChart2 className="h-4 w-4 text-purple-600" /> Actividad reciente (últimos 7 días)</DialogTitle>
+        </DialogHeader>
+        <div className="flex gap-2 mb-2">
+          <Select value={gradeId} onValueChange={(v) => { setGradeId(v); setGroupId(""); }}>
+            <SelectTrigger className="w-44"><SelectValue placeholder="Filtrar por grado" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Todos los grados</SelectItem>
+              {grades.map((g: any) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={groupId} onValueChange={setGroupId}>
+            <SelectTrigger className="w-44"><SelectValue placeholder="Filtrar por grupo" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Todos los grupos</SelectItem>
+              {groups.map((g: any) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        {isLoading ? (
+          <Skeleton className="h-48 w-full" />
+        ) : !data?.length ? (
+          <p className="text-sm text-muted-foreground text-center py-8">No hay actividades creadas en los últimos 7 días.</p>
+        ) : (
+          <div className="space-y-2 max-h-[55vh] overflow-y-auto">
+            {data.map((act: any) => (
+              <Card key={act.id}>
+                <CardContent className="p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">{act.title}</p>
+                    <Badge variant="outline" className="text-xs">{act.subject}</Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {act.courseName} · {new Date(act.createdAt).toLocaleDateString("es-CO")}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── CONFIGURACIÓN DEL COLEGIO ────────────────────────────────────────────────
- 
+
+
 function TabConfigColegio() {
   const { toast } = useToast();
   const { data: config, isLoading } = useQuery<any>({

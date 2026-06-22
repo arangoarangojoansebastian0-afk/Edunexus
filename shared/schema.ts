@@ -3,6 +3,7 @@ import {
   pgTable,
   text,
   varchar,
+  uuid,
   timestamp,
   boolean,
   integer,
@@ -41,7 +42,7 @@ export const sessions = pgTable(
 
 // ====== INSTITUTION SETTINGS (CENTRAL ENTITY) ======
 export const institutionSettings = pgTable("institution_settings", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   institutionName: varchar("institution_name", { length: 255 }),
   logoUrl: text("logo_url"),
   evaluationType: varchar("evaluation_type", { length: 20 }),
@@ -70,7 +71,7 @@ export const users = pgTable("users", {
   bio: text("bio"),
   verified: boolean("verified").default(false).notNull(),
   blocked: boolean("blocked").default(false).notNull(),
-  institutionId: varchar("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }),
+  institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -78,6 +79,7 @@ export const users = pgTable("users", {
 // Groups table (courses and clubs)
 export const groups = pgTable("groups", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   type: groupTypeEnum("type").notNull(),
@@ -162,6 +164,7 @@ export const files = pgTable(
   "files",
   {
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }),
     uploaderId: varchar("uploader_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
     fileName: varchar("file_name", { length: 255 }).notNull(),
     fileUrl: varchar("file_url").notNull(),
@@ -188,6 +191,7 @@ export const events = pgTable(
   "events",
   {
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }),
     title: varchar("title", { length: 255 }).notNull(),
     description: text("description"),
     hostId: varchar("host_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -228,6 +232,7 @@ export const reports = pgTable(
   "reports",
   {
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }),
     reporterId: varchar("reporter_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
     targetType: reportTargetTypeEnum("target_type").notNull(),
     targetId: varchar("target_id").notNull(),
@@ -408,7 +413,7 @@ export const subjects = pgTable("subjects", {
   description: text("description"),
   color: text("color"),
   active: boolean("active").default(true),
-  institutionId: varchar("institution_id")
+  institutionId: uuid("institution_id")
     .notNull()
     .references(() => institutionSettings.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -419,7 +424,7 @@ export const grades = pgTable("grades", {
   name: varchar("name", { length: 50 }).notNull(),
   level: integer("level").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  institutionId: varchar("institution_id")
+  institutionId: uuid("institution_id")
     .notNull()
     .references(() => institutionSettings.id, { onDelete: "cascade" }),
 });
@@ -428,7 +433,7 @@ export const academicGroups = pgTable("academic_groups", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   gradeId: varchar("grade_id").references(() => grades.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 20 }).notNull(),
-  institutionId: varchar("institution_id")
+  institutionId: uuid("institution_id")
     .notNull()
     .references(() => institutionSettings.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -436,7 +441,7 @@ export const academicGroups = pgTable("academic_groups", {
 
 export const teacherCodes = pgTable("teacher_codes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  institutionId: varchar("institution_id")
+  institutionId: uuid("institution_id")
     .notNull()
     .references(() => institutionSettings.id, { onDelete: "cascade" }),
   code: varchar("code", { length: 50 }).unique().notNull(),
@@ -449,7 +454,7 @@ export const teacherCodes = pgTable("teacher_codes", {
 
 export const staffCodes = pgTable("staff_codes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  institutionId: varchar("institution_id")
+  institutionId: uuid("institution_id")
     .notNull()
     .references(() => institutionSettings.id, { onDelete: "cascade" }),
   code: varchar("code", { length: 50 }).unique().notNull(),
@@ -463,7 +468,7 @@ export const staffCodes = pgTable("staff_codes", {
 
 export const academicYears = pgTable("academic_years", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  institutionId: varchar("institution_id")
+  institutionId: uuid("institution_id")
     .references(() => institutionSettings.id, { onDelete: "cascade" }),
   year: integer("year").notNull(),
   isActive: boolean("is_active").default(false),
@@ -489,7 +494,7 @@ export const studentEnrollments = pgTable("student_enrollments", {
   academicYearId: varchar("academic_year_id").references(() => academicYears.id).notNull(),
   studentCode: varchar("student_code", { length: 50 }).unique(),
   status: varchar("status", { length: 50 }).default("enrolled").notNull(), 
-  institutionId: varchar("institution_id")
+  institutionId: uuid("institution_id")
     .notNull()
     .references(() => institutionSettings.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -513,6 +518,7 @@ export const classSchedules = pgTable("class_schedules", {
 
 export const studentObservations = pgTable("student_observations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }),
   studentId: varchar("student_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   teacherId: varchar("teacher_id").references(() => users.id).notNull(),
   type: varchar("type", { length: 50 }).notNull(),
@@ -535,6 +541,7 @@ export const courses = pgTable(
   "courses",
   {
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }),
     name: varchar("name", { length: 255 }).notNull(),
     description: text("description"),
     subject: varchar("subject", { length: 100 }).notNull(),
@@ -612,6 +619,7 @@ export const attendance = pgTable(
   "attendance",
   {
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }),
     courseId: varchar("course_id").references(() => courses.id, { onDelete: "cascade" }).notNull(),
     studentId: varchar("student_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
     date: timestamp("date").notNull(),
@@ -624,6 +632,30 @@ export const attendance = pgTable(
     index("idx_attendance_course").on(table.courseId),
     index("idx_attendance_student").on(table.studentId),
     index("idx_attendance_date").on(table.date),
+  ]
+);
+
+// Calificaciones consolidadas por estudiante / materia / periodo (para boletines)
+export const gradebookEntries = pgTable(
+  "gradebook_entries",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }).notNull(),
+    studentId: varchar("student_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    subjectId: varchar("subject_id").references(() => subjects.id, { onDelete: "cascade" }).notNull(),
+    groupId: varchar("group_id").references(() => academicGroups.id, { onDelete: "cascade" }).notNull(),
+    academicPeriodId: varchar("academic_period_id").references(() => academicPeriods.id, { onDelete: "cascade" }).notNull(),
+    grade: integer("grade").notNull(),
+    notes: text("notes"),
+    recordedBy: varchar("recorded_by").references(() => users.id).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_gradebook_student").on(table.studentId),
+    index("idx_gradebook_subject").on(table.subjectId),
+    index("idx_gradebook_period").on(table.academicPeriodId),
+    index("idx_gradebook_unique").on(table.studentId, table.subjectId, table.academicPeriodId),
   ]
 );
 
@@ -828,6 +860,7 @@ export const insertCourseEnrollmentSchema = createInsertSchema(courseEnrollments
 export const insertActivitySchema = createInsertSchema(activities, { dueDate: z.string().transform(val => val ? new Date(val) : null).optional().nullable() }).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertSubmissionSchema = createInsertSchema(submissions).omit({ id: true, submittedAt: true, grade: true, feedback: true, gradedAt: true, gradedBy: true });
 export const insertAttendanceSchema = createInsertSchema(attendance).omit({ id: true, createdAt: true });
+export const insertGradebookEntrySchema = createInsertSchema(gradebookEntries).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertTeacherCodeSchema = createInsertSchema(teacherCodes).omit({ id: true, createdAt: true });
 export const insertStaffCodeSchema = createInsertSchema(staffCodes).omit({ id: true, createdAt: true });
 
@@ -879,6 +912,7 @@ export type InstitutionSettings = typeof institutionSettings.$inferSelect;
 export type InsertInstitutionSettings = z.infer<typeof insertInstitutionSettingsSchema>;
 export type ClassSchedule = typeof classSchedules.$inferSelect;
 export type StudentObservation = typeof studentObservations.$inferSelect;
+export type InsertStudentObservation = z.infer<typeof insertStudentObservationSchema>;
 export type TeachingAssignment = typeof teachingAssignments.$inferSelect;
 export type Course = typeof courses.$inferSelect;
 export type InsertCourse = z.infer<typeof insertCourseSchema>;
@@ -890,6 +924,8 @@ export type Submission = typeof submissions.$inferSelect;
 export type InsertSubmission = z.infer<typeof insertSubmissionSchema>;
 export type Attendance = typeof attendance.$inferSelect;
 export type InsertAttendance = z.infer<typeof insertAttendanceSchema>;
+export type GradebookEntry = typeof gradebookEntries.$inferSelect;
+export type InsertGradebookEntry = z.infer<typeof insertGradebookEntrySchema>;
 
 // Extended types with relations
 export type PostWithAuthor = Post & { author: User; comments?: CommentWithAuthor[]; reactions?: Reaction[]; _count?: { comments: number; reactions: number } };
@@ -905,3 +941,4 @@ export type CourseWithTeacher = Course & { teacher: User; _count?: { students: n
 export type ActivityWithSubmission = Activity & { mySubmission?: Submission; _count?: { submissions: number } };
 export type SubmissionWithStudent = Submission & { student: User };
 export type AttendanceWithStudent = Attendance & { student: User };
+export type GradebookEntryWithStudent = GradebookEntry & { student: User; subject?: typeof subjects.$inferSelect };

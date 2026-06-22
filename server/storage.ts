@@ -35,6 +35,7 @@ import {
   activities,
   submissions,
   attendance,
+  gradebookEntries,
   classSchedules,
   studentObservations,
   teachingAssignments,
@@ -91,6 +92,10 @@ import {
   type AttendanceWithStudent,
   type ClassSchedule,
   type StudentObservation,
+  type InsertStudentObservation,
+  type GradebookEntry,
+  type InsertGradebookEntry,
+  type GradebookEntryWithStudent,
   type TeachingAssignment,
 } from "@shared/schema";
 
@@ -222,12 +227,23 @@ export interface IStorage {
   upsertSubject(data: any, institutionId: string): Promise<any>;
   deleteSubject(id: string): Promise<void>;
   toggleSubjectActive(id: string, active: boolean): Promise<void>;
-  getAcademicYears(): Promise<any[]>;
-  createAcademicYear(data: any): Promise<any>;
-  setActiveAcademicYear(id: string): Promise<void>;
+  getAcademicYears(institutionId: string): Promise<any[]>;
+  createAcademicYear(data: any, institutionId: string): Promise<any>;
+  setActiveAcademicYear(id: string, institutionId: string): Promise<void>;
   deleteAcademicYear(id: string): Promise<void>;
   getPeriodsByYear(yearId: string): Promise<any[]>;
   getAllPeriods(yearId?: string): Promise<any[]>;
+  getObservationsByInstitution(institutionId: string): Promise<any[]>;
+  getObservationsByStudent(studentId: string): Promise<StudentObservation[]>;
+  getGradebookEntries(institutionId: string, filters: { groupId?: string; subjectId?: string; academicPeriodId?: string; studentId?: string }): Promise<GradebookEntryWithStudent[]>;
+  upsertGradebookEntry(data: InsertGradebookEntry): Promise<GradebookEntry>;
+  getStudentReportCard(studentId: string, academicPeriodId: string): Promise<GradebookEntryWithStudent[]>;
+  getReportCardsByGroup(institutionId: string, groupId: string, academicPeriodId?: string): Promise<any>;
+  getAttendanceTrend(institutionId: string, groupBy?: "period" | "week"): Promise<{ label: string; rate: number }[]>;
+  getPerformanceBySubject(institutionId: string): Promise<any[]>;
+  getPerformanceByGroup(institutionId: string): Promise<any[]>;
+  getStudentsAtRisk(institutionId: string): Promise<{ student: User; reason: string; detail: string }[]>;
+  getRecentActivities(institutionId: string, filters: { gradeId?: string; groupId?: string }): Promise<any[]>;
   createAcademicPeriod(data: any): Promise<any>;
   setActivePeriod(id: string): Promise<void>;
   deleteAcademicPeriod(id: string): Promise<void>;
@@ -698,7 +714,7 @@ async getInstitutionByCode(code: string) {
   async getAllFiles(approved = true, institutionId?: string): Promise<FileWithUploader[]> {
     const conditions = [eq(files.approved, approved)];
     if (institutionId) {
-      conditions.push(eq(users.institutionId, institutionId));
+      conditions.push(eq(files.institutionId, institutionId));
     }
     const allFiles = await db
       .select()
@@ -896,17 +912,7 @@ async getInstitutionByCode(code: string) {
   async getAllReports(status?: string, institutionId?: string): Promise<Report[]> {
     const conditions = [];
     if (status && status !== "all") conditions.push(eq(reports.status, status as any));
-    if (institutionId) conditions.push(eq(users.institutionId, institutionId));
-
-    if (institutionId) {
-      const rows = await db
-        .select({ report: reports })
-        .from(reports)
-        .innerJoin(users, eq(reports.reporterId, users.id))
-        .where(conditions.length ? and(...conditions) : undefined)
-        .orderBy(desc(reports.createdAt));
-      return rows.map((r) => r.report);
-    }
+    if (institutionId) conditions.push(eq(reports.institutionId, institutionId));
 
     if (conditions.length) {
       return db.select().from(reports).where(and(...conditions)).orderBy(desc(reports.createdAt));
@@ -1507,6 +1513,113 @@ async getInstitutionByCode(code: string) {
     }
   }
 
+  // ─── OBSERVADOR DEL ESTUDIANTE ─────────────────────────────────────────
+  async getObservationsByStudent(studentId: string): Promise<StudentObservation[]> {
+    return this.getObservations(studentId);
+  }
+
+  // ─── BOLETINES / CALIFICACIONES (GRADEBOOK) ────────────────────────────
+  async getGradebookEntries(institutionId: string, filters: { groupId?: string; subjectId?: string; academicPeriodId?: string; studentId?: string }): Promise<GradebookEntryWithStudent[]> {
+    const conditions = [eq(gradebookEntries.institutionId, institutionId)];
+    if (filters.groupId) conditions.push(eq(gradebookEntries.groupId, filters.groupId));
+    if (filters.subjectId) conditions.push(eq(gradebookEntries.subjectId, filters.subjectId));
+    if (filters.academicPeriodId) conditions.push(eq(gradebookEntries.academicPeriodId, filters.academicPeriodId));
+    if (filters.studentId) conditions.push(eq(gradebookEntries.studentId, filters.studentId));
+
+    const rows = await db
+      .select()
+      .from(gradebookEntries)
+      .innerJoin(users, eq(gradebookEntries.studentId, users.id))
+      .innerJoin(subjects, eq(gradebookEntries.subjectId, subjects.id))
+      .where(and(...conditions))
+      .orderBy(users.firstName);
+
+    return rows.map(r => ({ ...r.gradebook_entries, student: r.users, subject: r.subjects }));
+  }
+
+  async upsertGradebookEntry(data: InsertGradebookEntry): Promise<GradebookEntry> {
+    const existing = await db.select().from(gradebookEntries).where(
+      and(
+        eq(gradebookEntries.studentId, data.studentId),
+        eq(gradebookEntries.subjectId, data.subjectId),
+        eq(gradebookEntries.academicPeriodId, data.academicPeriodId)
+      )
+    );
+    if (existing.length > 0) {
+      const [updated] = await db.update(gradebookEntries)
+        .set({ grade: data.grade, notes: data.notes, recordedBy: data.recordedBy, updatedAt: new Date() })
+        .where(eq(gradebookEntries.id, existing[0].id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(gradebookEntries).values(data).returning();
+    return created;
+  }
+
+  async getStudentReportCard(studentId: string, academicPeriodId: string): Promise<GradebookEntryWithStudent[]> {
+    const rows = await db
+      .select()
+      .from(gradebookEntries)
+      .innerJoin(users, eq(gradebookEntries.studentId, users.id))
+      .innerJoin(subjects, eq(gradebookEntries.subjectId, subjects.id))
+      .where(and(eq(gradebookEntries.studentId, studentId), eq(gradebookEntries.academicPeriodId, academicPeriodId)))
+      .orderBy(subjects.name);
+
+    return rows.map(r => ({ ...r.gradebook_entries, student: r.users, subject: r.subjects }));
+  }
+
+  // Consolidado de boletín por grupo: estudiantes x materias, con nota y promedio
+  async getReportCardsByGroup(institutionId: string, groupId: string, academicPeriodId?: string): Promise<{
+    subjects: { id: string; name: string }[];
+    students: { id: string; firstName: string; lastName: string; grades: Record<string, number>; average: number | null }[];
+  }> {
+    const enrolledStudents = await db
+      .select({ student: users })
+      .from(studentEnrollments)
+      .innerJoin(users, eq(studentEnrollments.studentId, users.id))
+      .where(and(eq(studentEnrollments.groupId, groupId), eq(studentEnrollments.status, "enrolled")))
+      .orderBy(users.firstName);
+
+    const groupSubjects = await db.select().from(subjects)
+      .where(eq(subjects.institutionId, institutionId))
+      .orderBy(subjects.name);
+
+    const conditions = [eq(gradebookEntries.groupId, groupId)];
+    if (academicPeriodId) conditions.push(eq(gradebookEntries.academicPeriodId, academicPeriodId));
+    const entries = await db.select().from(gradebookEntries).where(and(...conditions));
+
+    const students = enrolledStudents.map(({ student }) => {
+      const studentEntries = entries.filter(e => e.studentId === student.id);
+      const gradesMap: Record<string, number> = {};
+      for (const e of studentEntries) {
+        // Si hay múltiples periodos sin filtrar, promediamos por materia
+        if (gradesMap[e.subjectId] === undefined) {
+          gradesMap[e.subjectId] = e.grade;
+        } else {
+          gradesMap[e.subjectId] = Math.round((gradesMap[e.subjectId] + e.grade) / 2);
+        }
+      }
+      const gradeValues = Object.values(gradesMap);
+      const average = gradeValues.length > 0
+        ? Math.round((gradeValues.reduce((a, b) => a + b, 0) / gradeValues.length) * 10) / 10
+        : null;
+
+      return {
+        id: student.id,
+        firstName: student.firstName || "",
+        lastName: student.lastName || "",
+        grades: gradesMap,
+        average,
+      };
+    });
+
+    return {
+      subjects: groupSubjects.map(s => ({ id: s.id, name: s.name })),
+      students,
+    };
+  }
+
+
   async getInstitutionalStats(institutionId: string): Promise<any> {
     const [students] = await db.select({ count: sql<number>`count(*)` }).from(users).where(and(eq(users.role, 'student'), eq(users.institutionId, institutionId)));
     const [teachers] = await db.select({ count: sql<number>`count(*)` }).from(users).where(and(eq(users.role, 'teacher'), eq(users.institutionId, institutionId)));
@@ -1515,16 +1628,54 @@ async getInstitutionByCode(code: string) {
     const [gradesCount] = await db.select({ count: sql<number>`count(*)` }).from(grades).where(eq(grades.institutionId, institutionId));
     const [groupsCount] = await db.select({ count: sql<number>`count(*)` }).from(academicGroups).where(eq(academicGroups.institutionId, institutionId));
     const [enrollments] = await db.select({ count: sql<number>`count(*)` }).from(studentEnrollments).where(eq(studentEnrollments.institutionId, institutionId));
-    const [coursesCount] = await db.select({ count: sql<number>`count(*)` }).from(courses)
-      .innerJoin(users, eq(courses.teacherId, users.id))
-      .where(eq(users.institutionId, institutionId));
+    const [coursesCount] = await db.select({ count: sql<number>`count(*)` }).from(courses).where(eq(courses.institutionId, institutionId));
     const [activitiesCount] = await db.select({ count: sql<number>`count(*)` }).from(activities)
       .innerJoin(courses, eq(activities.courseId, courses.id))
-      .innerJoin(users, eq(courses.teacherId, users.id))
-      .where(eq(users.institutionId, institutionId));
+      .where(eq(courses.institutionId, institutionId));
     const [obsCount] = await db.select({ count: sql<number>`count(*)` }).from(studentObservations)
-      .innerJoin(users, eq(studentObservations.studentId, users.id))
-      .where(eq(users.institutionId, institutionId));
+      .where(eq(studentObservations.institutionId, institutionId));
+
+    // ── 1) Asistencia promedio institucional (últimos 30 días) ──
+    const [attendanceAgg] = await db.select({
+      total: sql<number>`count(*)`,
+      present: sql<number>`count(*) FILTER (WHERE ${attendance.status} = 'present')`,
+    }).from(attendance)
+      .where(and(eq(attendance.institutionId, institutionId), sql`${attendance.date} >= now() - interval '30 days'`));
+    const attendanceRate = attendanceAgg && Number(attendanceAgg.total) > 0
+      ? Math.round((Number(attendanceAgg.present) / Number(attendanceAgg.total)) * 1000) / 10
+      : 0;
+
+    // ── 2) Rendimiento académico promedio (todas las notas del periodo activo) ──
+    const [gradeAgg] = await db.select({
+      avg: sql<number>`avg(${gradebookEntries.grade})`,
+    }).from(gradebookEntries).where(eq(gradebookEntries.institutionId, institutionId));
+    const avgGrade = gradeAgg?.avg ? Math.round(Number(gradeAgg.avg) * 10) / 10 : 0;
+
+    // ── 3) Estudiantes en riesgo (promedio < 3.0 EN UNA ESCALA DE 5, O observaciones graves recientes) ──
+    const lowGradeStudents = await db.select({ studentId: gradebookEntries.studentId })
+      .from(gradebookEntries)
+      .where(eq(gradebookEntries.institutionId, institutionId))
+      .groupBy(gradebookEntries.studentId)
+      .having(sql`avg(${gradebookEntries.grade}) < 30`); // escala 0-50 (decimas), ej: 3.0 = 30
+
+    const severeObsStudents = await db.select({ studentId: studentObservations.studentId })
+      .from(studentObservations)
+      .where(and(
+        eq(studentObservations.institutionId, institutionId),
+        eq(studentObservations.severity, 'high'),
+        sql`${studentObservations.createdAt} >= now() - interval '30 days'`
+      ));
+
+    const atRiskIds = new Set([
+      ...lowGradeStudents.map(s => s.studentId),
+      ...severeObsStudents.map(s => s.studentId),
+    ]);
+
+    // ── 4) Actividad reciente: actividades creadas en los últimos 7 días ──
+    const [recentActivityAgg] = await db.select({ count: sql<number>`count(*)` })
+      .from(activities)
+      .innerJoin(courses, eq(activities.courseId, courses.id))
+      .where(and(eq(courses.institutionId, institutionId), sql`${activities.createdAt} >= now() - interval '7 days'`));
 
     return {
       students: Number(students?.count || 0),
@@ -1537,11 +1688,191 @@ async getInstitutionByCode(code: string) {
       courses: Number(coursesCount?.count || 0),
       activities: Number(activitiesCount?.count || 0),
       observations: Number(obsCount?.count || 0),
-      attendanceRate: 92.5,
-      avgGrade: 4.1,
-      atRisk: 5,
-      recentActivity: 120,
+      attendanceRate,
+      avgGrade,
+      atRisk: atRiskIds.size,
+      recentActivity: Number(recentActivityAgg?.count || 0),
     };
+  }
+
+  // ── Asistencia promedio por periodo o por semana, todo el colegio ──
+  async getAttendanceTrend(institutionId: string, groupBy: "period" | "week" = "week"): Promise<{ label: string; rate: number }[]> {
+    if (groupBy === "week") {
+      const rows = await db.select({
+        week: sql<string>`to_char(date_trunc('week', ${attendance.date}), 'YYYY-MM-DD')`,
+        total: sql<number>`count(*)`,
+        present: sql<number>`count(*) FILTER (WHERE ${attendance.status} = 'present')`,
+      }).from(attendance)
+        .where(and(eq(attendance.institutionId, institutionId), sql`${attendance.date} >= now() - interval '12 weeks'`))
+        .groupBy(sql`date_trunc('week', ${attendance.date})`)
+        .orderBy(sql`date_trunc('week', ${attendance.date})`);
+
+      return rows.map(r => ({
+        label: r.week,
+        rate: Number(r.total) > 0 ? Math.round((Number(r.present) / Number(r.total)) * 1000) / 10 : 0,
+      }));
+    }
+
+    const rows = await db.select({
+      periodName: academicPeriods.name,
+      total: sql<number>`count(${attendance.id})`,
+      present: sql<number>`count(${attendance.id}) FILTER (WHERE ${attendance.status} = 'present')`,
+    }).from(academicPeriods)
+      .leftJoin(attendance, and(
+        sql`${attendance.date} >= ${academicPeriods.startDate}`,
+        sql`${attendance.date} <= ${academicPeriods.endDate}`,
+        eq(attendance.institutionId, institutionId)
+      ))
+      .innerJoin(academicYears, eq(academicPeriods.academicYearId, academicYears.id))
+      .where(eq(academicYears.institutionId, institutionId))
+      .groupBy(academicPeriods.id, academicPeriods.name, academicPeriods.startDate)
+      .orderBy(academicPeriods.startDate);
+
+    return rows.map(r => ({
+      label: r.periodName,
+      rate: Number(r.total) > 0 ? Math.round((Number(r.present) / Number(r.total)) * 1000) / 10 : 0,
+    }));
+  }
+
+  // ── Rendimiento académico por materia y por grupo ──
+  async getPerformanceBySubject(institutionId: string): Promise<{ subjectId: string; subjectName: string; avgGrade: number; studentCount: number }[]> {
+    const rows = await db.select({
+      subjectId: subjects.id,
+      subjectName: subjects.name,
+      avgGrade: sql<number>`avg(${gradebookEntries.grade})`,
+      studentCount: sql<number>`count(distinct ${gradebookEntries.studentId})`,
+    }).from(gradebookEntries)
+      .innerJoin(subjects, eq(gradebookEntries.subjectId, subjects.id))
+      .where(eq(gradebookEntries.institutionId, institutionId))
+      .groupBy(subjects.id, subjects.name)
+      .orderBy(subjects.name);
+
+    return rows.map(r => ({
+      subjectId: r.subjectId,
+      subjectName: r.subjectName,
+      avgGrade: r.avgGrade ? Math.round(Number(r.avgGrade) * 10) / 10 : 0,
+      studentCount: Number(r.studentCount),
+    }));
+  }
+
+  async getPerformanceByGroup(institutionId: string): Promise<{ groupId: string; groupName: string; avgGrade: number; studentCount: number }[]> {
+    const rows = await db.select({
+      groupId: academicGroups.id,
+      groupName: academicGroups.name,
+      avgGrade: sql<number>`avg(${gradebookEntries.grade})`,
+      studentCount: sql<number>`count(distinct ${gradebookEntries.studentId})`,
+    }).from(gradebookEntries)
+      .innerJoin(academicGroups, eq(gradebookEntries.groupId, academicGroups.id))
+      .where(eq(gradebookEntries.institutionId, institutionId))
+      .groupBy(academicGroups.id, academicGroups.name)
+      .orderBy(academicGroups.name);
+
+    return rows.map(r => ({
+      groupId: r.groupId,
+      groupName: r.groupName,
+      avgGrade: r.avgGrade ? Math.round(Number(r.avgGrade) * 10) / 10 : 0,
+      studentCount: Number(r.studentCount),
+    }));
+  }
+
+  // ── Listado detallado de estudiantes en riesgo (con el motivo) ──
+  async getStudentsAtRisk(institutionId: string): Promise<{ student: User; reason: string; detail: string }[]> {
+    const results: { student: User; reason: string; detail: string }[] = [];
+    const seen = new Set<string>();
+
+    // Motivo 1: promedio académico bajo (< 3.0 en escala 0-5, almacenado como 0-50)
+    const lowGrades = await db.select({
+      studentId: gradebookEntries.studentId,
+      avg: sql<number>`avg(${gradebookEntries.grade})`,
+    }).from(gradebookEntries)
+      .where(eq(gradebookEntries.institutionId, institutionId))
+      .groupBy(gradebookEntries.studentId)
+      .having(sql`avg(${gradebookEntries.grade}) < 30`);
+
+    for (const row of lowGrades) {
+      const student = await this.getUser(row.studentId);
+      if (student && !seen.has(student.id)) {
+        seen.add(student.id);
+        results.push({ student, reason: "Bajo rendimiento académico", detail: `Promedio: ${(Number(row.avg) / 10).toFixed(1)}` });
+      }
+    }
+
+    // Motivo 2: ausentismo alto (asistencia < 80% en los últimos 30 días)
+    const attendanceByStudent = await db.select({
+      studentId: attendance.studentId,
+      total: sql<number>`count(*)`,
+      present: sql<number>`count(*) FILTER (WHERE ${attendance.status} = 'present')`,
+    }).from(attendance)
+      .where(and(eq(attendance.institutionId, institutionId), sql`${attendance.date} >= now() - interval '30 days'`))
+      .groupBy(attendance.studentId)
+      .having(sql`count(*) > 0 AND (count(*) FILTER (WHERE ${attendance.status} = 'present')::float / count(*)) < 0.8`);
+
+    for (const row of attendanceByStudent) {
+      const student = await this.getUser(row.studentId);
+      if (student && !seen.has(student.id)) {
+        seen.add(student.id);
+        const pct = Math.round((Number(row.present) / Number(row.total)) * 100);
+        results.push({ student, reason: "Ausentismo", detail: `Asistencia: ${pct}% (últimos 30 días)` });
+      }
+    }
+
+    // Motivo 3: observaciones graves recientes
+    const severeObs = await db.select().from(studentObservations)
+      .where(and(
+        eq(studentObservations.institutionId, institutionId),
+        eq(studentObservations.severity, 'high'),
+        sql`${studentObservations.createdAt} >= now() - interval '30 days'`
+      ));
+
+    for (const obs of severeObs) {
+      if (seen.has(obs.studentId)) continue;
+      const student = await this.getUser(obs.studentId);
+      if (student) {
+        seen.add(student.id);
+        results.push({ student, reason: "Observación grave", detail: obs.title });
+      }
+    }
+
+    return results;
+  }
+
+  // ── Actividad reciente (últimos 7 días), filtrable por grado/grupo ──
+  async getRecentActivities(institutionId: string, filters: { gradeId?: string; groupId?: string }): Promise<any[]> {
+    const conditions = [
+      eq(courses.institutionId, institutionId),
+      sql`${activities.createdAt} >= now() - interval '7 days'`,
+    ];
+
+    let query = db.select({
+      id: activities.id,
+      title: activities.title,
+      type: activities.type,
+      createdAt: activities.createdAt,
+      dueDate: activities.dueDate,
+      courseId: activities.courseId,
+      courseName: courses.name,
+      subject: courses.subject,
+      teacherId: courses.teacherId,
+      groupId: courses.groupId,
+    }).from(activities)
+      .innerJoin(courses, eq(activities.courseId, courses.id))
+      .$dynamic();
+
+    if (filters.groupId) {
+      conditions.push(eq(courses.groupId, filters.groupId));
+    }
+
+    if (filters.gradeId) {
+      // Filtrar por grado: el grupo del curso debe pertenecer a ese grado
+      const groupsInGrade = await db.select({ id: academicGroups.id }).from(academicGroups)
+        .where(eq(academicGroups.gradeId, filters.gradeId));
+      const groupIds = groupsInGrade.map(g => g.id);
+      if (groupIds.length === 0) return [];
+      conditions.push(sql`${courses.groupId} = ANY(${groupIds})`);
+    }
+
+    const rows = await query.where(and(...conditions)).orderBy(desc(activities.createdAt));
+    return rows;
   }
 
   async getSchedules(institutionId: string): Promise<ClassSchedule[]> {
@@ -1596,30 +1927,40 @@ async getInstitutionByCode(code: string) {
       return db.select().from(studentObservations).where(eq(studentObservations.studentId, studentId)).orderBy(desc(studentObservations.createdAt));
     }
     if (institutionId) {
-      return db
-        .select({
-          id: studentObservations.id,
-          studentId: studentObservations.studentId,
-          teacherId: studentObservations.teacherId,
-          type: studentObservations.type,
-          severity: studentObservations.severity,
-          title: studentObservations.title,
-          description: studentObservations.description,
-          createdAt: studentObservations.createdAt,
-        })
-        .from(studentObservations)
-        .innerJoin(users, eq(studentObservations.studentId, users.id))
-        .where(eq(users.institutionId, institutionId))
+      return db.select().from(studentObservations)
+        .where(eq(studentObservations.institutionId, institutionId))
         .orderBy(desc(studentObservations.createdAt));
     }
     return db.select().from(studentObservations).orderBy(desc(studentObservations.createdAt));
   }
 
+  async getObservationsByInstitution(institutionId: string): Promise<(StudentObservation & { student: User; teacher: User })[]> {
+    const rows = await db
+      .select()
+      .from(studentObservations)
+      .innerJoin(users, eq(studentObservations.studentId, users.id))
+      .where(eq(studentObservations.institutionId, institutionId))
+      .orderBy(desc(studentObservations.createdAt));
+
+    const teacherIds = Array.from(new Set(rows.map((r) => r.student_observations.teacherId)));
+    const teachers = teacherIds.length
+      ? await db.select().from(users).where(sql`${users.id} = ANY(${teacherIds})`)
+      : [];
+    const teacherMap = new Map(teachers.map((t) => [t.id, t]));
+
+    return rows.map((r) => ({
+      ...r.student_observations,
+      student: r.users,
+      teacher: teacherMap.get(r.student_observations.teacherId)!,
+    }));
+  }
+
   async createObservation(data: any): Promise<StudentObservation> {
     const [created] = await db.insert(studentObservations).values({
       id: randomUUID(),
+      institutionId: data.institutionId,
       studentId: data.studentId,
-      teacherId: data.teacherId || data.createdBy, 
+      teacherId: data.teacherId || data.createdBy,
       type: data.type || "Disciplinary",
       severity: data.severity || "light",
       title: data.title || "Observación registrada",
@@ -1628,7 +1969,12 @@ async getInstitutionByCode(code: string) {
     return created;
   }
 
-  async deleteObservation(id: string): Promise<void> {
+  async deleteObservation(id: string, institutionId?: string): Promise<void> {
+    if (institutionId) {
+      await db.delete(studentObservations)
+        .where(and(eq(studentObservations.id, id), eq(studentObservations.institutionId, institutionId)));
+      return;
+    }
     await db.delete(studentObservations).where(eq(studentObservations.id, id));
   }
 
@@ -1643,13 +1989,16 @@ async getInstitutionByCode(code: string) {
   }
 
   async getLibraryFiles(institutionId: string): Promise<FileWithUploader[]> {
-    const all = await this.getAllFiles(true);
-    return all.filter(f => f.uploader.institutionId === institutionId);
+    return this.getAllFiles(true, institutionId);
   }
 
   async getAllCoursesForAdmin(institutionId: string): Promise<CourseWithTeacher[]> {
-    const all = await this.getAllCourses();
-    return all.filter(c => c.teacher.institutionId === institutionId);
+    const all = await db
+      .select()
+      .from(courses)
+      .where(and(eq(courses.isActive, true), eq(courses.institutionId, institutionId)))
+      .orderBy(desc(courses.createdAt));
+    return Promise.all(all.map((c) => this.enrichCourse(c)));
   }
 
   async getSubjects(institutionId: string) {
