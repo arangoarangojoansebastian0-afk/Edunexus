@@ -697,6 +697,22 @@ export async function registerRoutes(
     catch { res.status(500).json({ message: "Error" }); }
   });
 
+  app.get("/api/admin/enrollments/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const enrollments = await storage.getStudentEnrollments(req.user!.institutionId!, undefined);
+      const found = (enrollments as any[]).find((e: any) => e.enrollment?.id === req.params.id);
+      if (!found) return res.status(404).json({ error: "No encontrado" });
+      res.json(found);
+    } catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.patch("/api/admin/enrollments/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const updated = await storage.updateStudentEnrollment(req.params.id, req.body);
+      res.json(updated);
+    } catch { res.status(500).json({ message: "Error al actualizar matrícula" }); }
+  });
+
   app.delete("/api/admin/enrollments/:id", requireAuth, requireAdmin, async (req, res) => {
     try { await storage.deleteStudentEnrollment(req.params.id); res.json({ success: true }); }
     catch { res.status(500).json({ message: "Error" }); }
@@ -965,8 +981,61 @@ export async function registerRoutes(
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
       }
-      res.json(await storage.getSchedules(req.user.institutionId));
+      const { teacherId, groupId } = req.query as Record<string, string | undefined>;
+      const all = await storage.getSchedules(req.user.institutionId);
+      let result = all as any[];
+      if (teacherId) result = result.filter((s: any) => s.teacherId === teacherId);
+      if (groupId) result = result.filter((s: any) => s.groupId === groupId);
+      res.json(result);
     } catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  // Horarios públicos por grupo (para vista de grupo/perfil de estudiante)
+  app.get("/api/group-schedule/:groupId", requireAuth, async (req, res) => {
+    try {
+      const schedules = await storage.getSchedulesByGroup(req.params.groupId);
+      res.json(schedules);
+    } catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  // Información institucional pública (manual de convivencia, misión, visión, etc.)
+  app.get("/api/institution-info", requireAuth, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "Sin institución" });
+      const info = await storage.getInstitutionById(req.user.institutionId as string);
+      res.json(info);
+    } catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  app.patch("/api/admin/institution-info", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "Sin institución" });
+      const { mission, vision, hymn, peiUrl, coexistenceManualUrl, coexistenceManualText,
+              academicCalendarUrl, internalRegulationsUrl, extraLinks } = req.body;
+      const updated = await storage.upsertInstitutionSettings(req.user.institutionId as string, {
+        mission, vision, hymn, peiUrl, coexistenceManualUrl, coexistenceManualText,
+        academicCalendarUrl, internalRegulationsUrl, extraLinks,
+      });
+      res.json(updated);
+    } catch { res.status(500).json({ message: "Error al guardar información institucional" }); }
+  });
+
+  // Subir PDF institucional (manual de convivencia, PEI, etc.) a Supabase Storage
+  app.post("/api/admin/institution-docs/upload", requireAuth, requireAdmin, upload.single("file"), async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "Sin institución" });
+      if (!req.file) return res.status(400).json({ error: "No se recibió ningún archivo" });
+      const { field } = req.body; // "coexistenceManualUrl" | "peiUrl" | "academicCalendarUrl" | "internalRegulationsUrl"
+      if (!field) return res.status(400).json({ error: "Campo destino requerido" });
+
+      const fileUrl = await uploadToSupabase(req.file, `institution-docs/${req.user.institutionId}`);
+      const updated = await storage.upsertInstitutionSettings(req.user.institutionId as string, {
+        [field]: fileUrl,
+      });
+      res.json({ url: fileUrl, institution: updated });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Error al subir archivo" });
+    }
   });
 
   app.get("/api/courses", requireAuth, requireAdmin, async (req, res) => {

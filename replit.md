@@ -1,10 +1,12 @@
-# Comunidad Loyola - Student Community Platform
+# EduNexus - Student Community Platform
 
 ## Overview
 
-Comunidad Loyola is a comprehensive student community platform for Colegio Loyola, designed to connect students, facilitate academic collaboration, and enable peer-to-peer tutoring. The platform combines social networking features (similar to Discord) with academic functionality (inspired by Google Classroom), creating a youthful and engaging environment for students to interact, share resources, and support each other's learning.
+EduNexus is a comprehensive multi-school management platform designed to centralize academic, administrative, and communication processes for educational institutions. The platform enables schools to manage their daily operations through a unified system while maintaining secure and independent data environments for each institution.
 
-The application enables students to create and join groups (courses and clubs), share posts in a social feed, access a shared library of academic materials, and schedule tutoring sessions with peers. It includes role-based access (student, teacher, admin) with verification and moderation capabilities to maintain a safe educational environment.
+The application provides tools for student enrollment, attendance tracking, grade management, academic records, schedules, disciplinary observations, report cards, institutional communications, and document management. It supports multiple user roles, including administrators, teachers, students, parents, and staff members, ensuring appropriate access to information and functionalities.
+
+EduNexus allows educational institutions to configure their own academic structure, grading systems, school calendars, departments, courses, and user permissions. Through centralized data management, automated workflows, reporting tools, and integrated communication channels, the platform improves operational efficiency, enhances collaboration between school stakeholders, and supports informed educational decision-making.
 
 ## User Preferences
 

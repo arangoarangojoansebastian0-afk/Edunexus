@@ -24,7 +24,7 @@ export default function Settings() {
               Configuración
             </CardTitle>
             <CardDescription>
-              Personaliza tu experiencia en Comunidad Loyola
+              Personaliza tu experiencia en EduNexus
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">

@@ -261,7 +261,7 @@ async function seed() {
 
   // Create posts
   const post1 = await db.insert(posts).values({
-    content: "¡Hola a todos! Bienvenidos a Comunidad Loyola. Este es el lugar perfecto para compartir ideas y colaborar.",
+    content: "¡Hola a todos! Bienvenidos a EduNexus. Este es el lugar perfecto para compartir ideas y colaborar.",
     authorId: adminUser.id,
   }).returning().then(r => r[0]);
 

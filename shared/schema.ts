@@ -54,6 +54,16 @@ export const institutionSettings = pgTable("institution_settings", {
   description: text("description"),
   institutionCode: varchar("institution_code", { length: 50 }),
   gradeScale: varchar("grade_scale", { length: 50 }),
+  // Información institucional pública
+  mission: text("mission"),
+  vision: text("vision"),
+  hymn: text("hymn"),
+  peiUrl: text("pei_url"),
+  coexistenceManualUrl: text("coexistence_manual_url"),
+  coexistenceManualText: text("coexistence_manual_text"),
+  academicCalendarUrl: text("academic_calendar_url"),
+  internalRegulationsUrl: text("internal_regulations_url"),
+  extraLinks: jsonb("extra_links"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -492,12 +502,44 @@ export const studentEnrollments = pgTable("student_enrollments", {
   studentId: varchar("student_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   groupId: varchar("group_id").references(() => academicGroups.id, { onDelete: "cascade" }).notNull(),
   academicYearId: varchar("academic_year_id").references(() => academicYears.id).notNull(),
-  studentCode: varchar("student_code", { length: 50 }).unique(),
-  status: varchar("status", { length: 50 }).default("enrolled").notNull(), 
   institutionId: uuid("institution_id")
     .notNull()
     .references(() => institutionSettings.id, { onDelete: "cascade" }),
+
+  // 1. Información de matrícula
+  enrollmentNumber: varchar("enrollment_number", { length: 50 }),
+  enrollmentDate: timestamp("enrollment_date"),
+  status: varchar("status", { length: 50 }).default("enrolled").notNull(),
+  enrollmentType: varchar("enrollment_type", { length: 50 }).default("new"),
+  studentCode: varchar("student_code", { length: 50 }),
+
+  // 2. Ubicación escolar
+  campus: varchar("campus", { length: 100 }),
+  schedule: varchar("schedule", { length: 50 }),
+  level: varchar("level", { length: 50 }),
+
+  // 3. Información del año anterior
+  previousSchool: varchar("previous_school", { length: 255 }),
+  previousGrade: varchar("previous_grade", { length: 50 }),
+  previousYear: integer("previous_year"),
+  transferFromOtherSchool: boolean("transfer_from_other_school").default(false),
+
+  // 4. Situación académica
+  studentStatus: varchar("student_status", { length: 50 }).default("regular"),
+  promotionStatus: varchar("promotion_status", { length: 50 }).default("pending"),
+  academicObservation: text("academic_observation"),
+
+  // 5. Director de grupo
+  classroomTeacherId: varchar("classroom_teacher_id").references(() => users.id),
+  assignedClassroom: varchar("assigned_classroom", { length: 50 }),
+
+  // 7. Convivencia
+  disciplinaryStatus: varchar("disciplinary_status", { length: 100 }),
+  academicCommitments: text("academic_commitments"),
+  coexistenceCommitments: text("coexistence_commitments"),
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_enrollment_student").on(table.studentId),
   index("idx_enrollment_group").on(table.groupId),

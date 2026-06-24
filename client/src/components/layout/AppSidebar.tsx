@@ -26,6 +26,7 @@ import {
   Users,
   BookOpen,
   Calendar,
+  CalendarDays,
   User,
   Settings,
   LogOut,
@@ -42,6 +43,7 @@ import { getFullName, getInitials, formatRole } from "@/lib/authUtils";
 const mainNavItems = [
   { title: "Inicio", url: "/", icon: Home },
   { title: "Aula Virtual", url: "/classroom", icon: School },
+  { title: "Horarios", url: "/schedules", icon: CalendarDays },
   { title: "Grupos", url: "/groups", icon: Users },
   { title: "Biblioteca", url: "/library", icon: BookOpen },
   { title: "Asesorías", url: "/tutoring", icon: Calendar },

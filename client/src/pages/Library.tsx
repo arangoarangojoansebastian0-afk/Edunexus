@@ -472,12 +472,41 @@ export default function Library() {
           )}
         </div>
       </div>
-      {previewUrls.length > 0 && (
-  <FileViewer
-    urls={previewUrls}
-    label="Vista previa"
-  />
-)}
+      {/* Visor de archivo directo - se abre automáticamente al hacer click en Ver */}
+      {previewUrls.length > 0 && (() => {
+        const url = previewUrls[0];
+        const ext = url.split(".").pop()?.toLowerCase().split("?")[0] || "";
+        const isImage = ["jpg","jpeg","png","gif","webp"].includes(ext);
+        const isPdf = ext === "pdf";
+        const isOffice = ["doc","docx","xls","xlsx","ppt","pptx"].includes(ext);
+        const fileName = decodeURIComponent(url.split("/").pop()?.split("?")[0] || "archivo");
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setPreviewUrls([])}>
+            <div className="bg-background rounded-xl shadow-2xl w-[95vw] max-w-5xl h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
+                <span className="text-sm font-medium truncate pr-4">{fileName}</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1">
+                    Descargar
+                  </a>
+                  <button onClick={() => setPreviewUrls([])} className="ml-2 text-muted-foreground hover:text-foreground text-lg leading-none">✕</button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-hidden bg-muted/10">
+                {isImage && <img src={url} alt={fileName} className="w-full h-full object-contain" />}
+                {isPdf && <iframe src={url} className="w-full h-full border-0" title={fileName} />}
+                {isOffice && <iframe src={`https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`} className="w-full h-full border-0" title={fileName} />}
+                {!isImage && !isPdf && !isOffice && (
+                  <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
+                    <p className="text-sm">Vista previa no disponible para este tipo de archivo</p>
+                    <a href={url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-sm">Abrir archivo</a>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </AppLayout>
   );
 }

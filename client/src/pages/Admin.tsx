@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Component, type ReactNode } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,6 +34,45 @@ import {
 } from "lucide-react";
 import type { User } from "@shared/schema";
  
+// ─── ERROR BOUNDARY ──────────────────────────────────────────────────────────
+class TabErrorBoundary extends Component<
+  { children: ReactNode; tabId: string },
+  { hasError: boolean; error?: Error }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error) {
+    console.error("[Admin tab error]", this.props.tabId, error);
+  }
+  componentDidUpdate(prevProps: { tabId: string }) {
+    if (prevProps.tabId !== this.props.tabId) {
+      this.setState({ hasError: false, error: undefined });
+    }
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center py-20 gap-3 text-muted-foreground">
+          <AlertTriangle className="h-8 w-8 text-amber-500" />
+          <p className="text-sm font-medium">Error al cargar esta sección</p>
+          <p className="text-xs max-w-sm text-center opacity-70">
+            {this.state.error?.message || "Error desconocido"}
+          </p>
+          <Button size="sm" variant="outline" onClick={() => this.setState({ hasError: false })}>
+            <RefreshCw className="h-3 w-3 mr-1" /> Reintentar
+          </Button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
  
 function randomCode(prefix: string) {
@@ -172,7 +211,7 @@ function AttendancePanel({ open, onOpenChange }: { open: boolean; onOpenChange: 
   const [groupBy, setGroupBy] = useState<"week" | "period">("week");
   const { data, isLoading } = useQuery<{ label: string; rate: number }[]>({
     queryKey: ["/api/admin/indicators/attendance-trend", groupBy],
-    queryFn: () => fetch(`/api/admin/indicators/attendance-trend?groupBy=${groupBy}`, { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetch(`/api/admin/indicators/attendance-trend?groupBy=${groupBy}`, { credentials: "include" }).then(r => r.ok ? r.json() : []),
     enabled: open,
   });
 
@@ -337,7 +376,7 @@ function RecentActivityPanel({ open, onOpenChange }: { open: boolean; onOpenChan
       const params = new URLSearchParams();
       if (gradeId) params.set("gradeId", gradeId);
       if (groupId) params.set("groupId", groupId);
-      return fetch(`/api/admin/indicators/recent-activity?${params}`, { credentials: "include" }).then(r => r.json());
+      return fetch(`/api/admin/indicators/recent-activity?${params}`, { credentials: "include" }).then(r => r.ok ? r.json() : []);
     },
     enabled: open,
   });
@@ -349,17 +388,17 @@ function RecentActivityPanel({ open, onOpenChange }: { open: boolean; onOpenChan
           <DialogTitle className="flex items-center gap-2"><BarChart2 className="h-4 w-4 text-purple-600" /> Actividad reciente (últimos 7 días)</DialogTitle>
         </DialogHeader>
         <div className="flex gap-2 mb-2">
-          <Select value={gradeId} onValueChange={(v) => { setGradeId(v); setGroupId(""); }}>
+          <Select value={gradeId || "__all__"} onValueChange={(v) => { setGradeId(v === "__all__" ? "" : v); setGroupId(""); }}>
             <SelectTrigger className="w-44"><SelectValue placeholder="Filtrar por grado" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Todos los grados</SelectItem>
+              <SelectItem value="__all__">Todos los grados</SelectItem>
               {grades.map((g: any) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Select value={groupId} onValueChange={setGroupId}>
+          <Select value={groupId || "__all__"} onValueChange={(v) => setGroupId(v === "__all__" ? "" : v)}>
             <SelectTrigger className="w-44"><SelectValue placeholder="Filtrar por grupo" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Todos los grupos</SelectItem>
+              <SelectItem value="__all__">Todos los grupos</SelectItem>
               {groups.map((g: any) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -446,7 +485,7 @@ function TabConfigColegio() {
             <div className="space-y-1">
               <Label>Nombre del colegio</Label>
               <Input
-                placeholder="Colegio Loyola"
+                placeholder="EduNexus"
                 value={form.institutionName}
                 onChange={(e) => setForm((p) => ({ ...p, institutionName: e.target.value }))}
               />
@@ -595,7 +634,7 @@ function TabConfigAcademica() {
     queryFn: () =>
       fetch(`/api/admin/academic-years/${selectedYear.id}/periods`, {
         credentials: "include",
-      }).then((r) => r.json()),
+      }).then((r) => r.ok ? r.json() : []).then((d) => Array.isArray(d) ? d : []),
     enabled: !!selectedYear,
   });
  
@@ -1728,41 +1767,60 @@ function TabEstudiantes() {
 function TabMatriculas() {
   const { toast } = useToast();
   const { data: years = [] } = useQuery<any[]>({ queryKey: ["/api/admin/academic-years"] });
-  const { data: academicGroups = [] } = useQuery<any[]>({
-    queryKey: ["/api/admin/academic-groups"],
-  });
-  const { data: users = [] } = useQuery<User[]>({ queryKey: ["/api/admin/users", "student"] });
+  const { data: academicGroups = [] } = useQuery<any[]>({ queryKey: ["/api/admin/academic-groups"] });
+  const { data: grades = [] } = useQuery<any[]>({ queryKey: ["/api/admin/grades"] });
+  const { data: teachers = [] } = useQuery<any[]>({ queryKey: ["/api/admin/users", "teacher"] });
+  const { data: subjects = [] } = useQuery<any[]>({ queryKey: ["/api/admin/subjects"] });
+  const { data: allUsers = [] } = useQuery<User[]>({ queryKey: ["/api/admin/users", "student"] });
   const [selectedYear, setSelectedYear] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   const { data: enrollments = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/admin/enrollments", selectedYear],
     queryFn: () =>
       fetch(
         `/api/admin/enrollments${selectedYear ? `?yearId=${selectedYear}` : ""}`,
         { credentials: "include" }
-      ).then((r) => r.json()),
+      ).then((r) => r.ok ? r.json() : []).then((d) => Array.isArray(d) ? d : []),
   });
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
-    studentId: "",
-    groupId: "",
-    academicYearId: "",
-    studentCode: "",
-    status: "enrolled",
-  });
- 
-  const students = (users as User[]).filter((u) => u.role === "student");
- 
+
+  const students = (allUsers as User[]).filter((u) => (u as any).role === "student");
+  const teacherList = (teachers as any[]).filter((u: any) => u.role === "teacher");
+
+  const emptyForm = {
+    studentId: "", groupId: "", academicYearId: "", studentCode: "",
+    enrollmentNumber: "", enrollmentDate: "", status: "enrolled",
+    enrollmentType: "new", campus: "", schedule: "morning", level: "secondary",
+    previousSchool: "", previousGrade: "", previousYear: "",
+    transferFromOtherSchool: false, studentStatus: "regular",
+    promotionStatus: "pending", academicObservation: "",
+    classroomTeacherId: "", assignedClassroom: "",
+    disciplinaryStatus: "", academicCommitments: "", coexistenceCommitments: "",
+  };
+  const [form, setForm] = useState(emptyForm);
+  const set = (k: string, v: any) => setForm((p) => ({ ...p, [k]: v }));
+
   const create = useMutation({
     mutationFn: () => apiRequest("POST", "/api/admin/enrollments", form),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/enrollments"] });
-      setShowForm(false);
-      setForm({ studentId: "", groupId: "", academicYearId: "", studentCode: "", status: "enrolled" });
-      toast({ title: "Matrícula creada" });
+      setShowForm(false); setForm(emptyForm);
+      toast({ title: "Matrícula creada correctamente" });
     },
     onError: () => toast({ title: "Error al matricular", variant: "destructive" }),
   });
- 
+
+  const update = useMutation({
+    mutationFn: () => apiRequest("PATCH", `/api/admin/enrollments/${editingId}`, form),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/enrollments"] });
+      setShowForm(false); setEditingId(null); setForm(emptyForm);
+      toast({ title: "Matrícula actualizada" });
+    },
+    onError: () => toast({ title: "Error al actualizar", variant: "destructive" }),
+  });
+
   const remove = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/admin/enrollments/${id}`),
     onSuccess: () => {
@@ -1770,35 +1828,62 @@ function TabMatriculas() {
       toast({ title: "Matrícula eliminada" });
     },
   });
- 
+
   const statusLabel: Record<string, string> = {
-    enrolled: "Matriculado",
-    withdrawn: "Retirado",
-    transferred: "Transferido",
-    graduated: "Graduado",
+    enrolled: "Activa", withdrawn: "Retirada", cancelled: "Cancelada",
+    graduated: "Graduado", transferred: "Transferido",
   };
- 
+  const statusVariant: Record<string, any> = {
+    enrolled: "default", withdrawn: "destructive", cancelled: "destructive",
+    graduated: "secondary", transferred: "outline",
+  };
+
+  const openEdit = (e: any) => {
+    const en = e.enrollment || e;
+    setForm({
+      studentId: en.studentId || "", groupId: en.groupId || "",
+      academicYearId: en.academicYearId || "", studentCode: en.studentCode || "",
+      enrollmentNumber: en.enrollmentNumber || "", enrollmentDate: en.enrollmentDate?.slice(0, 10) || "",
+      status: en.status || "enrolled", enrollmentType: en.enrollmentType || "new",
+      campus: en.campus || "", schedule: en.schedule || "morning",
+      level: en.level || "secondary", previousSchool: en.previousSchool || "",
+      previousGrade: en.previousGrade || "", previousYear: en.previousYear || "",
+      transferFromOtherSchool: en.transferFromOtherSchool || false,
+      studentStatus: en.studentStatus || "regular", promotionStatus: en.promotionStatus || "pending",
+      academicObservation: en.academicObservation || "",
+      classroomTeacherId: en.classroomTeacherId || "", assignedClassroom: en.assignedClassroom || "",
+      disciplinaryStatus: en.disciplinaryStatus || "",
+      academicCommitments: en.academicCommitments || "",
+      coexistenceCommitments: en.coexistenceCommitments || "",
+    });
+    setEditingId(en.id);
+    setShowForm(true);
+  };
+
+  const selectedGroup = (academicGroups as any[]).find((g: any) => g.id === form.groupId);
+  const groupSubjects = (subjects as any[]);
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center gap-3">
-        <Select value={selectedYear} onValueChange={setSelectedYear}>
+      {/* Toolbar */}
+      <div className="flex justify-between items-center gap-3 flex-wrap">
+        <Select value={selectedYear || "__all__"} onValueChange={(v) => setSelectedYear(v === "__all__" ? "" : v)}>
           <SelectTrigger className="w-48">
             <SelectValue placeholder="Filtrar por año..." />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Todos los años</SelectItem>
+            <SelectItem value="__all__">Todos los años</SelectItem>
             {(years as any[]).map((y: any) => (
-              <SelectItem key={y.id} value={y.id}>
-                {y.year} {y.isActive && "✓"}
-              </SelectItem>
+              <SelectItem key={y.id} value={y.id}>{y.year}{y.isActive && " ✓"}</SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <Button size="sm" onClick={() => setShowForm(true)}>
-          <Plus className="h-4 w-4 mr-1" /> Matricular estudiante
+        <Button size="sm" onClick={() => { setForm(emptyForm); setEditingId(null); setShowForm(true); }}>
+          <Plus className="h-4 w-4 mr-1" /> Nueva matrícula
         </Button>
       </div>
- 
+
+      {/* Tabla de matrículas */}
       {isLoading ? (
         <Skeleton className="h-64 w-full" />
       ) : (
@@ -1806,54 +1891,60 @@ function TabMatriculas() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>N° Matrícula</TableHead>
                 <TableHead>Estudiante</TableHead>
-                <TableHead>Grupo</TableHead>
-                <TableHead>Código</TableHead>
+                <TableHead>Grado / Grupo</TableHead>
+                <TableHead>Jornada</TableHead>
+                <TableHead>Tipo</TableHead>
                 <TableHead>Estado</TableHead>
-                <TableHead className="w-12"></TableHead>
+                <TableHead className="w-20"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(enrollments as any[]).map((e: any) => (
-                <TableRow key={e.enrollment?.id || e.id}>
-                  <TableCell className="font-medium">
-                    {getFullName(e.student?.firstName, e.student?.lastName) || e.studentId}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {e.enrollment?.groupId || "—"}
-                  </TableCell>
-                  <TableCell>
-                    <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
-                      {e.enrollment?.studentCode || "—"}
-                    </code>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        e.enrollment?.status === "enrolled"
-                          ? "default"
-                          : e.enrollment?.status === "withdrawn"
-                          ? "destructive"
-                          : "secondary"
-                      }
-                    >
-                      {statusLabel[e.enrollment?.status] || e.enrollment?.status || "—"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => remove.mutate(e.enrollment?.id)}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {(Array.isArray(enrollments) ? enrollments : []).map((e: any) => {
+                const en = e.enrollment || e;
+                const st = e.student;
+                const grp = (academicGroups as any[]).find((g: any) => g.id === en.groupId);
+                return (
+                  <TableRow key={en.id}>
+                    <TableCell>
+                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                        {en.enrollmentNumber || en.studentCode || "—"}
+                      </code>
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {st ? getFullName(st.firstName, st.lastName) : en.studentId}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {grp?.name || en.groupId || "—"}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground capitalize">
+                      {{ morning: "Mañana", afternoon: "Tarde", full: "Completa" }[en.schedule as string] || "—"}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {{ new: "Nuevo ingreso", returning: "Antiguo", transfer: "Transferencia" }[en.enrollmentType as string] || "—"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={statusVariant[en.status] || "outline"}>
+                        {statusLabel[en.status] || en.status || "—"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button size="icon" variant="ghost" onClick={() => openEdit(e)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" onClick={() => remove.mutate(en.id)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
               {enrollments.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground py-10">
                     Sin matrículas registradas
                   </TableCell>
                 </TableRow>
@@ -1862,103 +1953,291 @@ function TabMatriculas() {
           </Table>
         </Card>
       )}
- 
-      <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent>
+
+      {/* Formulario de matrícula (Dialog amplio) */}
+      <Dialog open={showForm} onOpenChange={(o) => { setShowForm(o); if (!o) { setEditingId(null); setForm(emptyForm); } }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Matricular estudiante</DialogTitle>
+            <DialogTitle>{editingId ? "Editar matrícula" : "Nueva matrícula"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label>Estudiante</Label>
-              <Select
-                value={form.studentId}
-                onValueChange={(v) => setForm((p) => ({ ...p, studentId: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {students.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {getFullName(s.firstName, s.lastName)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+
+          <div className="space-y-6">
+            {/* 1. Información de matrícula */}
+            <div>
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 border-b pb-1">
+                1. Información de matrícula
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label>Estudiante</Label>
+                  <Select value={form.studentId} onValueChange={(v) => set("studentId", v)}>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                    <SelectContent>
+                      {students.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>{getFullName(s.firstName, s.lastName)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Número de matrícula</Label>
+                  <Input placeholder="MAT-2026-00045 (auto si vacío)" value={form.enrollmentNumber} onChange={(e) => set("enrollmentNumber", e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Año escolar</Label>
+                  <Select value={form.academicYearId} onValueChange={(v) => set("academicYearId", v)}>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar año..." /></SelectTrigger>
+                    <SelectContent>
+                      {(years as any[]).map((y: any) => (
+                        <SelectItem key={y.id} value={y.id}>{y.year}{y.isActive && " ✓"}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Fecha de matrícula</Label>
+                  <Input type="date" value={form.enrollmentDate} onChange={(e) => set("enrollmentDate", e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Estado de matrícula</Label>
+                  <Select value={form.status} onValueChange={(v) => set("status", v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="enrolled">Activa</SelectItem>
+                      <SelectItem value="withdrawn">Retirada</SelectItem>
+                      <SelectItem value="cancelled">Cancelada</SelectItem>
+                      <SelectItem value="graduated">Graduado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Tipo de matrícula</Label>
+                  <Select value={form.enrollmentType} onValueChange={(v) => set("enrollmentType", v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="new">Nuevo ingreso</SelectItem>
+                      <SelectItem value="returning">Antiguo estudiante</SelectItem>
+                      <SelectItem value="transfer">Transferencia</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label>Grupo</Label>
-              <Select
-                value={form.groupId}
-                onValueChange={(v) => setForm((p) => ({ ...p, groupId: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar grupo..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {(academicGroups as any[]).map((g: any) => (
-                    <SelectItem key={g.id} value={g.id}>
-                      {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+
+            {/* 2. Ubicación escolar */}
+            <div>
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 border-b pb-1">
+                2. Ubicación escolar
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label>Sede</Label>
+                  <Select value={form.campus} onValueChange={(v) => set("campus", v)}>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar sede..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="principal">Principal</SelectItem>
+                      <SelectItem value="secondary">Secundaria</SelectItem>
+                      <SelectItem value="rural">Rural</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Jornada</Label>
+                  <Select value={form.schedule} onValueChange={(v) => set("schedule", v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="morning">Mañana</SelectItem>
+                      <SelectItem value="afternoon">Tarde</SelectItem>
+                      <SelectItem value="full">Completa</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Nivel</Label>
+                  <Select value={form.level} onValueChange={(v) => set("level", v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="preschool">Preescolar</SelectItem>
+                      <SelectItem value="primary">Primaria</SelectItem>
+                      <SelectItem value="secondary">Secundaria</SelectItem>
+                      <SelectItem value="media">Media</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Grupo</Label>
+                  <Select value={form.groupId} onValueChange={(v) => set("groupId", v)}>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar grupo..." /></SelectTrigger>
+                    <SelectContent>
+                      {(academicGroups as any[]).map((g: any) => (
+                        <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label>Año académico</Label>
-              <Select
-                value={form.academicYearId}
-                onValueChange={(v) => setForm((p) => ({ ...p, academicYearId: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar año..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {(years as any[]).map((y: any) => (
-                    <SelectItem key={y.id} value={y.id}>
-                      {y.year} {y.isActive && "✓"}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+
+            {/* 3. Información del año anterior */}
+            <div>
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 border-b pb-1">
+                3. Información del año anterior
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1 col-span-2 flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="transferCheck"
+                    checked={!!form.transferFromOtherSchool}
+                    onChange={(e) => set("transferFromOtherSchool", e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  <Label htmlFor="transferCheck">Viene de otra institución</Label>
+                </div>
+                <div className="space-y-1">
+                  <Label>Colegio anterior</Label>
+                  <Input placeholder="Ej: Colegio San José" value={form.previousSchool} onChange={(e) => set("previousSchool", e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Último grado cursado</Label>
+                  <Select value={form.previousGrade} onValueChange={(v) => set("previousGrade", v)}>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                    <SelectContent>
+                      {["Transición","Primero","Segundo","Tercero","Cuarto","Quinto",
+                        "Sexto","Séptimo","Octavo","Noveno","Décimo","Undécimo"].map((g) => (
+                        <SelectItem key={g} value={g}>{g}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Último año aprobado</Label>
+                  <Input type="number" placeholder="Ej: 2025" value={form.previousYear} onChange={(e) => set("previousYear", e.target.value)} />
+                </div>
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label>Estado</Label>
-              <Select
-                value={form.status}
-                onValueChange={(v) => setForm((p) => ({ ...p, status: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="enrolled">Matriculado</SelectItem>
-                  <SelectItem value="withdrawn">Retirado</SelectItem>
-                  <SelectItem value="transferred">Transferido</SelectItem>
-                </SelectContent>
-              </Select>
+
+            {/* 4. Situación académica */}
+            <div>
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 border-b pb-1">
+                4. Situación académica
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label>Estado del estudiante</Label>
+                  <Select value={form.studentStatus} onValueChange={(v) => set("studentStatus", v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="regular">Regular</SelectItem>
+                      <SelectItem value="repeating">Repitente</SelectItem>
+                      <SelectItem value="new">Nuevo</SelectItem>
+                      <SelectItem value="transferred">Transferido</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Promoción</Label>
+                  <Select value={form.promotionStatus} onValueChange={(v) => set("promotionStatus", v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="promoted">Promovido</SelectItem>
+                      <SelectItem value="not_promoted">No promovido</SelectItem>
+                      <SelectItem value="pending">Pendiente</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <Label>Observación académica</Label>
+                  <Textarea
+                    placeholder="Ej: El estudiante ingresa a grado 8° con rendimiento académico satisfactorio."
+                    value={form.academicObservation}
+                    onChange={(e) => set("academicObservation", e.target.value)}
+                    rows={2}
+                  />
+                </div>
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label>Código de estudiante (opcional)</Label>
-              <Input
-                placeholder="Ej: 2024-001"
-                value={form.studentCode}
-                onChange={(e) => setForm((p) => ({ ...p, studentCode: e.target.value }))}
-              />
+
+            {/* 5. Director de grupo */}
+            <div>
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 border-b pb-1">
+                5. Director de grupo
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label>Director de grupo</Label>
+                  <Select value={form.classroomTeacherId} onValueChange={(v) => set("classroomTeacherId", v)}>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar docente..." /></SelectTrigger>
+                    <SelectContent>
+                      {teacherList.map((t: any) => (
+                        <SelectItem key={t.id} value={t.id}>{getFullName(t.firstName, t.lastName)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Salón asignado</Label>
+                  <Input placeholder="Ej: 8-A" value={form.assignedClassroom} onChange={(e) => set("assignedClassroom", e.target.value)} />
+                </div>
+              </div>
+            </div>
+
+            {/* 6. Asignaturas del grado (solo lectura, desde horarios) */}
+            {groupSubjects.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 border-b pb-1">
+                  6. Asignaturas del grado
+                </h3>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Asignatura</TableHead>
+                      <TableHead>Código</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {groupSubjects.slice(0, 10).map((s: any) => (
+                      <TableRow key={s.id}>
+                        <TableCell className="text-sm font-medium">{s.name}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{s.code || "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            {/* 7. Convivencia */}
+            <div>
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 border-b pb-1">
+                7. Información de convivencia (opcional)
+              </h3>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <Label>Estado disciplinario</Label>
+                  <Input placeholder="Ej: Sin antecedentes" value={form.disciplinaryStatus} onChange={(e) => set("disciplinaryStatus", e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Compromisos académicos</Label>
+                  <Textarea placeholder="Compromisos académicos del estudiante..." value={form.academicCommitments} onChange={(e) => set("academicCommitments", e.target.value)} rows={2} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Compromisos de convivencia</Label>
+                  <Textarea placeholder="Compromisos de convivencia..." value={form.coexistenceCommitments} onChange={(e) => set("coexistenceCommitments", e.target.value)} rows={2} />
+                </div>
+              </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowForm(false)}>
+
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => { setShowForm(false); setEditingId(null); setForm(emptyForm); }}>
               Cancelar
             </Button>
             <Button
-              onClick={() => create.mutate()}
-              disabled={
-                create.isPending || !form.studentId || !form.groupId || !form.academicYearId
-              }
+              onClick={() => editingId ? update.mutate() : create.mutate()}
+              disabled={(editingId ? update.isPending : create.isPending) || !form.studentId || !form.groupId || !form.academicYearId}
             >
-              Matricular
+              {editingId ? "Guardar cambios" : "Registrar matrícula"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1966,7 +2245,8 @@ function TabMatriculas() {
     </div>
   );
 }
- 
+
+
 // ─── CÓDIGOS INSTITUCIONALES ──────────────────────────────────────────────────
  
 function TabCodigos() {
@@ -2180,25 +2460,49 @@ function TabCodigos() {
  
 function TabHorarios() {
   const { toast } = useToast();
-  const { data: subjects = [] } = useQuery<any[]>({ queryKey: ["/api/admin/subjects"] });
-  const { data: academicGroups = [] } = useQuery<any[]>({
-    queryKey: ["/api/admin/academic-groups"],
-  });
-  const { data: teachers = [] } = useQuery<User[]>({ queryKey: ["/api/admin/users", "teacher"] });
-  const { data: schedules = [], isLoading } = useQuery<any[]>({
-    queryKey: ["/api/admin/schedules"],
-  });
+  const [viewMode, setViewMode] = useState<"group" | "teacher">("group");
+  const [selectedGroup, setSelectedGroup] = useState("");
+  const [selectedTeacher, setSelectedTeacher] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
-    groupId: "",
-    subjectId: "",
-    teacherId: "",
-    day: "Lunes",
-    startTime: "",
-    endTime: "",
-    room: "",
+  const [activeTab, setActiveTab] = useState<"schedule" | "info">("schedule");
+
+  const { data: subjects = [] } = useQuery<any[]>({ queryKey: ["/api/admin/subjects"] });
+  const { data: academicGroups = [] } = useQuery<any[]>({ queryKey: ["/api/admin/academic-groups"] });
+  const { data: teachers = [] } = useQuery<User[]>({ queryKey: ["/api/admin/users", "teacher"] });
+  const { data: institutionInfo } = useQuery<any>({ queryKey: ["/api/institution-info"] });
+
+  const { data: schedules = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/admin/schedules", viewMode, selectedGroup, selectedTeacher],
+    queryFn: () => {
+      const p = new URLSearchParams();
+      if (viewMode === "group" && selectedGroup) p.set("groupId", selectedGroup);
+      if (viewMode === "teacher" && selectedTeacher) p.set("teacherId", selectedTeacher);
+      return fetch(`/api/admin/schedules?${p}`, { credentials: "include" })
+        .then((r) => r.ok ? r.json() : []).then((d) => Array.isArray(d) ? d : []);
+    },
   });
- 
+
+  const [form, setForm] = useState({ groupId: "", subjectId: "", teacherId: "", day: "Lunes", startTime: "", endTime: "", room: "" });
+  const setF = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
+
+  const [infoForm, setInfoForm] = useState({ mission: "", vision: "", hymn: "", coexistenceManualText: "", coexistenceManualUrl: "", peiUrl: "", academicCalendarUrl: "", internalRegulationsUrl: "" });
+  const setI = (k: string, v: string) => setInfoForm((p) => ({ ...p, [k]: v }));
+
+  useEffect(() => {
+    if (institutionInfo) {
+      setInfoForm({
+        mission: institutionInfo.mission || "",
+        vision: institutionInfo.vision || "",
+        hymn: institutionInfo.hymn || "",
+        coexistenceManualText: institutionInfo.coexistenceManualText || "",
+        coexistenceManualUrl: institutionInfo.coexistenceManualUrl || "",
+        peiUrl: institutionInfo.peiUrl || "",
+        academicCalendarUrl: institutionInfo.academicCalendarUrl || "",
+        internalRegulationsUrl: institutionInfo.internalRegulationsUrl || "",
+      });
+    }
+  }, [institutionInfo]);
+
   const create = useMutation({
     mutationFn: () => apiRequest("POST", "/api/admin/schedules", form),
     onSuccess: () => {
@@ -2209,124 +2513,283 @@ function TabHorarios() {
     },
     onError: () => toast({ title: "Error — puede haber conflicto de horario", variant: "destructive" }),
   });
- 
+
   const del = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/admin/schedules/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/schedules"] });
-      toast({ title: "Horario eliminado" });
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/admin/schedules"] }); toast({ title: "Horario eliminado" }); },
   });
- 
-  const days = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
- 
-  const subjectName = (id: string) =>
-    (subjects as any[]).find((s: any) => s.id === id)?.name || id;
-  const groupName = (id: string) =>
-    (academicGroups as any[]).find((g: any) => g.id === id)?.name || id;
+
+  const saveInfo = useMutation({
+    mutationFn: () => apiRequest("PATCH", "/api/admin/institution-info", infoForm),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/institution-info"] }); toast({ title: "Información guardada" }); },
+    onError: () => toast({ title: "Error al guardar", variant: "destructive" }),
+  });
+
+  const DAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"];
+  const DAY_MAP: Record<string, string> = { 1: "Lunes", 2: "Martes", 3: "Miércoles", 4: "Jueves", 5: "Viernes", 6: "Sábado" };
+  // Horas escolares típicas
+  const HOURS = ["06:00","07:00","08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00"];
+
+  const subjectName = (id: string) => (subjects as any[]).find((s: any) => s.id === id)?.name || "—";
+  const subjectColor = (id: string) => (subjects as any[]).find((s: any) => s.id === id)?.color || "#6366f1";
+  const groupName = (id: string) => (academicGroups as any[]).find((g: any) => g.id === id)?.name || "—";
   const teacherName = (id: string) => {
     const t = (teachers as User[]).find((u) => u.id === id);
-    return t ? getFullName(t.firstName, t.lastName) : id;
+    return t ? getFullName(t.firstName, t.lastName) : "—";
   };
- 
+
+  // Organizar horarios como grilla: día x hora
+  const getCell = (day: string, hour: string) =>
+    (Array.isArray(schedules) ? schedules : []).filter((s: any) => {
+      const dayName = DAY_MAP[s.dayOfWeek] || s.day || "";
+      return dayName === day && s.startTime <= hour && (s.endTime > hour || s.startTime === hour);
+    });
+
+  // Horas que realmente tienen clases
+  const usedHours = Array.from(new Set((Array.isArray(schedules) ? schedules : []).map((s: any) => s.startTime))).sort();
+  const displayHours = usedHours.length > 0 ? usedHours : HOURS.slice(1, 9);
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <p className="text-sm text-muted-foreground">{schedules.length} registros de horario</p>
-        <Button size="sm" onClick={() => setShowForm(true)}>
-          <Plus className="h-4 w-4 mr-1" /> Agregar horario
-        </Button>
+      {/* Sub-tabs: Horarios | Información institucional */}
+      <div className="flex gap-1 border-b">
+        <button
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          onClick={() => setActiveTab("schedule")}
+        >
+          Horarios
+        </button>
+        <button
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "info" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          onClick={() => setActiveTab("info")}
+        >
+          Información institucional
+        </button>
       </div>
- 
-      {isLoading ? (
-        <Skeleton className="h-48 w-full" />
-      ) : (
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Grupo</TableHead>
-                <TableHead>Materia</TableHead>
-                <TableHead>Docente</TableHead>
-                <TableHead>Día</TableHead>
-                <TableHead>Hora</TableHead>
-                <TableHead>Salón</TableHead>
-                <TableHead className="w-12"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(schedules as any[]).map((s: any) => (
-                <TableRow key={s.id}>
-                  <TableCell>
-                    <Badge variant="outline">{groupName(s.groupId)}</Badge>
-                  </TableCell>
-                  <TableCell className="font-medium">{subjectName(s.subjectId)}</TableCell>
-                  <TableCell className="text-sm">{teacherName(s.teacherId)}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{s.day}</Badge>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {s.startTime} – {s.endTime}
-                  </TableCell>
-                  <TableCell className="text-sm">{s.room || "—"}</TableCell>
-                  <TableCell>
-                    <Button size="icon" variant="ghost" onClick={() => del.mutate(s.id)}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {schedules.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                    Sin horarios registrados
-                  </TableCell>
-                </TableRow>
+
+      {activeTab === "schedule" && (
+        <div className="space-y-4">
+          {/* Toolbar */}
+          <div className="flex flex-wrap gap-2 items-center justify-between">
+            <div className="flex gap-2 items-center flex-wrap">
+              {/* Toggle vista por grupo / docente */}
+              <div className="flex rounded-md border overflow-hidden text-sm">
+                <button
+                  className={`px-3 py-1.5 ${viewMode === "group" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                  onClick={() => setViewMode("group")}
+                >
+                  Por grupo
+                </button>
+                <button
+                  className={`px-3 py-1.5 ${viewMode === "teacher" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                  onClick={() => setViewMode("teacher")}
+                >
+                  Por docente
+                </button>
+              </div>
+
+              {viewMode === "group" ? (
+                <Select value={selectedGroup || "__all__"} onValueChange={(v) => setSelectedGroup(v === "__all__" ? "" : v)}>
+                  <SelectTrigger className="w-44"><SelectValue placeholder="Todos los grupos" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">Todos los grupos</SelectItem>
+                    {(academicGroups as any[]).map((g: any) => (
+                      <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Select value={selectedTeacher || "__all__"} onValueChange={(v) => setSelectedTeacher(v === "__all__" ? "" : v)}>
+                  <SelectTrigger className="w-48"><SelectValue placeholder="Todos los docentes" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">Todos los docentes</SelectItem>
+                    {(teachers as User[]).filter((u) => u.role === "teacher").map((u) => (
+                      <SelectItem key={u.id} value={u.id}>{getFullName(u.firstName, u.lastName)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               )}
-            </TableBody>
-          </Table>
-        </Card>
+            </div>
+            <Button size="sm" onClick={() => setShowForm(true)}>
+              <Plus className="h-4 w-4 mr-1" /> Agregar clase
+            </Button>
+          </div>
+
+          {/* Grilla tipo ASC */}
+          {isLoading ? (
+            <Skeleton className="h-64 w-full" />
+          ) : (
+            <Card className="overflow-auto">
+              <div className="min-w-[700px]">
+                <table className="w-full border-collapse text-xs">
+                  <thead>
+                    <tr>
+                      <th className="w-16 p-2 text-left text-muted-foreground font-medium border-b border-r bg-muted/30">Hora</th>
+                      {DAYS.map((d) => (
+                        <th key={d} className="p-2 text-center font-semibold border-b border-r last:border-r-0 bg-muted/30">{d}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayHours.map((hour) => (
+                      <tr key={hour} className="border-b last:border-b-0">
+                        <td className="p-2 text-muted-foreground border-r font-mono text-center align-top pt-2">{hour}</td>
+                        {DAYS.map((day) => {
+                          const cells = getCell(day, hour);
+                          return (
+                            <td key={day} className="p-1 border-r last:border-r-0 align-top min-w-[120px] h-14">
+                              {cells.map((s: any) => (
+                                <div
+                                  key={s.id}
+                                  className="rounded p-1.5 mb-0.5 text-white text-xs leading-tight relative group cursor-default"
+                                  style={{ backgroundColor: subjectColor(s.subjectId) + "cc" }}
+                                >
+                                  <p className="font-semibold truncate">{subjectName(s.subjectId)}</p>
+                                  {viewMode === "group" ? (
+                                    <p className="opacity-80 truncate">{teacherName(s.teacherId)}</p>
+                                  ) : (
+                                    <p className="opacity-80 truncate">{groupName(s.groupId)}</p>
+                                  )}
+                                  {s.room && <p className="opacity-70">{s.room}</p>}
+                                  <button
+                                    className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 bg-black/30 rounded p-0.5"
+                                    onClick={() => del.mutate(s.id)}
+                                  >
+                                    <XCircle className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              ))}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                    {displayHours.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="text-center text-muted-foreground py-12">
+                          Sin horarios registrados. Agrega una clase para comenzar.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+        </div>
       )}
- 
+
+      {activeTab === "info" && (
+        <div className="space-y-5 max-w-3xl">
+          <p className="text-sm text-muted-foreground">
+            Esta información es visible para todos los miembros de la institución (estudiantes, docentes, padres).
+          </p>
+
+          {[
+            { key: "mission", label: "Misión", multiline: true, placeholder: "Misión de la institución..." },
+            { key: "vision", label: "Visión", multiline: true, placeholder: "Visión de la institución..." },
+            { key: "hymn", label: "Himno institucional", multiline: true, placeholder: "Letra del himno..." },
+            { key: "coexistenceManualText", label: "Manual de convivencia (texto)", multiline: true, placeholder: "Resumen o texto completo del manual de convivencia..." },
+          ].map(({ key, label, multiline, placeholder }) => (
+            <div key={key} className="space-y-1">
+              <Label>{label}</Label>
+              <Textarea
+                rows={multiline ? 4 : 2}
+                placeholder={placeholder}
+                value={(infoForm as any)[key]}
+                onChange={(e) => setI(key, e.target.value)}
+              />
+            </div>
+          ))}
+
+          <div className="grid grid-cols-2 gap-4">
+            {[
+              { key: "coexistenceManualUrl", label: "Manual de convivencia (PDF)" },
+              { key: "peiUrl", label: "PEI (Proyecto Educativo Institucional)" },
+              { key: "academicCalendarUrl", label: "Calendario académico" },
+              { key: "internalRegulationsUrl", label: "Reglamento interno" },
+            ].map(({ key, label }) => (
+              <div key={key} className="space-y-1">
+                <Label>{label}</Label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="https://... o sube un PDF"
+                    value={(infoForm as any)[key]}
+                    onChange={(e) => setI(key, e.target.value)}
+                    className="flex-1 text-xs"
+                  />
+                  <label className="cursor-pointer">
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const fd = new FormData();
+                        fd.append("file", file);
+                        fd.append("field", key);
+                        try {
+                          const res = await fetch("/api/admin/institution-docs/upload", {
+                            method: "POST", body: fd, credentials: "include",
+                          });
+                          if (!res.ok) throw new Error("Error al subir");
+                          const data = await res.json();
+                          setI(key, data.url);
+                          toast({ title: "PDF subido correctamente" });
+                        } catch {
+                          toast({ title: "Error al subir el PDF", variant: "destructive" });
+                        }
+                      }}
+                    />
+                    <span className="inline-flex items-center justify-center h-9 px-3 rounded-md border border-input bg-background hover:bg-muted text-xs cursor-pointer whitespace-nowrap">
+                      Subir
+                    </span>
+                  </label>
+                </div>
+                {(infoForm as any)[key] && (
+                  <a href={(infoForm as any)[key]} target="_blank" rel="noopener noreferrer"
+                    className="text-xs text-primary hover:underline flex items-center gap-1 mt-0.5">
+                    <FileText className="h-3 w-3" /> Ver archivo actual
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <Button onClick={() => saveInfo.mutate()} disabled={saveInfo.isPending}>
+            <Save className="h-4 w-4 mr-1" />
+            {saveInfo.isPending ? "Guardando..." : "Guardar información"}
+          </Button>
+        </div>
+      )}
+
+      {/* Dialog agregar horario */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Agregar horario</DialogTitle>
+            <DialogTitle>Agregar clase al horario</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label>Grupo</Label>
-                <Select
-                  value={form.groupId}
-                  onValueChange={(v) => setForm((p) => ({ ...p, groupId: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar..." />
-                  </SelectTrigger>
+                <Select value={form.groupId} onValueChange={(v) => setF("groupId", v)}>
+                  <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                   <SelectContent>
                     {(academicGroups as any[]).map((g: any) => (
-                      <SelectItem key={g.id} value={g.id}>
-                        {g.name}
-                      </SelectItem>
+                      <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1">
                 <Label>Materia</Label>
-                <Select
-                  value={form.subjectId}
-                  onValueChange={(v) => setForm((p) => ({ ...p, subjectId: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar..." />
-                  </SelectTrigger>
+                <Select value={form.subjectId} onValueChange={(v) => setF("subjectId", v)}>
+                  <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                   <SelectContent>
                     {(subjects as any[]).map((s: any) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.name}
-                      </SelectItem>
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -2334,84 +2797,42 @@ function TabHorarios() {
             </div>
             <div className="space-y-1">
               <Label>Docente</Label>
-              <Select
-                value={form.teacherId}
-                onValueChange={(v) => setForm((p) => ({ ...p, teacherId: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar..." />
-                </SelectTrigger>
+              <Select value={form.teacherId} onValueChange={(v) => setF("teacherId", v)}>
+                <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                 <SelectContent>
-                  {(teachers as User[])
-                    .filter((u) => u.role === "teacher")
-                    .map((u) => (
-                      <SelectItem key={u.id} value={u.id}>
-                        {getFullName(u.firstName, u.lastName)}
-                      </SelectItem>
-                    ))}
+                  {(teachers as User[]).filter((u) => u.role === "teacher").map((u) => (
+                    <SelectItem key={u.id} value={u.id}>{getFullName(u.firstName, u.lastName)}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
                 <Label>Día</Label>
-                <Select
-                  value={form.day}
-                  onValueChange={(v) => setForm((p) => ({ ...p, day: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
+                <Select value={form.day} onValueChange={(v) => setF("day", v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {days.map((d) => (
-                      <SelectItem key={d} value={d}>
-                        {d}
-                      </SelectItem>
-                    ))}
+                    {DAYS.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1">
                 <Label>Hora inicio</Label>
-                <Input
-                  type="time"
-                  value={form.startTime}
-                  onChange={(e) => setForm((p) => ({ ...p, startTime: e.target.value }))}
-                />
+                <Input type="time" value={form.startTime} onChange={(e) => setF("startTime", e.target.value)} />
               </div>
               <div className="space-y-1">
                 <Label>Hora fin</Label>
-                <Input
-                  type="time"
-                  value={form.endTime}
-                  onChange={(e) => setForm((p) => ({ ...p, endTime: e.target.value }))}
-                />
+                <Input type="time" value={form.endTime} onChange={(e) => setF("endTime", e.target.value)} />
               </div>
             </div>
             <div className="space-y-1">
               <Label>Salón (opcional)</Label>
-              <Input
-                placeholder="Ej: Aula 201"
-                value={form.room}
-                onChange={(e) => setForm((p) => ({ ...p, room: e.target.value }))}
-              />
+              <Input placeholder="Ej: Aula 201" value={form.room} onChange={(e) => setF("room", e.target.value)} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowForm(false)}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={() => create.mutate()}
-              disabled={
-                create.isPending ||
-                !form.groupId ||
-                !form.subjectId ||
-                !form.teacherId ||
-                !form.startTime ||
-                !form.endTime
-              }
-            >
+            <Button variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
+            <Button onClick={() => create.mutate()} disabled={create.isPending || !form.groupId || !form.subjectId || !form.teacherId || !form.startTime || !form.endTime}>
               Guardar horario
             </Button>
           </DialogFooter>
@@ -2420,7 +2841,9 @@ function TabHorarios() {
     </div>
   );
 }
- 
+
+
+
 // ─── OBSERVADOR DEL ESTUDIANTE ────────────────────────────────────────────────
  
 function TabObservador() {
@@ -2433,7 +2856,7 @@ function TabObservador() {
       fetch(
         `/api/admin/observations${selectedStudentId ? `?studentId=${selectedStudentId}` : ""}`,
         { credentials: "include" }
-      ).then((r) => r.json()),
+      ).then((r) => r.ok ? r.json() : []).then((d) => Array.isArray(d) ? d : []),
   });
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
@@ -2475,12 +2898,12 @@ function TabObservador() {
   return (
     <div className="space-y-4">
       <div className="flex gap-3 items-center">
-        <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
+        <Select value={selectedStudentId || "__all__"} onValueChange={(v) => setSelectedStudentId(v === "__all__" ? "" : v)}>
           <SelectTrigger className="w-64">
             <SelectValue placeholder="Filtrar por estudiante..." />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Todos los estudiantes</SelectItem>
+            <SelectItem value="__all__">Todos los estudiantes</SelectItem>
             {students.map((s) => (
               <SelectItem key={s.id} value={s.id}>
                 {getFullName(s.firstName, s.lastName)}
@@ -2497,7 +2920,7 @@ function TabObservador() {
         <Skeleton className="h-48 w-full" />
       ) : (
         <div className="space-y-3">
-          {(observations as any[]).map((obs: any) => (
+          {(Array.isArray(observations) ? observations : []).map((obs: any) => (
             <Card key={obs.id}>
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -2665,7 +3088,7 @@ function TabBoletines() {
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-1">
               <Label>Año académico</Label>
-              <Select value={selectedYear} onValueChange={setSelectedYear}>
+              <Select value={selectedYear || "__all__"} onValueChange={(v) => setSelectedYear(v === "__all__" ? "" : v)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar año..." />
                 </SelectTrigger>
@@ -2680,7 +3103,7 @@ function TabBoletines() {
             </div>
             <div className="space-y-1">
               <Label>Grupo</Label>
-              <Select value={selectedGroup} onValueChange={setSelectedGroup}>
+              <Select value={selectedGroup || "__all__"} onValueChange={(v) => setSelectedGroup(v === "__all__" ? "" : v)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar grupo..." />
                 </SelectTrigger>
@@ -2695,12 +3118,12 @@ function TabBoletines() {
             </div>
             <div className="space-y-1">
               <Label>Periodo</Label>
-              <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
+              <Select value={selectedPeriod || "__all__"} onValueChange={(v) => setSelectedPeriod(v === "__all__" ? "" : v)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Todos los periodos" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos</SelectItem>
+                  <SelectItem value="__all__">Todos</SelectItem>
                   {(periods as any[]).map((p: any) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.name}
@@ -3203,7 +3626,9 @@ export default function InstitutionalAdmin() {
             </p>
           </div>
  
-          <ActiveComponent />
+          <TabErrorBoundary tabId={activeTab}>
+            <ActiveComponent />
+          </TabErrorBoundary>
         </main>
       </div>
     </AppLayout>

@@ -25,7 +25,7 @@ export function isEmailFromLoyola(email?: string | null): boolean {
   if (!email) return false;
   return (
     email.endsWith("@gmail.com") ||
-    email.endsWith("@iecolegioloyola.edu.co")
+    email.endsWith("Institucional")
   );
 }
 

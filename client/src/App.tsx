@@ -22,6 +22,7 @@ import Notifications from "@/pages/Notifications";
 import Settings from "@/pages/Settings";
 import Classroom from "@/pages/Classroom";
 import CourseDetail from "@/pages/CourseDetail";
+import Schedules from "@/pages/Schedules";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -56,6 +57,7 @@ function Router() {
           <Route path="/settings" component={Settings} />
           <Route path="/classroom" component={Classroom} />
           <Route path="/classroom/:id" component={CourseDetail} />
+          <Route path="/schedules" component={Schedules} />
         </>
       )}
       <Route component={NotFound} />

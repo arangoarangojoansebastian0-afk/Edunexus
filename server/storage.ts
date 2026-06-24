@@ -1894,6 +1894,35 @@ async getInstitutionByCode(code: string) {
       .orderBy(classSchedules.dayOfWeek, classSchedules.startTime);
   }
 
+  async getSchedulesByGroup(groupId: string): Promise<any[]> {
+    return db
+      .select({
+        id: classSchedules.id,
+        groupId: classSchedules.groupId,
+        subjectId: classSchedules.subjectId,
+        teacherId: classSchedules.teacherId,
+        dayOfWeek: classSchedules.dayOfWeek,
+        startTime: classSchedules.startTime,
+        endTime: classSchedules.endTime,
+        room: classSchedules.room,
+        subjectName: subjects.name,
+        subjectColor: subjects.color,
+        teacherFirstName: users.firstName,
+        teacherLastName: users.lastName,
+      })
+      .from(classSchedules)
+      .leftJoin(subjects, eq(classSchedules.subjectId, subjects.id))
+      .leftJoin(users, eq(classSchedules.teacherId, users.id))
+      .where(eq(classSchedules.groupId, groupId))
+      .orderBy(classSchedules.dayOfWeek, classSchedules.startTime);
+  }
+
+  async getInstitutionById(institutionId: string): Promise<any> {
+    const [inst] = await db.select().from(institutionSettings)
+      .where(eq(institutionSettings.id, institutionId));
+    return inst || null;
+  }
+
   async createSchedule(data: any): Promise<ClassSchedule> {
     let dayNum = 1;
     if (typeof data.day === 'string') {
@@ -2118,9 +2147,29 @@ async getInstitutionByCode(code: string) {
     return query;
   }
 
-  async createStudentEnrollment(data: { studentId: string; groupId: string; academicYearId: string; studentCode?: string; institutionId: string }) {
+  async createStudentEnrollment(data: any) {
+    // Generar número de matrícula automático si no viene
+    if (!data.enrollmentNumber) {
+      const year = new Date().getFullYear();
+      const count = await db.select({ count: sql<number>`count(*)` })
+        .from(studentEnrollments)
+        .where(eq(studentEnrollments.institutionId, data.institutionId));
+      const seq = String(Number(count[0]?.count || 0) + 1).padStart(5, "0");
+      data.enrollmentNumber = `MAT-${year}-${seq}`;
+    }
+    if (!data.enrollmentDate) {
+      data.enrollmentDate = new Date();
+    }
     const [created] = await db.insert(studentEnrollments).values(data).returning();
     return created;
+  }
+
+  async updateStudentEnrollment(id: string, data: any) {
+    const [updated] = await db.update(studentEnrollments)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(studentEnrollments.id, id))
+      .returning();
+    return updated;
   }
 
   async deleteStudentEnrollment(id: string) {

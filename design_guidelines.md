@@ -1,4 +1,4 @@
-# Design Guidelines: Comunidad Loyola
+# Design Guidelines: EduNexus
 
 ## Design Approach
 
@@ -157,7 +157,7 @@ Core spacing set: **2, 3, 4, 6, 8, 12, 16, 20, 24**
 - Avatar, name, role, quote in card format
 
 **CTA Footer:**
-- Centered content, prominent "Join Comunidad Loyola" button
+- Centered content, prominent "Join EduNexus" button
 - Supporting text about verification process
 
 ### Feed/Wall Page

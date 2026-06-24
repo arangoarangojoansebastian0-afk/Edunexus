@@ -37,7 +37,7 @@ export default function Login() {
         await refetchUser();
         toast({
           title: "Sesión iniciada",
-          description: "Bienvenido a Comunidad Loyola",
+          description: "Bienvenido a EduNexus",
         });
         window.location.href = "/";
       } else {
@@ -64,7 +64,7 @@ export default function Login() {
       <div className="w-full max-w-md space-y-6">
         <div className="flex items-center justify-center gap-2">
           <GraduationCap className="h-8 w-8 text-primary" />
-          <span className="font-serif font-bold text-2xl">Comunidad Loyola</span>
+          <span className="font-serif font-bold text-2xl">EduNexus</span>
         </div>
 
         <Card>
