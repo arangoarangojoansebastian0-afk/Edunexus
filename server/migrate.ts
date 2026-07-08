@@ -1,12 +1,8 @@
 import { pool } from "./db";
 
-/**
- * Runs a lightweight startup migration to create any missing tables.
- * Errors are logged but do not crash the server.
- */
 export async function runMigrations(): Promise<void> {
   const client = await pool.connect().catch((err) => {
-    console.warn("[migrate] Cannot connect to DB (will retry on next request):", err.message);
+    console.warn("[migrate] Cannot connect to DB:", err.message);
     return null;
   });
   if (!client) return;
@@ -14,9 +10,11 @@ export async function runMigrations(): Promise<void> {
   try {
     await client.query("BEGIN");
 
+    // ── Classroom tables ──────────────────────────────────────────────────
     await client.query(`
       CREATE TABLE IF NOT EXISTS courses (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        institution_id UUID REFERENCES institution_settings(id) ON DELETE CASCADE,
         name VARCHAR(255) NOT NULL,
         description TEXT,
         subject VARCHAR(100) NOT NULL,
@@ -66,7 +64,7 @@ export async function runMigrations(): Promise<void> {
         content TEXT,
         attachments TEXT[] DEFAULT '{}',
         submitted_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        grade INTEGER,
+        grade VARCHAR(50),
         feedback TEXT,
         graded_at TIMESTAMP,
         graded_by VARCHAR REFERENCES users(id),
@@ -77,6 +75,7 @@ export async function runMigrations(): Promise<void> {
     await client.query(`
       CREATE TABLE IF NOT EXISTS attendance (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        institution_id UUID REFERENCES institution_settings(id) ON DELETE CASCADE,
         course_id VARCHAR NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
         student_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         date TIMESTAMP NOT NULL,
@@ -87,7 +86,75 @@ export async function runMigrations(): Promise<void> {
       );
     `);
 
-    // Indexes
+    // ── Gradebook ─────────────────────────────────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS gradebook_entries (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        institution_id UUID NOT NULL REFERENCES institution_settings(id) ON DELETE CASCADE,
+        student_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        subject_id VARCHAR NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+        group_id VARCHAR NOT NULL REFERENCES academic_groups(id) ON DELETE CASCADE,
+        academic_period_id VARCHAR NOT NULL REFERENCES academic_periods(id) ON DELETE CASCADE,
+        grade VARCHAR(50) NOT NULL,
+        notes TEXT,
+        recorded_by VARCHAR NOT NULL REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `);
+
+    // Migrate old integer grade column if it exists
+    await client.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='gradebook_entries' AND column_name='grade'
+          AND data_type='integer'
+        ) THEN
+          ALTER TABLE gradebook_entries ALTER COLUMN grade TYPE VARCHAR(50) USING grade::text;
+        END IF;
+      END$$;
+    `);
+
+    // ── Institution settings new columns ─────────────────────────────────
+    await client.query(`
+      ALTER TABLE institution_settings
+        ADD COLUMN IF NOT EXISTS qualitative_scale VARCHAR(255),
+        ADD COLUMN IF NOT EXISTS email_allowed_domain VARCHAR(255),
+        ADD COLUMN IF NOT EXISTS gc_client_id VARCHAR(255),
+        ADD COLUMN IF NOT EXISTS gc_client_secret VARCHAR(255);
+    `);
+
+    // ── Google Classroom tokens ───────────────────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS google_classroom_tokens (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+        institution_id UUID NOT NULL REFERENCES institution_settings(id) ON DELETE CASCADE,
+        access_token TEXT NOT NULL,
+        refresh_token TEXT,
+        expires_at TIMESTAMP,
+        email VARCHAR(255),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS google_classroom_course_links (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        course_id VARCHAR NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+        gc_course_id VARCHAR(100) NOT NULL,
+        gc_course_name VARCHAR(255),
+        teacher_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        institution_id UUID NOT NULL REFERENCES institution_settings(id) ON DELETE CASCADE,
+        last_sync_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `);
+
+    // ── Indexes ────────────────────────────────────────────────────────────
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_courses_teacher ON courses(teacher_id);
       CREATE INDEX IF NOT EXISTS idx_courses_active ON courses(is_active);
@@ -99,10 +166,34 @@ export async function runMigrations(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_attendance_course ON attendance(course_id);
       CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id);
       CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date);
+      CREATE INDEX IF NOT EXISTS idx_gradebook_student ON gradebook_entries(student_id);
+      CREATE INDEX IF NOT EXISTS idx_gradebook_subject ON gradebook_entries(subject_id);
+      CREATE INDEX IF NOT EXISTS idx_gradebook_period ON gradebook_entries(academic_period_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_gradebook_unique
+        ON gradebook_entries(student_id, subject_id, academic_period_id);
+      CREATE INDEX IF NOT EXISTS idx_gc_tokens_user ON google_classroom_tokens(user_id);
+    `);
+
+    // ── Direct messages (chat privado) ──────────────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS direct_messages (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        sender_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        receiver_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        institution_id UUID NOT NULL REFERENCES institution_settings(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        media_url VARCHAR,
+        media_type VARCHAR,
+        read_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_dm_sender ON direct_messages(sender_id);
+      CREATE INDEX IF NOT EXISTS idx_dm_receiver ON direct_messages(receiver_id);
+      CREATE INDEX IF NOT EXISTS idx_dm_created ON direct_messages(created_at);
     `);
 
     await client.query("COMMIT");
-    console.log("[migrate] Classroom tables OK");
+    console.log("[migrate] All migrations OK");
   } catch (err: any) {
     await client.query("ROLLBACK").catch(() => {});
     console.warn("[migrate] Migration error (non-fatal):", err.message);

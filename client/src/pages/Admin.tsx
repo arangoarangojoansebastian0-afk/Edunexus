@@ -30,7 +30,7 @@ import {
   Users, UserCheck, ClipboardList, Calendar, Key, BarChart2,
   Clock, Eye, BookMarked, Plus, Trash2, Edit, CheckCircle,
   XCircle, Save, RefreshCw, AlertTriangle, TrendingUp,
-  UserX, FileText, Bell, Layers, Monitor, Award,
+  UserX, FileText, Bell, Layers, Monitor, Award, Shield,
 } from "lucide-react";
 import type { User } from "@shared/schema";
  
@@ -598,6 +598,10 @@ function TabConfigAcademica() {
     evaluationType: "quantitative",
     passingGrade: "3.0",
     gradeScale: "1.0 - 5.0",
+    qualitativeScale: "Bajo,Básico,Alto,Superior",
+    emailAllowedDomain: "",
+    gcClientId: "",
+    gcClientSecret: "",
   });
  
   const { data: years = [], isLoading: loadingYears } = useQuery<any[]>({
@@ -610,6 +614,10 @@ function TabConfigAcademica() {
         evaluationType: config.evaluationType || "quantitative",
         passingGrade: config.passingGrade || "3.0",
         gradeScale: config.gradeScale || "1.0 - 5.0",
+        qualitativeScale: config.qualitativeScale || "Bajo,Básico,Alto,Superior",
+        emailAllowedDomain: config.emailAllowedDomain || "",
+        gcClientId: config.gcClientId || "",
+        gcClientSecret: config.gcClientSecret || "",
       });
     }
   }, [config]);
@@ -747,9 +755,86 @@ function TabConfigAcademica() {
               />
             </div>
           </div>
+          {/* Escala cualitativa — solo si evaluationType no es quantitative */}
+          {form.evaluationType !== "quantitative" && (
+            <div className="space-y-1 pt-2">
+              <Label>Niveles de valoración cualitativa</Label>
+              <Input
+                placeholder="Bajo,Básico,Alto,Superior"
+                value={form.qualitativeScale}
+                onChange={(e) => setForm((p) => ({ ...p, qualitativeScale: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">
+                Separa los niveles con comas, de menor a mayor. Se usarán en boletines y aulas virtuales.
+              </p>
+            </div>
+          )}
           <Button onClick={() => save.mutate()} disabled={save.isPending}>
             <Save className="h-4 w-4 mr-2" />
             {save.isPending ? "Guardando..." : "Guardar sistema evaluativo"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Restricción de dominio de correo */}
+      <Card className="max-w-2xl">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5" /> Restricción de dominio de correo
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1">
+            <Label>Dominio institucional permitido</Label>
+            <Input
+              placeholder="iecolegioloyola.edu.co"
+              value={form.emailAllowedDomain}
+              onChange={(e) => setForm((p) => ({ ...p, emailAllowedDomain: e.target.value }))}
+            />
+            <p className="text-xs text-muted-foreground">
+              Si defines un dominio, solo correos con ese dominio podrán registrarse en tu institución.
+              Déjalo vacío para no restringir.
+            </p>
+          </div>
+          <Button onClick={() => save.mutate()} disabled={save.isPending} variant="outline">
+            <Save className="h-4 w-4 mr-2" />
+            Guardar restricción de dominio
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Google Classroom — credenciales OAuth */}
+      <Card className="max-w-2xl">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Monitor className="h-5 w-5 text-green-600" /> Google Classroom — credenciales OAuth
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Configura las credenciales de tu proyecto en Google Cloud Console para que los docentes puedan conectar su Google Classroom.
+            El <strong>Authorized Redirect URI</strong> debe ser: <code className="bg-muted px-1 py-0.5 rounded text-xs">/api/classroom/google/callback</code>
+          </p>
+          <div className="space-y-1">
+            <Label>Google Client ID</Label>
+            <Input
+              placeholder="xxxxx.apps.googleusercontent.com"
+              value={form.gcClientId}
+              onChange={(e) => setForm((p) => ({ ...p, gcClientId: e.target.value }))}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>Google Client Secret</Label>
+            <Input
+              type="password"
+              placeholder="GOCSPX-..."
+              value={form.gcClientSecret}
+              onChange={(e) => setForm((p) => ({ ...p, gcClientSecret: e.target.value }))}
+            />
+          </div>
+          <Button onClick={() => save.mutate()} disabled={save.isPending}>
+            <Save className="h-4 w-4 mr-2" />
+            Guardar credenciales de Google
           </Button>
         </CardContent>
       </Card>
@@ -2509,9 +2594,12 @@ function TabHorarios() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/schedules"] });
       setShowForm(false);
       setForm({ groupId: "", subjectId: "", teacherId: "", day: "Lunes", startTime: "", endTime: "", room: "" });
-      toast({ title: "Horario creado" });
+      toast({ title: "Horario creado correctamente" });
     },
-    onError: () => toast({ title: "Error — puede haber conflicto de horario", variant: "destructive" }),
+    onError: (err: any) => {
+      const msg = err?.message || "Error al guardar el horario";
+      toast({ title: "Error al guardar", description: msg, variant: "destructive" });
+    },
   });
 
   const del = useMutation({
@@ -3214,28 +3302,87 @@ function TabBoletines() {
 // ─── CLASSROOM (vista admin) ──────────────────────────────────────────────────
  
 function TabClassroom() {
-  const { data: courses = [], isLoading } = useQuery<any[]>({
-    queryKey: ["/api/courses"],  // ahora existe el endpoint
+  const { toast } = useToast();
+  const { data: courses = [], isLoading } = useQuery<any[]>({ queryKey: ["/api/courses"] });
+  const { data: teachers = [] } = useQuery<any[]>({ queryKey: ["/api/admin/users", "teacher"] });
+  const { data: academicGroups = [] } = useQuery<any[]>({ queryKey: ["/api/admin/academic-groups"] });
+  const { data: gradesList = [] } = useQuery<any[]>({ queryKey: ["/api/admin/grades"] });
+  const { data: subjects = [] } = useQuery<any[]>({ queryKey: ["/api/admin/subjects"] });
+  const { data: years = [] } = useQuery<any[]>({ queryKey: ["/api/admin/academic-years"] });
+  const { data: institution } = useQuery<any>({ queryKey: ["/api/admin/institution"] });
+  const [showForm, setShowForm] = useState(false);
+  const [selectedYearId, setSelectedYearId] = useState("");
+  const { data: periods = [] } = useQuery<any[]>({
+    queryKey: ["/api/admin/academic-years", selectedYearId, "periods"],
+    enabled: !!selectedYearId,
   });
- 
+
+  const [form, setForm] = useState({
+    name: "", subject: "", teacherId: "", gradeId: "", groupId: "",
+    academicYearId: "", academicPeriodId: "", semester: "", description: "",
+  });
+
+  const teacherList = (teachers as any[]).filter((u: any) => u.role === "teacher");
+  const activeYear = (years as any[]).find((y: any) => y.isActive);
+
+  const create = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/courses", {
+      ...form,
+      evaluationType: institution?.evaluationType || "quantitative",
+      qualitativeScale: institution?.qualitativeScale,
+      gradeScale: institution?.gradeScale,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/courses"] });
+      setShowForm(false);
+      setForm({ name: "", subject: "", teacherId: "", gradeId: "", groupId: "",
+        academicYearId: "", academicPeriodId: "", semester: "", description: "" });
+      toast({ title: "Aula virtual creada" });
+    },
+    onError: (e: any) => toast({ title: "Error al crear el aula", description: e.message, variant: "destructive" }),
+  });
+
+  const toggleActive = useMutation({
+    mutationFn: (c: any) => apiRequest("PATCH", `/api/courses/${c.id}`, { isActive: !c.isActive }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/courses"] }),
+  });
+
+  const deleteCourse = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/courses/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/courses"] }),
+  });
+
+  const evalLabel = institution?.evaluationType === "qualitative" ? "Cualitativo"
+    : institution?.evaluationType === "mixed" ? "Mixto" : "Cuantitativo";
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <p className="text-sm text-muted-foreground">{courses.length} cursos activos</p>
+        <div>
+          <p className="text-sm text-muted-foreground">{(courses as any[]).length} aulas registradas</p>
+          <p className="text-xs text-muted-foreground">
+            Sistema evaluativo: <span className="font-medium text-foreground">{evalLabel}</span>
+            {institution?.gradeScale ? ` (${institution.gradeScale})` : ""}
+            {institution?.qualitativeScale ? ` — ${institution.qualitativeScale}` : ""}
+          </p>
+        </div>
+        <Button onClick={() => setShowForm(true)}>
+          <Plus className="h-4 w-4 mr-2" /> Nueva aula
+        </Button>
       </div>
- 
-      {isLoading ? (
-        <Skeleton className="h-48 w-full" />
-      ) : (
+
+      {isLoading ? <Skeleton className="h-48 w-full" /> : (
         <Card>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Curso</TableHead>
+                <TableHead>Aula</TableHead>
                 <TableHead>Materia</TableHead>
                 <TableHead>Docente</TableHead>
-                <TableHead>Grado</TableHead>
+                <TableHead>Grupo</TableHead>
+                <TableHead>Periodo</TableHead>
                 <TableHead>Estado</TableHead>
+                <TableHead className="w-20"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -3244,28 +3391,30 @@ function TabClassroom() {
                   <TableCell className="font-medium">{c.name}</TableCell>
                   <TableCell className="text-sm">{c.subject}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {c.teacher
-                      ? getFullName(c.teacher.firstName, c.teacher.lastName)
-                      : c.teacherId}
+                    {c.teacher ? getFullName(c.teacher.firstName, c.teacher.lastName) : "—"}
                   </TableCell>
+                  <TableCell>{c.groupName || c.grade || "—"}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{c.periodName || "—"}</TableCell>
                   <TableCell>
-                    {c.grade ? (
-                      <Badge variant="outline">{c.grade}</Badge>
-                    ) : (
-                      <span className="text-muted-foreground text-sm">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={c.isActive ? "default" : "secondary"}>
+                    <Badge
+                      variant={c.isActive ? "default" : "secondary"}
+                      className="cursor-pointer"
+                      onClick={() => toggleActive.mutate(c)}
+                    >
                       {c.isActive ? "Activo" : "Inactivo"}
                     </Badge>
                   </TableCell>
+                  <TableCell>
+                    <Button size="icon" variant="ghost" onClick={() => deleteCourse.mutate(c.id)}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
-              {courses.length === 0 && (
+              {(courses as any[]).length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                    Sin cursos registrados
+                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                    Sin aulas registradas. Crea la primera.
                   </TableCell>
                 </TableRow>
               )}
@@ -3273,6 +3422,108 @@ function TabClassroom() {
           </Table>
         </Card>
       )}
+
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Nueva aula virtual</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            {/* Info del sistema evaluativo */}
+            <div className="rounded-lg bg-primary/5 border border-primary/20 px-3 py-2 text-xs text-primary">
+              Sistema evaluativo: <strong>{evalLabel}</strong>
+              {institution?.gradeScale ? ` · ${institution.gradeScale}` : ""}
+              {institution?.qualitativeScale ? ` · Niveles: ${institution.qualitativeScale}` : ""}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2 space-y-1">
+                <Label>Nombre del aula *</Label>
+                <Input placeholder="Ej: Matemáticas 10-1 — P1 2025"
+                  value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Materia *</Label>
+                <Select value={form.subject} onValueChange={v => setForm(p => ({ ...p, subject: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Selecciona..." /></SelectTrigger>
+                  <SelectContent>
+                    {(subjects as any[]).map((s: any) => (
+                      <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Docente *</Label>
+                <Select value={form.teacherId} onValueChange={v => setForm(p => ({ ...p, teacherId: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Selecciona..." /></SelectTrigger>
+                  <SelectContent>
+                    {teacherList.map((t: any) => (
+                      <SelectItem key={t.id} value={t.id}>{getFullName(t.firstName, t.lastName)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Grado</Label>
+                <Select value={form.gradeId} onValueChange={v => setForm(p => ({ ...p, gradeId: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Selecciona..." /></SelectTrigger>
+                  <SelectContent>
+                    {(gradesList as any[]).map((g: any) => (
+                      <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Grupo</Label>
+                <Select value={form.groupId} onValueChange={v => setForm(p => ({ ...p, groupId: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Selecciona..." /></SelectTrigger>
+                  <SelectContent>
+                    {(academicGroups as any[]).map((g: any) => (
+                      <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Año académico</Label>
+                <Select value={form.academicYearId || activeYear?.id || ""}
+                  onValueChange={v => { setForm(p => ({ ...p, academicYearId: v })); setSelectedYearId(v); }}>
+                  <SelectTrigger><SelectValue placeholder="Selecciona..." /></SelectTrigger>
+                  <SelectContent>
+                    {(years as any[]).map((y: any) => (
+                      <SelectItem key={y.id} value={y.id}>{y.year}{y.isActive ? " (activo)" : ""}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Periodo académico</Label>
+                <Select value={form.academicPeriodId} onValueChange={v => setForm(p => ({ ...p, academicPeriodId: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Selecciona año primero..." /></SelectTrigger>
+                  <SelectContent>
+                    {(periods as any[]).map((p: any) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}{p.isActive ? " ✓" : ""}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label>Descripción (opcional)</Label>
+                <Textarea placeholder="Descripción del aula..." rows={2} className="resize-none"
+                  value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
+            <Button onClick={() => create.mutate()} disabled={create.isPending || !form.name || !form.subject || !form.teacherId}>
+              {create.isPending ? "Creando..." : "Crear aula"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import connectPgSimple from "connect-pg-simple";
 import { pool } from "./db";
 import type { Express, Request as ExpressRequest, Response, NextFunction } from "express";
 import { type Server } from "http";
+import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
 import { setupAuthRoutes } from "./authRoutes";
 import { master2000Provider } from "./providers/master2000";
@@ -800,7 +801,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
       }
       res.json(await storage.getInstitutionalStats(req.user.institutionId));
-    } catch { res.status(500).json({ message: "Error" }); }
+    } catch (e: any) { console.error("[stats]", e.message); res.status(500).json({ message: e.message }); }
   });
 
   // ─── INDICADORES DE GESTIÓN (detalle) ────────────────────────────────
@@ -990,6 +991,33 @@ export async function registerRoutes(
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
+  // Crear clase en horario
+  app.post("/api/admin/schedules", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) {
+        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      }
+      const { groupId, subjectId, teacherId, day, startTime, endTime, room } = req.body;
+      if (!groupId || !subjectId || !teacherId || !day || !startTime || !endTime) {
+        return res.status(400).json({ error: "Faltan campos obligatorios: grupo, materia, docente, día, hora inicio y hora fin" });
+      }
+      const created = await storage.createSchedule({ groupId, subjectId, teacherId, day, startTime, endTime, room });
+      res.status(201).json(created);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Error al crear el horario" });
+    }
+  });
+
+  // Eliminar clase del horario
+  app.delete("/api/admin/schedules/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteSchedule(req.params.id);
+      res.status(204).end();
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Error al eliminar el horario" });
+    }
+  });
+
   // Horarios públicos por grupo (para vista de grupo/perfil de estudiante)
   app.get("/api/group-schedule/:groupId", requireAuth, async (req, res) => {
     try {
@@ -1038,13 +1066,75 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/courses", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/courses", requireAuth, async (req, res) => {
     try {
-      if (!req.user?.institutionId) {
-        return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
-      }
+      if (!req.user?.institutionId) return res.status(400).json({ error: "Sin institución" });
       res.json(await storage.getAllCoursesForAdmin(req.user.institutionId));
-    } catch { res.status(500).json({ message: "Error" }); }
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Crear aula virtual con grupo, grado, periodo y sistema evaluativo
+  app.post("/api/courses", requireAuth, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "Sin institución" });
+      const { name, subject, teacherId, gradeId, groupId, academicYearId, academicPeriodId, semester, description, evaluationType, qualitativeScale, gradeScale } = req.body;
+      if (!name || !subject || !teacherId) return res.status(400).json({ error: "Faltan campos: name, subject, teacherId" });
+
+      const { db } = await import("./db");
+      const { courses, academicGroups, grades, academicPeriods } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      // Obtener nombre del grado y grupo
+      let gradeName = "";
+      let groupName = "";
+      let periodName = "";
+      if (gradeId) {
+        const [g] = await db.select({ name: grades.name }).from(grades).where(eq(grades.id, gradeId));
+        gradeName = g?.name || "";
+      }
+      if (groupId) {
+        const [g] = await db.select({ name: academicGroups.name }).from(academicGroups).where(eq(academicGroups.id, groupId));
+        groupName = g?.name || "";
+      }
+      if (academicPeriodId) {
+        const [p] = await db.select({ name: academicPeriods.name }).from(academicPeriods).where(eq(academicPeriods.id, academicPeriodId));
+        periodName = p?.name || "";
+      }
+
+      const [created] = await db.insert(courses).values({
+        institutionId: req.user.institutionId,
+        name, subject, teacherId,
+        grade: gradeName || gradeId || null,
+        groupId: groupId || null,
+        semester: semester || periodName || null,
+        description: description || null,
+        isActive: true,
+      }).returning();
+
+      res.status(201).json({ ...created, groupName, periodName });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Actualizar / toggle aula
+  app.patch("/api/courses/:id", requireAuth, async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { courses } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const [updated] = await db.update(courses).set(req.body).where(eq(courses.id, req.params.id)).returning();
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Eliminar aula
+  app.delete("/api/courses/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { courses } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(courses).where(eq(courses.id, req.params.id));
+      res.status(204).end();
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   app.post("/api/admin/teacher-assignments", requireAuth, requireAdmin, async (req, res) => {
@@ -1445,6 +1535,70 @@ export async function registerRoutes(
     }
   });
 
+  // Matricular a todos los estudiantes de un grupo de una vez
+  app.post("/api/classroom/courses/:id/enroll-group", requireAuth, async (req, res) => {
+    try {
+      const { groupId } = req.body;
+      if (!groupId) return res.status(400).json({ error: "groupId requerido" });
+
+      const { db } = await import("./db");
+      const { studentEnrollments, courseEnrollments, users } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      // Obtener estudiantes activos del grupo académico
+      const groupStudents = await db
+        .select({ studentId: studentEnrollments.studentId })
+        .from(studentEnrollments)
+        .innerJoin(users, eq(studentEnrollments.studentId, users.id))
+        .where(and(
+          eq(studentEnrollments.groupId, groupId),
+          eq(users.role, "student"),
+        ));
+
+      if (groupStudents.length === 0) {
+        return res.json({ enrolled: 0, skipped: 0, message: "El grupo no tiene estudiantes matriculados" });
+      }
+
+      // Ya inscritos en este curso
+      const existing = await db
+        .select({ studentId: courseEnrollments.studentId })
+        .from(courseEnrollments)
+        .where(eq(courseEnrollments.courseId, req.params.id));
+      const existingIds = new Set(existing.map(e => e.studentId));
+
+      let enrolled = 0;
+      let skipped = 0;
+      for (const { studentId } of groupStudents) {
+        if (existingIds.has(studentId)) { skipped++; continue; }
+        try {
+          await db.insert(courseEnrollments).values({
+            courseId: req.params.id,
+            studentId,
+            status: "active",
+          });
+          enrolled++;
+        } catch { skipped++; }
+      }
+
+      res.json({ enrolled, skipped, total: groupStudents.length });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Docente elimina un estudiante específico del aula
+  app.delete("/api/classroom/courses/:id/students/:studentId", requireAuth, async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { courseEnrollments } = await import("@shared/schema");
+      const { and, eq } = await import("drizzle-orm");
+      await db.delete(courseEnrollments).where(and(
+        eq(courseEnrollments.courseId, req.params.id),
+        eq(courseEnrollments.studentId, req.params.studentId),
+      ));
+      res.status(204).end();
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Estudiante se desinscribe a sí mismo
   app.delete("/api/classroom/courses/:id/enroll", requireAuth, async (req, res) => {
     try {
       await storage.unenrollStudent(req.params.id, req.user!.id);
@@ -1502,6 +1656,59 @@ export async function registerRoutes(
     } catch (err) {
       res.status(500).json({ message: "Failed to delete activity" });
     }
+  });
+
+  // Entregas de una actividad específica (para docente)
+  app.get("/api/classroom/activities/:id/submissions", requireAuth, async (req, res) => {
+    try {
+      const subs = await storage.getSubmissions(req.params.id);
+      res.json(subs);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Todas las entregas de un curso (para la matriz de calificaciones)
+  app.get("/api/classroom/courses/:id/submissions", requireAuth, async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { submissions, activities, users } = await import("@shared/schema");
+      const { eq, inArray } = await import("drizzle-orm");
+
+      // Get all activity ids for this course
+      const acts = await db.select({ id: activities.id })
+        .from(activities).where(eq(activities.courseId, req.params.id));
+      if (acts.length === 0) return res.json([]);
+      const actIds = acts.map((a) => a.id);
+
+      const rows = await db.select()
+        .from(submissions)
+        .innerJoin(users, eq(submissions.studentId, users.id))
+        .where(inArray(submissions.activityId, actIds));
+
+      res.json(rows.map((r) => ({ ...r.submissions, student: r.users })));
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Calificar una entrega — acepta grade como string (cuantitativo o cualitativo)
+  app.patch("/api/classroom/submissions/:id/grade", requireAuth, async (req, res) => {
+    try {
+      if (req.user!.role !== "teacher" && req.user!.role !== "admin") {
+        return res.status(403).json({ message: "No autorizado" });
+      }
+      const { db } = await import("./db");
+      const { submissions } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const [updated] = await db.update(submissions)
+        .set({
+          grade: String(req.body.grade),
+          feedback: req.body.feedback || null,
+          gradedAt: new Date(),
+          gradedBy: req.user!.id,
+          status: "graded",
+        })
+        .where(eq(submissions.id, req.params.id))
+        .returning();
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   app.post("/api/classroom/activities/:id/submit", requireAuth, upload.array("attachments", 5), async (req, res) => {
@@ -1571,6 +1778,538 @@ export async function registerRoutes(
     } catch (err) {
       res.status(500).json({ message: "Sync failed" });
     }
+  });
+
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // GOOGLE CLASSROOM INTEGRATION
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // Iniciar OAuth de Google Classroom para el docente
+  app.get("/api/classroom/google/auth-url", requireAuth, (req, res) => {
+    const { gcClientId } = req.query as { gcClientId?: string };
+    const clientId = gcClientId || process.env.GOOGLE_CLIENT_ID;
+    if (!clientId) return res.status(400).json({ error: "Google Client ID no configurado" });
+
+    const redirectUri = `${process.env.APP_URL || "http://localhost:5000"}/api/classroom/google/callback`;
+    const scope = [
+      "https://www.googleapis.com/auth/classroom.courses",
+      "https://www.googleapis.com/auth/classroom.rosters",
+      "https://www.googleapis.com/auth/classroom.coursework.students",
+      "https://www.googleapis.com/auth/classroom.coursework.me",
+      "https://www.googleapis.com/auth/classroom.announcements",
+      "openid", "email", "profile",
+    ].join(" ");
+
+    const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    url.searchParams.set("client_id", clientId);
+    url.searchParams.set("redirect_uri", redirectUri);
+    url.searchParams.set("response_type", "code");
+    url.searchParams.set("scope", scope);
+    url.searchParams.set("access_type", "offline");
+    url.searchParams.set("prompt", "consent");
+    url.searchParams.set("state", req.user!.id);
+
+    res.json({ url: url.toString() });
+  });
+
+  // Callback OAuth — intercambia código por tokens y los guarda
+  app.get("/api/classroom/google/callback", requireAuth, async (req, res) => {
+    const { code, state } = req.query as { code?: string; state?: string };
+    if (!code) return res.redirect("/?gc_error=no_code");
+
+    try {
+      const institution = await storage.getInstitutionSettings(req.user!.institutionId!);
+      const clientId = institution?.gcClientId || process.env.GOOGLE_CLIENT_ID;
+      const clientSecret = institution?.gcClientSecret || process.env.GOOGLE_CLIENT_SECRET;
+      const redirectUri = `${process.env.APP_URL || "http://localhost:5000"}/api/classroom/google/callback`;
+
+      const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          code: code as string, client_id: clientId!, client_secret: clientSecret!,
+          redirect_uri: redirectUri, grant_type: "authorization_code",
+        }),
+      });
+      const tokens = await tokenRes.json() as any;
+      if (tokens.error) throw new Error(tokens.error_description);
+
+      // Obtener email del docente
+      const profileRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      });
+      const profile = await profileRes.json() as any;
+
+      const { db } = await import("./db");
+      const { googleClassroomTokens } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      await db.insert(googleClassroomTokens).values({
+        userId: req.user!.id,
+        institutionId: req.user!.institutionId!,
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || null,
+        expiresAt: tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : null,
+        email: profile.email,
+      }).onConflictDoUpdate({
+        target: googleClassroomTokens.userId,
+        set: {
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token || undefined,
+          expiresAt: tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : undefined,
+          email: profile.email,
+          updatedAt: new Date(),
+        },
+      });
+
+      res.redirect("/?gc_connected=1");
+    } catch (e: any) {
+      res.redirect(`/?gc_error=${encodeURIComponent(e.message)}`);
+    }
+  });
+
+  // Estado de conexión Google Classroom del docente actual
+  app.get("/api/classroom/google/status", requireAuth, async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { googleClassroomTokens } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const rows = await db.select().from(googleClassroomTokens)
+        .where(eq(googleClassroomTokens.userId, req.user!.id)).limit(1);
+      if (rows.length === 0) return res.json({ connected: false });
+      res.json({ connected: true, email: rows[0].email });
+    } catch { res.json({ connected: false }); }
+  });
+
+  // Desconectar Google Classroom
+  app.delete("/api/classroom/google/disconnect", requireAuth, async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { googleClassroomTokens } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(googleClassroomTokens).where(eq(googleClassroomTokens.userId, req.user!.id));
+      res.json({ success: true });
+    } catch { res.status(500).json({ error: "Error al desconectar" }); }
+  });
+
+  // Listar cursos del docente en Google Classroom
+  app.get("/api/classroom/google/courses", requireAuth, async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { googleClassroomTokens } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const rows = await db.select().from(googleClassroomTokens)
+        .where(eq(googleClassroomTokens.userId, req.user!.id)).limit(1);
+      if (rows.length === 0) return res.status(401).json({ error: "No conectado a Google Classroom" });
+
+      const gcRes = await fetch(
+        "https://classroom.googleapis.com/v1/courses?teacherId=me&courseStates=ACTIVE&pageSize=50",
+        { headers: { Authorization: `Bearer ${rows[0].accessToken}` } }
+      );
+      const data = await gcRes.json() as any;
+      res.json(data.courses || []);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Vincular curso local con curso de Google Classroom
+  app.post("/api/classroom/google/link", requireAuth, async (req, res) => {
+    try {
+      const { courseId, gcCourseId, gcCourseName } = req.body;
+      const { db } = await import("./db");
+      const { googleClassroomCourseLinks } = await import("@shared/schema");
+      const [link] = await db.insert(googleClassroomCourseLinks).values({
+        courseId, gcCourseId, gcCourseName,
+        teacherId: req.user!.id,
+        institutionId: req.user!.institutionId!,
+      }).returning();
+      res.json(link);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Sincronizar estudiantes del grupo local al curso de GC
+  app.post("/api/classroom/google/sync-students/:gcCourseId", requireAuth, async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { googleClassroomTokens, googleClassroomCourseLinks, studentEnrollments, users } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const tokenRows = await db.select().from(googleClassroomTokens)
+        .where(eq(googleClassroomTokens.userId, req.user!.id)).limit(1);
+      if (tokenRows.length === 0) return res.status(401).json({ error: "No conectado a GC" });
+
+      const accessToken = tokenRows[0].accessToken;
+      const { gcCourseId } = req.params;
+      const { groupId } = req.body;
+
+      // Obtener estudiantes del grupo
+      const enrolled = await db
+        .select({ email: users.email, firstName: users.firstName, lastName: users.lastName })
+        .from(studentEnrollments)
+        .innerJoin(users, eq(studentEnrollments.studentId, users.id))
+        .where(eq(studentEnrollments.groupId, groupId));
+
+      const results = { invited: 0, errors: 0 };
+      for (const student of enrolled) {
+        if (!student.email) continue;
+        const inv = await fetch(
+          `https://classroom.googleapis.com/v1/courses/${gcCourseId}/students`,
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: student.email }),
+          }
+        );
+        if (inv.ok) results.invited++; else results.errors++;
+      }
+      res.json(results);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Sincronizar notas de GC → sistema local (respetando evaluationType)
+  app.post("/api/classroom/google/sync-grades/:gcCourseId", requireAuth, async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { googleClassroomTokens } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const tokenRows = await db.select().from(googleClassroomTokens)
+        .where(eq(googleClassroomTokens.userId, req.user!.id)).limit(1);
+      if (tokenRows.length === 0) return res.status(401).json({ error: "No conectado a GC" });
+      const accessToken = tokenRows[0].accessToken;
+      const { gcCourseId } = req.params;
+      const { subjectId, groupId, academicPeriodId, evaluationType, qualitativeScale } = req.body;
+
+      // Obtener trabajos del curso en GC
+      const worksRes = await fetch(
+        `https://classroom.googleapis.com/v1/courses/${gcCourseId}/courseWork`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      const worksData = await worksRes.json() as any;
+      const works = worksData.courseWork || [];
+
+      if (works.length === 0) return res.json({ synced: 0, message: "Sin trabajos en este curso de GC" });
+
+      // Para cada trabajo obtener las entregas
+      let totalSynced = 0;
+      for (const work of works) {
+        const subRes = await fetch(
+          `https://classroom.googleapis.com/v1/courses/${gcCourseId}/courseWork/${work.id}/studentSubmissions`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        const subData = await subRes.json() as any;
+        const submissions = (subData.studentSubmissions || []).filter((s: any) => s.assignedGrade !== undefined);
+
+        for (const sub of submissions) {
+          // Convertir nota de GC al sistema del colegio
+          let gradeValue: string;
+          const rawGrade = sub.assignedGrade as number;
+          const maxPoints = work.maxPoints || 100;
+          const pct = (rawGrade / maxPoints) * 100;
+
+          if (evaluationType === "qualitative") {
+            const levels = (qualitativeScale || "Bajo,Básico,Alto,Superior").split(",").map((l: string) => l.trim());
+            const idx = Math.min(Math.floor((pct / 100) * levels.length), levels.length - 1);
+            gradeValue = levels[idx];
+          } else {
+            // quantitative: mapear pct a escala 1-5 o 0-100 según gradeScale
+            const scale = req.body.gradeScale || "1.0-5.0";
+            if (scale.includes("100")) {
+              gradeValue = pct.toFixed(1);
+            } else {
+              // default 1.0–5.0
+              const mapped = 1 + (pct / 100) * 4;
+              gradeValue = Math.min(5, Math.max(1, mapped)).toFixed(1);
+            }
+          }
+
+          // Buscar estudiante por su userId de GC → email
+          const profileRes = await fetch(
+            `https://classroom.googleapis.com/v1/userProfiles/${sub.userId}`,
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          );
+          const profile = await profileRes.json() as any;
+          const studentEmail = profile.emailAddress;
+          if (!studentEmail) continue;
+
+          const studentRows = await db
+            .select({ id: (await import("@shared/schema")).users.id })
+            .from((await import("@shared/schema")).users)
+            .where(eq((await import("@shared/schema")).users.email, studentEmail))
+            .limit(1);
+          if (studentRows.length === 0) continue;
+
+          await storage.upsertGradebookEntry({
+            institutionId: req.user!.institutionId!,
+            studentId: studentRows[0].id,
+            subjectId, groupId, academicPeriodId,
+            grade: gradeValue,
+            notes: `Sincronizado desde Google Classroom: ${work.title}`,
+            recordedBy: req.user!.id,
+          });
+          totalSynced++;
+        }
+      }
+      res.json({ synced: totalSynced });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Publicar comunicado en curso de GC
+  app.post("/api/classroom/google/announce/:gcCourseId", requireAuth, async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { googleClassroomTokens } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const tokenRows = await db.select().from(googleClassroomTokens)
+        .where(eq(googleClassroomTokens.userId, req.user!.id)).limit(1);
+      if (tokenRows.length === 0) return res.status(401).json({ error: "No conectado a GC" });
+
+      const annRes = await fetch(
+        `https://classroom.googleapis.com/v1/courses/${req.params.gcCourseId}/announcements`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${tokenRows[0].accessToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ text: req.body.text, state: "PUBLISHED" }),
+        }
+      );
+      const ann = await annRes.json();
+      res.json(ann);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // MENSAJES DIRECTOS (chat privado)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // Listar conversaciones del usuario (última de cada hilo)
+  app.get("/api/direct-messages/conversations", requireAuth, async (req, res) => {
+    try {
+      const rows = await storage.getDirectConversations(req.user!.id, req.user!.institutionId!);
+      res.json(rows);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Mensajes entre dos usuarios
+  app.get("/api/direct-messages/:otherId", requireAuth, async (req, res) => {
+    try {
+      const msgs = await storage.getDirectMessages(req.user!.id, req.params.otherId, req.user!.institutionId!);
+      // Marcar como leídos
+      await storage.markDirectMessagesRead(req.user!.id, req.params.otherId);
+      res.json(msgs);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Enviar mensaje directo
+  app.post("/api/direct-messages/:receiverId", requireAuth, async (req, res) => {
+    try {
+      const msg = await storage.sendDirectMessage({
+        senderId: req.user!.id,
+        receiverId: req.params.receiverId,
+        institutionId: req.user!.institutionId!,
+        content: req.body.content,
+      });
+      res.status(201).json(msg);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Número de mensajes no leídos
+  app.get("/api/direct-messages/unread/count", requireAuth, async (req, res) => {
+    try {
+      const count = await storage.getUnreadDirectMessageCount(req.user!.id);
+      res.json({ count });
+    } catch { res.json({ count: 0 }); }
+  });
+
+  // Buscar usuarios de la institución para iniciar chat
+  app.get("/api/users/search", requireAuth, async (req, res) => {
+    try {
+      const q = (req.query.q as string || "").toLowerCase();
+      if (!q || q.length < 2) return res.json([]);
+      const all = await storage.getUsersByInstitution(req.user!.institutionId!);
+      const filtered = all
+        .filter(u => u.id !== req.user!.id)
+        .filter(u => {
+          const full = `${u.firstName} ${u.lastName} ${u.email}`.toLowerCase();
+          return full.includes(q);
+        })
+        .slice(0, 15);
+      res.json(filtered);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // ACTIVIDADES DEL USUARIO (para calendario)
+  // ──────────────────────────────────────────────────────────────────────────
+  app.get("/api/classroom/my-activities", requireAuth, async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { activities, courses, courseEnrollments } = await import("@shared/schema");
+      const { eq, and, isNotNull, or } = await import("drizzle-orm");
+      const uid = req.user!.id;
+      const role = req.user!.role;
+
+      let rows: any[] = [];
+      if (role === "teacher" || role === "admin") {
+        // Docente: todas las actividades de sus cursos con dueDate
+        rows = await db.select({
+          id: activities.id, title: activities.title, description: activities.description,
+          dueDate: activities.dueDate, maxScore: activities.maxScore, type: activities.type,
+          courseId: activities.courseId, courseName: courses.name,
+        }).from(activities)
+          .innerJoin(courses, eq(activities.courseId, courses.id))
+          .where(and(eq(courses.teacherId, uid), isNotNull(activities.dueDate)));
+      } else {
+        // Estudiante: actividades de cursos en los que está matriculado
+        rows = await db.select({
+          id: activities.id, title: activities.title, description: activities.description,
+          dueDate: activities.dueDate, maxScore: activities.maxScore, type: activities.type,
+          courseId: activities.courseId, courseName: courses.name,
+        }).from(activities)
+          .innerJoin(courses, eq(activities.courseId, courses.id))
+          .innerJoin(courseEnrollments, and(
+            eq(courseEnrollments.courseId, courses.id),
+            eq(courseEnrollments.studentId, uid),
+          ))
+          .where(and(isNotNull(activities.dueDate), eq(activities.isPublished, true)));
+      }
+      res.json(rows);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // WEBRTC SIGNALING (llamadas de voz y video peer-to-peer)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // Crear sala de llamada
+  app.post("/api/calls/rooms", requireAuth, async (req, res) => {
+    try {
+      const roomId = `room_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const { targetUserId, type } = req.body; // type: 'video' | 'audio'
+      res.json({
+        roomId,
+        callerId: req.user!.id,
+        targetUserId,
+        type: type || "video",
+      });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ── WebSocket signaling server ─────────────────────────────────────────────
+  const wss = new WebSocketServer({ server: httpServer, path: "/ws/calls" });
+  // Map roomId → Map<userId, WebSocket>
+  const rooms = new Map<string, Map<string, WebSocket>>();
+  // Map userId → WebSocket (for direct signaling)
+  const userSockets = new Map<string, WebSocket>();
+
+  wss.on("connection", (ws: WebSocket, req) => {
+    let currentUserId: string | null = null;
+    let currentRoomId: string | null = null;
+
+    ws.on("message", (raw) => {
+      try {
+        const msg = JSON.parse(raw.toString());
+
+        switch (msg.type) {
+          case "register": {
+            // { type: "register", userId: string }
+            currentUserId = msg.userId;
+            userSockets.set(msg.userId, ws);
+            ws.send(JSON.stringify({ type: "registered", userId: msg.userId }));
+            break;
+          }
+          case "call-request": {
+            // { type: "call-request", roomId, targetUserId, callerId, callerName, callType }
+            const targetWs = userSockets.get(msg.targetUserId);
+            if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+              targetWs.send(JSON.stringify({
+                type: "incoming-call",
+                roomId: msg.roomId,
+                callerId: msg.callerId,
+                callerName: msg.callerName,
+                callType: msg.callType || "video",
+              }));
+            }
+            break;
+          }
+          case "call-accepted": {
+            // { type: "call-accepted", roomId, callerId }
+            const callerWs = userSockets.get(msg.callerId);
+            if (callerWs && callerWs.readyState === WebSocket.OPEN) {
+              callerWs.send(JSON.stringify({ type: "call-accepted", roomId: msg.roomId }));
+            }
+            break;
+          }
+          case "call-rejected": {
+            const callerWs = userSockets.get(msg.callerId);
+            if (callerWs && callerWs.readyState === WebSocket.OPEN) {
+              callerWs.send(JSON.stringify({ type: "call-rejected", roomId: msg.roomId }));
+            }
+            break;
+          }
+          case "join-room": {
+            // { type: "join-room", roomId, userId }
+            currentRoomId = msg.roomId;
+            if (!rooms.has(msg.roomId)) rooms.set(msg.roomId, new Map());
+            const room = rooms.get(msg.roomId)!;
+            // Notify others in the room
+            room.forEach((peerWs, peerId) => {
+              if (peerWs.readyState === WebSocket.OPEN) {
+                peerWs.send(JSON.stringify({ type: "peer-joined", peerId: msg.userId }));
+                ws.send(JSON.stringify({ type: "peer-joined", peerId }));
+              }
+            });
+            room.set(msg.userId, ws);
+            break;
+          }
+          case "offer":
+          case "answer":
+          case "ice-candidate": {
+            // WebRTC signaling: forward to target peer
+            if (!currentRoomId) break;
+            const room = rooms.get(currentRoomId);
+            if (!room) break;
+            const targetWs = room.get(msg.targetId);
+            if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+              targetWs.send(JSON.stringify({ ...msg, fromId: currentUserId }));
+            }
+            break;
+          }
+          case "call-ended": {
+            // Notify all peers in room
+            if (!currentRoomId) break;
+            const room = rooms.get(currentRoomId);
+            if (!room) break;
+            room.forEach((peerWs, peerId) => {
+              if (peerId !== currentUserId && peerWs.readyState === WebSocket.OPEN) {
+                peerWs.send(JSON.stringify({ type: "call-ended", fromId: currentUserId }));
+              }
+            });
+            break;
+          }
+        }
+      } catch (e) { /* ignore malformed */ }
+    });
+
+    ws.on("close", () => {
+      if (currentUserId) userSockets.delete(currentUserId);
+      if (currentRoomId && currentUserId) {
+        const room = rooms.get(currentRoomId);
+        if (room) {
+          room.delete(currentUserId);
+          if (room.size === 0) rooms.delete(currentRoomId);
+          else {
+            // Notify remaining peers
+            room.forEach((peerWs) => {
+              if (peerWs.readyState === WebSocket.OPEN) {
+                peerWs.send(JSON.stringify({ type: "peer-left", peerId: currentUserId }));
+              }
+            });
+          }
+        }
+      }
+    });
   });
 
   return httpServer;

@@ -17,15 +17,28 @@ export default function Calendar() {
     queryKey: ["/api/events"],
   });
 
+  // Tareas con fecha de entrega de todas las aulas del usuario
+  const { data: activities = [] } = useQuery<any[]>({
+    queryKey: ["/api/classroom/my-activities"],
+    queryFn: () => fetch("/api/classroom/my-activities", { credentials: "include" })
+      .then(r => r.ok ? r.json() : []).catch(() => []),
+  });
+
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
   const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
   const getEventsForDay = (day: Date) => {
-    return events.filter((event) => isSameDay(new Date(event.startTime), day));
+    const evts = (events as any[]).filter((event) => isSameDay(new Date(event.startTime), day));
+    const acts = (activities as any[]).filter((a) => a.dueDate && isSameDay(new Date(a.dueDate), day));
+    return {
+      events: evts,
+      tasks: acts,
+      total: evts.length + acts.length,
+    };
   };
 
-  const selectedDateEvents = selectedDate ? getEventsForDay(selectedDate) : [];
+  const selectedDayData = selectedDate ? getEventsForDay(selectedDate) : { events: [], tasks: [], total: 0 };
 
   const previousMonth = () => setCurrentDate(subMonths(currentDate, 1));
   const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
@@ -79,9 +92,10 @@ export default function Calendar() {
                 {/* Calendar grid */}
                 <div className="grid grid-cols-7 gap-2">
                   {daysInMonth.map((day) => {
-                    const dayEvents = getEventsForDay(day);
+                    const dayData = getEventsForDay(day);
                     const isSelected = selectedDate && isSameDay(day, selectedDate);
                     const isCurrentMonth = isSameMonth(day, currentDate);
+                    const hasItems = dayData.total > 0;
 
                     return (
                       <button
@@ -92,18 +106,23 @@ export default function Calendar() {
                             ? "text-muted-foreground bg-muted/30"
                             : isSelected
                               ? "bg-primary text-primary-foreground"
-                              : dayEvents.length > 0
-                                ? "bg-primary/20 text-primary hover:bg-primary/30"
+                              : hasItems
+                                ? "bg-primary/10 hover:bg-primary/20"
                                 : "hover:bg-muted"
                         }`}
                         data-testid={`calendar-day-${format(day, "yyyy-MM-dd")}`}
                       >
                         <div className="flex flex-col items-center justify-center h-full gap-0.5">
                           <span>{format(day, "d")}</span>
-                          {dayEvents.length > 0 && (
-                            <span className="text-xs bg-primary/80 text-white rounded px-1">
-                              {dayEvents.length}
-                            </span>
+                          {hasItems && (
+                            <div className="flex gap-0.5">
+                              {dayData.events.length > 0 && (
+                                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                              )}
+                              {dayData.tasks.length > 0 && (
+                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                              )}
+                            </div>
                           )}
                         </div>
                       </button>
@@ -123,61 +142,66 @@ export default function Calendar() {
                 </h3>
 
                 <div className="space-y-3">
-                  {selectedDateEvents.length > 0 ? (
-                    selectedDateEvents.map((event) => (
-                      <div
-                        key={event.id}
-                        className="border rounded-lg overflow-hidden hover:bg-muted/50 transition-colors"
-                        data-testid={`calendar-event-${event.id}`}
-                      >
-                        {event.imageUrl && (
-                          <div className="w-full h-32 bg-muted">
-                            <img src={event.imageUrl} alt={event.title} className="w-full h-full object-cover" />
-                          </div>
-                        )}
-                        <div className="p-3">
-                          <p className="font-medium text-sm mb-1">{event.title}</p>
-                          <p className="text-xs text-muted-foreground mb-2">{event.subject}</p>
-                        <div className="space-y-1 text-xs text-muted-foreground">
-                          <div className="flex items-center gap-2">
-                            <Clock className="h-3 w-3" />
-                            <span>
-                              {format(new Date(event.startTime), "HH:mm")} -{" "}
-                              {format(new Date(event.endTime), "HH:mm")}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <User className="h-3 w-3" />
-                            <span>{getFullName(event.host.firstName, event.host.lastName)}</span>
-                          </div>
-                          {event.locationUrl && (
-                            <div className="flex items-center gap-2">
-                              <MapPin className="h-3 w-3" />
-                              <a
-                                href={
-                                  event.locationUrl.includes("http")
-                                    ? event.locationUrl
-                                    : `https://www.google.com/maps/search/${encodeURIComponent(event.locationUrl)}`
-                                }
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-primary hover:underline cursor-pointer"
-                                data-testid={`link-calendar-event-location-${event.id}`}
-                              >
-                                {event.locationUrl.includes("http")
-                                  ? new URL(event.locationUrl).hostname
-                                  : event.locationUrl}
-                              </a>
+                  {!selectedDate ? (
+                    <p className="text-sm text-muted-foreground text-center py-8">Selecciona un día para ver eventos y tareas</p>
+                  ) : selectedDayData.total === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-8">No hay eventos ni tareas para este día</p>
+                  ) : (
+                    <>
+                      {/* Eventos */}
+                      {(selectedDayData.events as any[]).map((event: any) => (
+                        <div key={event.id} className="border rounded-lg overflow-hidden hover:bg-muted/50 transition-colors" data-testid={`calendar-event-${event.id}`}>
+                          {event.imageUrl && (
+                            <div className="w-full h-32 bg-muted">
+                              <img src={event.imageUrl} alt={event.title} className="w-full h-full object-cover" />
                             </div>
                           )}
+                          <div className="p-3">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">Evento</span>
+                            </div>
+                            <p className="font-medium text-sm mb-1">{event.title}</p>
+                            <div className="space-y-1 text-xs text-muted-foreground">
+                              <div className="flex items-center gap-2">
+                                <Clock className="h-3 w-3" />
+                                {format(new Date(event.startTime), "HH:mm")} — {format(new Date(event.endTime), "HH:mm")}
+                              </div>
+                              {event.host && (
+                                <div className="flex items-center gap-2">
+                                  <User className="h-3 w-3" />
+                                  {getFullName(event.host.firstName, event.host.lastName)}
+                                </div>
+                              )}
+                              {event.locationUrl && (
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="h-3 w-3" />
+                                  <a href={event.locationUrl.includes("http") ? event.locationUrl : `https://www.google.com/maps/search/${encodeURIComponent(event.locationUrl)}`}
+                                    target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                                    {event.locationUrl.includes("http") ? new URL(event.locationUrl).hostname : event.locationUrl}
+                                  </a>
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
+                      ))}
+                      {/* Tareas */}
+                      {(selectedDayData.tasks as any[]).map((act: any) => (
+                        <div key={act.id} className="border border-amber-200 dark:border-amber-800 rounded-lg p-3 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors">
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className="text-[10px] bg-amber-500/10 text-amber-600 px-1.5 py-0.5 rounded font-medium">Tarea</span>
+                            {act.courseName && <span className="text-[10px] text-muted-foreground">{act.courseName}</span>}
+                          </div>
+                          <p className="font-medium text-sm">{act.title}</p>
+                          {act.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{act.description}</p>}
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1.5">
+                            <Clock className="h-3 w-3 text-amber-500" />
+                            Entrega: {format(new Date(act.dueDate), "HH:mm")}
+                            {act.maxScore && <span className="ml-2">· {act.maxScore} pts</span>}
+                          </div>
                         </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-muted-foreground text-center py-8">
-                      {selectedDate ? "No hay eventos este día" : "Selecciona un día para ver eventos"}
-                    </p>
+                      ))}
+                    </>
                   )}
                 </div>
               </Card>

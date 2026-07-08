@@ -54,6 +54,10 @@ export const institutionSettings = pgTable("institution_settings", {
   description: text("description"),
   institutionCode: varchar("institution_code", { length: 50 }),
   gradeScale: varchar("grade_scale", { length: 50 }),
+  qualitativeScale: varchar("qualitative_scale", { length: 255 }),
+  emailAllowedDomain: varchar("email_allowed_domain", { length: 255 }),
+  gcClientId: varchar("gc_client_id", { length: 255 }),
+  gcClientSecret: varchar("gc_client_secret", { length: 255 }),
   // Información institucional pública
   mission: text("mission"),
   vision: text("vision"),
@@ -645,7 +649,7 @@ export const submissions = pgTable(
     content: text("content"),
     attachments: text("attachments").array().default(sql`ARRAY[]::text[]`),
     submittedAt: timestamp("submitted_at").defaultNow().notNull(),
-    grade: integer("grade"),
+    grade: varchar("grade", { length: 50 }),
     feedback: text("feedback"),
     gradedAt: timestamp("graded_at"),
     gradedBy: varchar("graded_by").references(() => users.id),
@@ -687,7 +691,7 @@ export const gradebookEntries = pgTable(
     subjectId: varchar("subject_id").references(() => subjects.id, { onDelete: "cascade" }).notNull(),
     groupId: varchar("group_id").references(() => academicGroups.id, { onDelete: "cascade" }).notNull(),
     academicPeriodId: varchar("academic_period_id").references(() => academicPeriods.id, { onDelete: "cascade" }).notNull(),
-    grade: integer("grade").notNull(),
+    grade: varchar("grade", { length: 50 }).notNull(),
     notes: text("notes"),
     recordedBy: varchar("recorded_by").references(() => users.id).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -698,6 +702,52 @@ export const gradebookEntries = pgTable(
     index("idx_gradebook_subject").on(table.subjectId),
     index("idx_gradebook_period").on(table.academicPeriodId),
     index("idx_gradebook_unique").on(table.studentId, table.subjectId, table.academicPeriodId),
+  ]
+);
+
+// ====== GOOGLE CLASSROOM TOKENS (por docente) ======
+export const googleClassroomTokens = pgTable("google_classroom_tokens", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull().unique(),
+  institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }).notNull(),
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token"),
+  expiresAt: timestamp("expires_at"),
+  email: varchar("email", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const googleClassroomCourseLinks = pgTable("google_classroom_course_links", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  courseId: varchar("course_id").references(() => courses.id, { onDelete: "cascade" }).notNull(),
+  gcCourseId: varchar("gc_course_id", { length: 100 }).notNull(),
+  gcCourseName: varchar("gc_course_name", { length: 255 }),
+  teacherId: varchar("teacher_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }).notNull(),
+  lastSyncAt: timestamp("last_sync_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+
+// ====== MENSAJES DIRECTOS (chat privado tipo WhatsApp) ======
+export const directMessages = pgTable(
+  "direct_messages",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    senderId: varchar("sender_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    receiverId: varchar("receiver_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }).notNull(),
+    content: text("content").notNull(),
+    mediaUrl: varchar("media_url"),
+    mediaType: varchar("media_type"),
+    readAt: timestamp("read_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_dm_sender").on(table.senderId),
+    index("idx_dm_receiver").on(table.receiverId),
+    index("idx_dm_created").on(table.createdAt),
   ]
 );
 

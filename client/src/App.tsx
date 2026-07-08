@@ -23,6 +23,9 @@ import Settings from "@/pages/Settings";
 import Classroom from "@/pages/Classroom";
 import CourseDetail from "@/pages/CourseDetail";
 import Schedules from "@/pages/Schedules";
+import DirectMessages from "@/pages/DirectMessages";
+import { CallProvider } from "@/context/CallContext";
+import { GlobalCallUI } from "@/components/calls/CallUI";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -58,6 +61,8 @@ function Router() {
           <Route path="/classroom" component={Classroom} />
           <Route path="/classroom/:id" component={CourseDetail} />
           <Route path="/schedules" component={Schedules} />
+          <Route path="/messages" component={DirectMessages} />
+          <Route path="/messages/:userId" component={DirectMessages} />
         </>
       )}
       <Route component={NotFound} />
@@ -69,10 +74,13 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
+        <CallProvider>
+          <TooltipProvider>
+            <Toaster />
+            <GlobalCallUI />
+            <Router />
+          </TooltipProvider>
+        </CallProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

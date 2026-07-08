@@ -25,7 +25,7 @@ import { getFullName, getInitials } from "@/lib/authUtils";
 import {
   ArrowLeft, Plus, ClipboardList, Users, BarChart3, CalendarCheck,
   Loader2, Send, BookOpen, GraduationCap, Clock, CheckCircle2,
-  AlertCircle, FileText, Award, UserCheck, Paperclip, X, Download,
+  AlertCircle, FileText, Award, UserCheck, Paperclip, X, Download, Monitor,
 } from "lucide-react";
 import { format, isPast } from "date-fns";
 import { es } from "date-fns/locale";
@@ -382,7 +382,7 @@ function SubmitDialog({
   );
 }
 
-// ─── Grade Dialog ─────────────────────────────────────────────────────────────
+// ─── Grade Dialog (soporta cuantitativo, cualitativo, mixto) ──────────────────
 
 function GradeDialog({
   submission,
@@ -399,15 +399,22 @@ function GradeDialog({
   const [grade, setGrade] = useState("");
   const [feedback, setFeedback] = useState("");
 
+  // Leer sistema evaluativo de la institución
+  const { data: institution } = useQuery<any>({ queryKey: ["/api/admin/institution"] });
+  const evaluationType = institution?.evaluationType || "quantitative";
+  const qualitativeScale = (institution?.qualitativeScale || "Bajo,Básico,Alto,Superior")
+    .split(",").map((l: string) => l.trim()).filter(Boolean);
+
   const mutation = useMutation({
     mutationFn: () =>
       apiRequest("PATCH", `/api/classroom/submissions/${submission!.id}/grade`, {
-        grade: Number(grade),
+        grade,  // siempre string — el backend acepta varchar
         feedback,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/classroom/activities"] });
       toast({ title: "Calificación guardada" });
+      setGrade(""); setFeedback("");
       onClose();
     },
     onError: () => toast({ title: "Error al calificar", variant: "destructive" }),
@@ -429,50 +436,72 @@ function GradeDialog({
             </div>
           )}
 
-          {/* Student attachments */}
           {submission?.attachments && submission.attachments.length > 0 && (
             <div className="rounded-md bg-muted/50 p-3">
               <p className="text-xs font-medium text-muted-foreground mb-1.5">Archivos entregados:</p>
               <div className="flex flex-wrap gap-1.5">
                 {submission.attachments.map((url, i) => (
-                  <a
-                    key={i}
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-background border text-xs hover:bg-muted"
-                  >
-                    <Download className="h-3 w-3" />
-                    Archivo {i + 1}
+                  <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-background border text-xs hover:bg-muted">
+                    <Download className="h-3 w-3" />Archivo {i + 1}
                   </a>
                 ))}
               </div>
             </div>
           )}
 
-          <div className="flex gap-3 items-end">
-            <div className="flex-1">
-              <label className="text-sm font-medium">Nota (máx. {maxScore})</label>
-              <Input
-                type="number"
-                min={0}
-                max={maxScore}
-                value={grade}
-                onChange={(e) => setGrade(e.target.value)}
-                className="mt-1"
-                placeholder="0"
-              />
-            </div>
+          {/* Selector de nota según sistema evaluativo */}
+          <div className="space-y-1">
+            {evaluationType === "qualitative" ? (
+              <>
+                <label className="text-sm font-medium">Valoración cualitativa</label>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {qualitativeScale.map((level: string) => (
+                    <button key={level} type="button"
+                      onClick={() => setGrade(level)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
+                        grade === level
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-muted text-muted-foreground border-transparent hover:border-primary/40"
+                      }`}>
+                      {level}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : evaluationType === "mixed" ? (
+              <>
+                <label className="text-sm font-medium">Nota</label>
+                <div className="flex flex-wrap gap-2 mt-1 mb-2">
+                  {qualitativeScale.map((level: string) => (
+                    <button key={level} type="button" onClick={() => setGrade(level)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
+                        grade === level ? "bg-primary text-primary-foreground border-primary" : "bg-muted text-muted-foreground border-transparent hover:border-primary/40"
+                      }`}>{level}</button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground mb-1">O ingresa una nota numérica:</p>
+                <Input placeholder={`0 – ${maxScore}`} value={grade} onChange={(e) => setGrade(e.target.value)} />
+              </>
+            ) : (
+              <>
+                <label className="text-sm font-medium">
+                  Nota {institution?.gradeScale ? `(${institution.gradeScale})` : `(máx. ${maxScore})`}
+                </label>
+                <Input
+                  type="number" min={0} max={maxScore}
+                  value={grade} onChange={(e) => setGrade(e.target.value)}
+                  className="mt-1" placeholder="0"
+                />
+              </>
+            )}
           </div>
+
           <div>
             <label className="text-sm font-medium">Retroalimentación</label>
-            <Textarea
-              className="mt-1 resize-none"
-              rows={3}
-              value={feedback}
+            <Textarea className="mt-1 resize-none" rows={3} value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
-              placeholder="Comentarios para el estudiante..."
-            />
+              placeholder="Comentarios para el estudiante..." />
           </div>
         </div>
         <DialogFooter>
@@ -675,6 +704,422 @@ function AttendanceTab({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
+// ─── Students Tab con "Añadir grupo completo" ────────────────────────────────
+
+function StudentsTab({ courseId, students, canManage }: {
+  courseId: string;
+  students: any[];
+  canManage: boolean;
+}) {
+  const { toast } = useToast();
+  const [selectedGroupId, setSelectedGroupId] = useState("");
+  const [enrolling, setEnrolling] = useState(false);
+
+  const { data: academicGroups = [] } = useQuery<any[]>({
+    queryKey: ["/api/admin/academic-groups"],
+    enabled: canManage,
+  });
+
+  const enrollGroup = async () => {
+    if (!selectedGroupId) return;
+    setEnrolling(true);
+    try {
+      const res = await fetch(`/api/classroom/courses/${courseId}/enroll-group`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupId: selectedGroupId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Error");
+      toast({
+        title: `${data.enrolled} estudiante${data.enrolled !== 1 ? "s" : ""} añadido${data.enrolled !== 1 ? "s" : ""}`,
+        description: data.skipped > 0 ? `${data.skipped} ya estaban inscritos` : undefined,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/classroom/courses", courseId, "students"] });
+      setSelectedGroupId("");
+    } catch (e: any) {
+      toast({ title: "Error al añadir grupo", description: e.message, variant: "destructive" });
+    }
+    setEnrolling(false);
+  };
+
+  const removeStudent = useMutation({
+    mutationFn: (studentId: string) =>
+      fetch(`/api/classroom/courses/${courseId}/students/${studentId}`, {
+        method: "DELETE", credentials: "include",
+      }).then(r => { if (!r.ok) throw new Error(); }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/classroom/courses", courseId, "students"] });
+      toast({ title: "Estudiante eliminado del aula" });
+    },
+    onError: () => toast({ title: "Error al eliminar", variant: "destructive" }),
+  });
+
+  const groupName = (academicGroups as any[]).find(g => g.id === selectedGroupId)?.name;
+
+  return (
+    <div className="space-y-4">
+      {/* Añadir grupo completo — solo docente/admin */}
+      {canManage && (
+        <Card className="border-dashed">
+          <CardContent className="p-4">
+            <p className="text-sm font-semibold mb-3 flex items-center gap-2">
+              <Users className="h-4 w-4 text-primary" />
+              Añadir grupo completo al aula
+            </p>
+            <div className="flex gap-2">
+              <Select value={selectedGroupId} onValueChange={setSelectedGroupId}>
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="Selecciona un grupo..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {(academicGroups as any[]).map((g: any) => (
+                    <SelectItem key={g.id} value={g.id}>
+                      {g.name}
+                      {students.some(s => s.student?.groupId === g.id) && (
+                        <span className="ml-2 text-xs text-muted-foreground">(parcial)</span>
+                      )}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                onClick={enrollGroup}
+                disabled={!selectedGroupId || enrolling}
+                className="shrink-0"
+              >
+                {enrolling ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Plus className="h-4 w-4 mr-2" />
+                )}
+                {enrolling ? "Añadiendo..." : groupName ? `Añadir ${groupName}` : "Añadir grupo"}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Todos los estudiantes matriculados en ese grupo se inscribirán automáticamente. Los que ya estén inscritos se omiten.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Lista de estudiantes */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground font-medium">
+          {students.length} estudiante{students.length !== 1 ? "s" : ""} inscrito{students.length !== 1 ? "s" : ""}
+        </p>
+      </div>
+
+      {students.length === 0 ? (
+        <div className="text-center py-16 border-2 border-dashed rounded-xl">
+          <Users className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+          <p className="font-medium text-muted-foreground">Sin estudiantes inscritos</p>
+          {canManage && (
+            <p className="text-xs text-muted-foreground mt-1">Usa el selector de arriba para añadir un grupo completo</p>
+          )}
+        </div>
+      ) : (
+        <div className="grid sm:grid-cols-2 gap-2">
+          {students.map(({ student }: any) => (
+            <Card key={student.id} className="group hover:border-primary/30 transition-colors">
+              <CardContent className="p-3 flex items-center gap-3">
+                <Avatar className="h-9 w-9 shrink-0">
+                  <AvatarImage src={student.profileImageUrl || undefined} />
+                  <AvatarFallback className="text-sm">
+                    {getInitials(student.firstName, student.lastName)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate">
+                    {getFullName(student.firstName, student.lastName)}
+                  </p>
+                  {student.email && (
+                    <p className="text-xs text-muted-foreground truncate">{student.email}</p>
+                  )}
+                </div>
+                {canManage ? (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                    onClick={() => removeStudent.mutate(student.id)}
+                    title="Eliminar del aula"
+                  >
+                    <X className="h-3.5 w-3.5 text-destructive" />
+                  </Button>
+                ) : (
+                  <Badge variant="secondary" className="text-xs shrink-0">
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    Inscrito
+                  </Badge>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ─── Google Classroom Tab ─────────────────────────────────────────────────────
+
+function GoogleClassroomTab({ courseId, course }: { courseId: string; course: any }) {
+  const { toast } = useToast();
+  const [syncing, setSyncing] = useState(false);
+  const [announcing, setAnnouncing] = useState(false);
+  const [announcementText, setAnnouncementText] = useState("");
+
+  const { data: gcStatus, refetch: refetchStatus } = useQuery<{ connected: boolean; email?: string }>({
+    queryKey: ["/api/classroom/google/status"],
+  });
+
+  const { data: gcCourses = [] } = useQuery<any[]>({
+    queryKey: ["/api/classroom/google/courses"],
+    enabled: gcStatus?.connected === true,
+  });
+
+  const { data: institution } = useQuery<any>({ queryKey: ["/api/admin/institution"] });
+  const { data: academicGroups = [] } = useQuery<any[]>({ queryKey: ["/api/admin/academic-groups"] });
+  const { data: subjects = [] } = useQuery<any[]>({ queryKey: ["/api/admin/subjects"] });
+  const { data: periods = [] } = useQuery<any[]>({ queryKey: ["/api/admin/periods"] });
+
+  const [linkedGcCourse, setLinkedGcCourse] = useState("");
+  const [syncGroupId, setSyncGroupId] = useState("");
+  const [syncSubjectId, setSyncSubjectId] = useState("");
+  const [syncPeriodId, setSyncPeriodId] = useState("");
+
+  const connectGC = async () => {
+    const res = await fetch("/api/classroom/google/auth-url");
+    const { url } = await res.json();
+    window.open(url, "_blank", "width=500,height=600");
+    setTimeout(() => refetchStatus(), 3000);
+  };
+
+  const disconnectGC = useMutation({
+    mutationFn: () => apiRequest("DELETE", "/api/classroom/google/disconnect"),
+    onSuccess: () => { refetchStatus(); toast({ title: "Google Classroom desconectado" }); },
+  });
+
+  const linkCourse = useMutation({
+    mutationFn: () => {
+      const gc = (gcCourses as any[]).find((c: any) => c.id === linkedGcCourse);
+      return apiRequest("POST", "/api/classroom/google/link", {
+        courseId, gcCourseId: linkedGcCourse, gcCourseName: gc?.name,
+      });
+    },
+    onSuccess: () => toast({ title: "Curso vinculado con Google Classroom" }),
+    onError: () => toast({ title: "Error al vincular", variant: "destructive" }),
+  });
+
+  const syncStudents = async () => {
+    if (!linkedGcCourse || !syncGroupId) {
+      toast({ title: "Selecciona un curso de GC y un grupo", variant: "destructive" }); return;
+    }
+    setSyncing(true);
+    try {
+      const res = await fetch(`/api/classroom/google/sync-students/${linkedGcCourse}`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupId: syncGroupId }),
+      });
+      const data = await res.json();
+      toast({ title: `${data.invited} estudiantes invitados, ${data.errors} errores` });
+    } catch { toast({ title: "Error al sincronizar estudiantes", variant: "destructive" }); }
+    setSyncing(false);
+  };
+
+  const syncGrades = async () => {
+    if (!linkedGcCourse || !syncSubjectId || !syncPeriodId || !syncGroupId) {
+      toast({ title: "Completa todos los campos para sincronizar notas", variant: "destructive" }); return;
+    }
+    setSyncing(true);
+    try {
+      const res = await fetch(`/api/classroom/google/sync-grades/${linkedGcCourse}`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subjectId: syncSubjectId, groupId: syncGroupId, academicPeriodId: syncPeriodId,
+          evaluationType: institution?.evaluationType || "quantitative",
+          qualitativeScale: institution?.qualitativeScale || "Bajo,Básico,Alto,Superior",
+          gradeScale: institution?.gradeScale || "1.0-5.0",
+        }),
+      });
+      const data = await res.json();
+      toast({ title: `${data.synced} calificaciones sincronizadas al boletín` });
+    } catch { toast({ title: "Error al sincronizar notas", variant: "destructive" }); }
+    setSyncing(false);
+  };
+
+  const sendAnnouncement = async () => {
+    if (!linkedGcCourse || !announcementText.trim()) return;
+    setAnnouncing(true);
+    try {
+      await fetch(`/api/classroom/google/announce/${linkedGcCourse}`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: announcementText }),
+      });
+      toast({ title: "Comunicado publicado en Google Classroom" });
+      setAnnouncementText("");
+    } catch { toast({ title: "Error al publicar", variant: "destructive" }); }
+    setAnnouncing(false);
+  };
+
+  if (!gcStatus?.connected) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center space-y-4">
+          <div className="h-16 w-16 rounded-2xl bg-green-500/10 flex items-center justify-center mx-auto">
+            <Monitor className="h-8 w-8 text-green-600" />
+          </div>
+          <div>
+            <p className="font-semibold text-lg">Conecta Google Classroom</p>
+            <p className="text-sm text-muted-foreground mt-1 max-w-sm mx-auto">
+              Sincroniza tus clases, estudiantes y notas entre este sistema y Google Classroom con un clic.
+            </p>
+          </div>
+          <Button onClick={connectGC} className="bg-green-600 hover:bg-green-700">
+            <Monitor className="h-4 w-4 mr-2" />
+            Conectar con Google
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Estado conexión */}
+      <Card>
+        <CardContent className="p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-lg bg-green-500/10 flex items-center justify-center">
+              <Monitor className="h-5 w-5 text-green-600" />
+            </div>
+            <div>
+              <p className="font-medium text-sm">Conectado a Google Classroom</p>
+              <p className="text-xs text-muted-foreground">{gcStatus.email}</p>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => disconnectGC.mutate()}>
+            Desconectar
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Vincular curso */}
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <p className="font-semibold text-sm">Vincular con curso de GC</p>
+          <div className="flex gap-2">
+            <Select value={linkedGcCourse} onValueChange={setLinkedGcCourse}>
+              <SelectTrigger className="flex-1">
+                <SelectValue placeholder="Selecciona un curso de Google Classroom..." />
+              </SelectTrigger>
+              <SelectContent>
+                {(gcCourses as any[]).map((c: any) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button onClick={() => linkCourse.mutate()} disabled={!linkedGcCourse || linkCourse.isPending}>
+              Vincular
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {linkedGcCourse && (
+        <>
+          {/* Sincronizar estudiantes */}
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <p className="font-semibold text-sm">Añadir estudiantes del grupo al curso de GC</p>
+              <div className="flex gap-2">
+                <Select value={syncGroupId} onValueChange={setSyncGroupId}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Selecciona el grupo..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(academicGroups as any[]).map((g: any) => (
+                      <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button onClick={syncStudents} disabled={syncing || !syncGroupId} className="bg-blue-600 hover:bg-blue-700">
+                  {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4 mr-1" />}
+                  Invitar
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Invita a todos los estudiantes del grupo vía su correo institucional.
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Sincronizar notas */}
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <div>
+                <p className="font-semibold text-sm">Sincronizar notas al boletín</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Sistema: <strong>{institution?.evaluationType === "qualitative" ? "Cualitativo" : institution?.evaluationType === "mixed" ? "Mixto" : "Cuantitativo"}</strong>
+                  {institution?.evaluationType !== "quantitative" && ` — ${institution?.qualitativeScale || "Bajo,Básico,Alto,Superior"}`}
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Select value={syncSubjectId} onValueChange={setSyncSubjectId}>
+                  <SelectTrigger><SelectValue placeholder="Materia..." /></SelectTrigger>
+                  <SelectContent>
+                    {(subjects as any[]).map((s: any) => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={syncPeriodId} onValueChange={setSyncPeriodId}>
+                  <SelectTrigger><SelectValue placeholder="Periodo..." /></SelectTrigger>
+                  <SelectContent>
+                    {(periods as any[]).map((p: any) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button onClick={syncGrades} disabled={syncing || !syncSubjectId || !syncPeriodId || !syncGroupId}
+                className="w-full bg-indigo-600 hover:bg-indigo-700">
+                {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BarChart3 className="h-4 w-4 mr-2" />}
+                Importar notas de GC → Boletín
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Comunicados */}
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <p className="font-semibold text-sm">Publicar comunicado en GC</p>
+              <Textarea
+                value={announcementText}
+                onChange={(e) => setAnnouncementText(e.target.value)}
+                placeholder="Escribe el comunicado para los estudiantes en Google Classroom..."
+                rows={3} className="resize-none"
+              />
+              <Button onClick={sendAnnouncement} disabled={announcing || !announcementText.trim()}
+                className="w-full" variant="outline">
+                {announcing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
+                Publicar en Google Classroom
+              </Button>
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+
 export default function CourseDetail() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
@@ -714,6 +1159,15 @@ export default function CourseDetail() {
         credentials: "include",
       }).then((r) => r.json()),
     enabled: !!selectedSubmissions,
+  });
+
+  // Todas las entregas del curso para la matriz de calificaciones
+  const { data: allSubmissions = [] } = useQuery<SubmissionWithStudent[]>({
+    queryKey: ["/api/classroom/courses", id, "all-submissions"],
+    queryFn: () =>
+      fetch(`/api/classroom/courses/${id}/submissions`, { credentials: "include" })
+        .then((r) => r.ok ? r.json() : []),
+    enabled: !!id,
   });
 
   const isTeacher = user?.role === "teacher" || user?.role === "admin";
@@ -800,6 +1254,12 @@ export default function CourseDetail() {
               <TabsTrigger value="grades">
                 <BarChart3 className="h-4 w-4 mr-1.5" />
                 Calificaciones
+              </TabsTrigger>
+            )}
+            {isTeacher && (
+              <TabsTrigger value="google-classroom">
+                <Monitor className="h-4 w-4 mr-1.5" />
+                Google Classroom
               </TabsTrigger>
             )}
             <TabsTrigger value="attendance">
@@ -989,36 +1449,11 @@ export default function CourseDetail() {
 
           {/* Students Tab */}
           <TabsContent value="students" className="mt-4">
-            {!students || students.length === 0 ? (
-              <div className="text-center py-12">
-                <Users className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                <p className="font-medium">No hay estudiantes inscritos</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {students.map(({ student }) => (
-                  <Card key={student.id}>
-                    <CardContent className="p-3 flex items-center gap-3">
-                      <Avatar className="h-9 w-9">
-                        <AvatarImage src={student.profileImageUrl || undefined} />
-                        <AvatarFallback className="text-sm">
-                          {getInitials(student.firstName, student.lastName)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="font-medium text-sm">
-                          {getFullName(student.firstName, student.lastName)}
-                        </p>
-                      </div>
-                      <Badge variant="secondary" className="ml-auto text-xs no-default-active-elevate">
-                        <CheckCircle2 className="h-3 w-3 mr-1" />
-                        Inscrito
-                      </Badge>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
+            <StudentsTab
+              courseId={id!}
+              students={students || []}
+              canManage={canManage}
+            />
           </TabsContent>
 
           {/* Grades Tab (teacher only) */}
@@ -1049,34 +1484,68 @@ export default function CourseDetail() {
                             </div>
                           </th>
                         ))}
+                        <th className="text-center p-2 font-semibold min-w-16 text-primary">Prom.</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {students.map(({ student }) => (
-                        <tr key={student.id} className="border-b hover-elevate">
-                          <td className="p-2">
-                            <div className="flex items-center gap-2">
-                              <Avatar className="h-6 w-6">
-                                <AvatarFallback className="text-xs">
-                                  {getInitials(student.firstName, student.lastName)}
-                                </AvatarFallback>
-                              </Avatar>
-                              <span className="font-medium">
-                                {getFullName(student.firstName, student.lastName)}
-                              </span>
-                            </div>
-                          </td>
-                          {activityList.map((a) => (
-                            <td key={a.id} className="p-2 text-center text-muted-foreground">
-                              —
+                      {students.map(({ student }) => {
+                        const studentSubs = (allSubmissions as SubmissionWithStudent[])
+                          .filter((s) => s.studentId === student.id);
+                        const numericGrades = studentSubs
+                          .map((s) => parseFloat(String(s.grade)))
+                          .filter((g) => !isNaN(g));
+                        const avg = numericGrades.length > 0
+                          ? (numericGrades.reduce((a,b) => a+b, 0) / numericGrades.length).toFixed(1)
+                          : null;
+                        return (
+                          <tr key={student.id} className="border-b hover-elevate">
+                            <td className="p-2">
+                              <div className="flex items-center gap-2">
+                                <Avatar className="h-6 w-6">
+                                  <AvatarFallback className="text-xs">
+                                    {getInitials(student.firstName, student.lastName)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <span className="font-medium">
+                                  {getFullName(student.firstName, student.lastName)}
+                                </span>
+                              </div>
                             </td>
-                          ))}
-                        </tr>
-                      ))}
+                            {activityList.map((a) => {
+                              const sub = studentSubs.find((s) => s.activityId === a.id);
+                              const g = sub?.grade;
+                              const numeric = g != null ? parseFloat(String(g)) : NaN;
+                              const pct = !isNaN(numeric) ? numeric / a.maxScore : null;
+                              const color = pct == null ? "" : pct >= 0.8 ? "text-green-600" : pct >= 0.6 ? "text-amber-600" : "text-red-500";
+                              return (
+                                <td key={a.id} className="p-2 text-center">
+                                  {g != null ? (
+                                    <span className={`font-medium text-sm ${color}`}>{g}</span>
+                                  ) : sub ? (
+                                    <span className="text-xs text-muted-foreground italic">Sin nota</span>
+                                  ) : (
+                                    <span className="text-muted-foreground">—</span>
+                                  )}
+                                </td>
+                              );
+                            })}
+                            <td className="p-2 text-center font-semibold text-sm">
+                              {avg ?? <span className="text-muted-foreground">—</span>}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               )}
+            </TabsContent>
+          )}
+
+          {/* Google Classroom Tab */}
+          {isTeacher && (
+            <TabsContent value="google-classroom" className="mt-4">
+              <GoogleClassroomTab courseId={id!} course={course} />
             </TabsContent>
           )}
 

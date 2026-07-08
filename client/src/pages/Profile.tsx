@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useParams, useLocation } from "wouter";
+import { useParams, useLocation, Link } from "wouter";
+import { useCall } from "@/context/CallContext";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -45,9 +46,12 @@ import {
   Award,
   FileText,
   MessageSquare,
+  MessageCircle,
   CheckCircle,
   Clock,
   X,
+  Phone,
+  Video,
 } from "lucide-react";
 import type { PostWithAuthor, FileWithUploader, Badge as BadgeType, UserBadge } from "@shared/schema";
 import { useForm } from "react-hook-form";
@@ -88,6 +92,25 @@ const profileSchema = z.object({
 });
 
 type ProfileForm = z.infer<typeof profileSchema>;
+
+function CallButtonsProfile({ targetUser }: { targetUser: any }) {
+  const { startCall, callState } = useCall();
+  const { user: authUser } = useAuth();
+  const busy = callState !== "idle";
+  const myName = authUser ? `${authUser.firstName || ""} ${authUser.lastName || ""}`.trim() : "Usuario";
+  return (
+    <>
+      <Button variant="outline" className="gap-2" disabled={busy}
+        onClick={() => startCall(targetUser.id, myName, "audio")}>
+        <Phone className="h-4 w-4" /> Llamar
+      </Button>
+      <Button variant="outline" className="gap-2" disabled={busy}
+        onClick={() => startCall(targetUser.id, myName, "video")}>
+        <Video className="h-4 w-4" /> Video
+      </Button>
+    </>
+  );
+}
 
 export default function Profile() {
   const { user: authUser } = useAuth();
@@ -250,6 +273,18 @@ export default function Profile() {
                       </div>
                       <p className="text-muted-foreground">{formatRole(user.role)}</p>
                     </div>
+                    <div className="flex gap-2 flex-wrap">
+                    {!isOwnProfile && authUser && (
+                      <>
+                        <Link href={`/messages/${user.id}`}>
+                          <Button variant="outline" className="gap-2">
+                            <MessageCircle className="h-4 w-4" />
+                            Mensaje
+                          </Button>
+                        </Link>
+                        <CallButtonsProfile targetUser={user} />
+                      </>
+                    )}
                     {isOwnProfile && (
                       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
                         <DialogTrigger asChild>
@@ -392,6 +427,7 @@ export default function Profile() {
                       </DialogContent>
                       </Dialog>
                     )}
+                    </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">

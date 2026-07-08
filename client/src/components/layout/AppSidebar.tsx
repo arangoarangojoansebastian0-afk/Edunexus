@@ -36,6 +36,7 @@ import {
   Bell,
   Clock,
   School,
+  MessageCircle,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { getFullName, getInitials, formatRole } from "@/lib/authUtils";
@@ -45,6 +46,7 @@ const mainNavItems = [
   { title: "Aula Virtual", url: "/classroom", icon: School },
   { title: "Horarios", url: "/schedules", icon: CalendarDays },
   { title: "Grupos", url: "/groups", icon: Users },
+  { title: "Mensajes", url: "/messages", icon: MessageCircle },
   { title: "Biblioteca", url: "/library", icon: BookOpen },
   { title: "Asesorías", url: "/tutoring", icon: Calendar },
   { title: "Calendario", url: "/calendar", icon: Clock },

@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { storage } from "./storage";
 import { db } from "./db";
-import { staffCodes, teacherCodes } from "@shared/schema";
+import { staffCodes, teacherCodes, institutionSettings } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
 
 export interface AuthSession {
@@ -62,6 +62,23 @@ export async function registerUser(
       const staffEntry = found[0];
       if (staffEntry.role && staffEntry.role !== role) {
         throw new Error(`Este código no corresponde al rol de ${role}`);
+      }
+    }
+  }
+
+  // ── Email domain restriction ─────────────────────────────────────────────
+  if (institutionId) {
+    const institution = await db
+      .select({ emailAllowedDomain: institutionSettings.emailAllowedDomain })
+      .from(institutionSettings)
+      .where(eq(institutionSettings.id, institutionId))
+      .limit(1);
+    const domain = institution[0]?.emailAllowedDomain;
+    if (domain && domain.trim()) {
+      const emailDomain = email.split('@')[1]?.toLowerCase();
+      const allowedDomain = domain.trim().toLowerCase();
+      if (emailDomain !== allowedDomain) {
+        throw new Error(`Solo se permiten correos con dominio @${allowedDomain} en esta institución`);
       }
     }
   }
