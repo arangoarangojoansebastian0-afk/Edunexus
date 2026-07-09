@@ -1183,7 +1183,7 @@ async getInstitutionByCode(code: string) {
 
   // ─── CLASSROOM METHODS ───────────────────────────────────────────────
 
-  private async enrichCourse(course: Course): Promise<CourseWithTeacher> {
+  private async enrichCourse(course: any): Promise<any> {
     const teacher = await this.getUser(course.teacherId);
     const [studentCount] = await db
       .select({ count: sql<number>`count(*)` })
@@ -1193,9 +1193,28 @@ async getInstitutionByCode(code: string) {
       .select({ count: sql<number>`count(*)` })
       .from(activities)
       .where(eq(activities.courseId, course.id));
+
+    // Fetch academic group name
+    let groupName = course.grade || null;
+    if (course.academicGroupId) {
+      const [grp] = await db.select({ name: academicGroups.name })
+        .from(academicGroups).where(eq(academicGroups.id, course.academicGroupId));
+      if (grp) groupName = grp.name;
+    }
+
+    // Fetch period name
+    let periodName = course.semester || null;
+    if (course.academicPeriodId) {
+      const [per] = await db.select({ name: academicPeriods.name })
+        .from(academicPeriods).where(eq(academicPeriods.id, course.academicPeriodId));
+      if (per) periodName = per.name;
+    }
+
     return {
       ...course,
       teacher: teacher!,
+      groupName,
+      periodName,
       _count: {
         students: Number(studentCount?.count || 0),
         activities: Number(activityCount?.count || 0),
@@ -2019,11 +2038,17 @@ async getInstitutionByCode(code: string) {
 
   async getUsersByInstitution(institutionId: string): Promise<any[]> {
     try {
-      const [r] = await db.select({ count: sql<number>`1` }).from(users).limit(1);
-      return db.select({
-        id: users.id, firstName: users.firstName, lastName: users.lastName,
-        email: users.email, role: users.role, profileImageUrl: users.profileImageUrl,
-      }).from(users).where(eq(users.institutionId, institutionId)).limit(200);
+      return await db.select({
+        id: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+        role: users.role,
+        profileImageUrl: users.profileImageUrl,
+      }).from(users)
+        .where(eq(users.institutionId, institutionId))
+        .orderBy(users.firstName)
+        .limit(500);
     } catch { return []; }
   }
 
@@ -2451,13 +2476,6 @@ async getInstitutionByCode(code: string) {
       .orderBy(users.firstName);
   }
 
-  async getUsersByInstitution(institutionId: string): Promise<User[]> {
-    return db
-      .select()
-      .from(users)
-      .where(eq(users.institutionId, institutionId))
-      .orderBy(users.firstName);
-  }
 }
 
 export const storage = new DatabaseStorage();

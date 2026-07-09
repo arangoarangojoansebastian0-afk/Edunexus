@@ -1066,77 +1066,6 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/courses", requireAuth, async (req, res) => {
-    try {
-      if (!req.user?.institutionId) return res.status(400).json({ error: "Sin institución" });
-      res.json(await storage.getAllCoursesForAdmin(req.user.institutionId));
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
-  });
-
-  // Crear aula virtual con grupo, grado, periodo y sistema evaluativo
-  app.post("/api/courses", requireAuth, async (req, res) => {
-    try {
-      if (!req.user?.institutionId) return res.status(400).json({ error: "Sin institución" });
-      const { name, subject, teacherId, gradeId, groupId, academicYearId, academicPeriodId, semester, description, evaluationType, qualitativeScale, gradeScale } = req.body;
-      if (!name || !subject || !teacherId) return res.status(400).json({ error: "Faltan campos: name, subject, teacherId" });
-
-      const { db } = await import("./db");
-      const { courses, academicGroups, grades, academicPeriods } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
-
-      // Obtener nombre del grado y grupo
-      let gradeName = "";
-      let groupName = "";
-      let periodName = "";
-      if (gradeId) {
-        const [g] = await db.select({ name: grades.name }).from(grades).where(eq(grades.id, gradeId));
-        gradeName = g?.name || "";
-      }
-      if (groupId) {
-        const [g] = await db.select({ name: academicGroups.name }).from(academicGroups).where(eq(academicGroups.id, groupId));
-        groupName = g?.name || "";
-      }
-      if (academicPeriodId) {
-        const [p] = await db.select({ name: academicPeriods.name }).from(academicPeriods).where(eq(academicPeriods.id, academicPeriodId));
-        periodName = p?.name || "";
-      }
-
-      const [created] = await db.insert(courses).values({
-        institutionId: req.user.institutionId,
-        name, subject, teacherId,
-        grade: gradeName || gradeId || null,
-        groupId: groupId || null,
-        semester: semester || periodName || null,
-        description: description || null,
-        isActive: true,
-      }).returning();
-
-      res.status(201).json({ ...created, groupName, periodName });
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
-  });
-
-  // Actualizar / toggle aula
-  app.patch("/api/courses/:id", requireAuth, async (req, res) => {
-    try {
-      const { db } = await import("./db");
-      const { courses } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
-      const [updated] = await db.update(courses).set(req.body).where(eq(courses.id, req.params.id)).returning();
-      res.json(updated);
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
-  });
-
-  // Eliminar aula
-  app.delete("/api/courses/:id", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const { db } = await import("./db");
-      const { courses } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
-      await db.delete(courses).where(eq(courses.id, req.params.id));
-      res.status(204).end();
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
-  });
-
   app.post("/api/admin/teacher-assignments", requireAuth, requireAdmin, async (req, res) => {
     try { res.status(201).json(await storage.createTeacherAssignment(req.body)); } catch { res.status(500).json({ message: "Error" }); }
   });
@@ -1492,13 +1421,31 @@ export async function registerRoutes(
     }
   });
 
+  // Admin: todos los cursos de la institución
   app.get("/api/classroom/courses/all", requireAuth, async (req, res) => {
     try {
-      const data = await storage.getAllCourses();
+      if (!req.user?.institutionId) return res.status(400).json({ error: "Sin institución" });
+      const data = await storage.getAllCoursesForAdmin(req.user.institutionId);
       res.json(data);
-    } catch (err) {
-      res.status(500).json({ message: "Failed to get courses" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
+  });
+
+  // Actualizar aula (toggle activo, etc.)
+  app.patch("/api/classroom/courses/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateCourse(req.params.id, req.body);
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Eliminar aula
+  app.delete("/api/classroom/courses/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteCourse(req.params.id);
+      res.status(204).end();
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   app.get("/api/classroom/courses/:id", requireAuth, async (req, res) => {
@@ -1515,14 +1462,56 @@ export async function registerRoutes(
     try {
       const user = req.user!;
       if (user.role !== "teacher" && user.role !== "admin") {
-        return res.status(403).json({ message: "Only teachers can create courses" });
+        return res.status(403).json({ message: "Solo docentes y administradores pueden crear aulas" });
       }
-      const data = insertCourseSchema.parse({ ...req.body, teacherId: user.id, institutionId: user.institutionId });
-      const course = await storage.createCourse(data);
-      res.status(201).json(course);
-    } catch (err) {
-      if (err instanceof z.ZodError) return res.status(400).json({ errors: err.errors });
-      res.status(500).json({ message: "Failed to create course" });
+
+      const { db } = await import("./db");
+      const { courses, academicGroups, academicPeriods } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const {
+        name, subject, description, grade, semester, academicYear,
+        teacherId, groupId, academicGroupId, academicPeriodId,
+        evaluationType, qualitativeScale, gradeScale,
+      } = req.body;
+
+      if (!name || !subject) {
+        return res.status(400).json({ message: "Nombre y materia son obligatorios" });
+      }
+
+      // Resolver nombres legibles para groupName y periodName
+      let resolvedGrade = grade || null;
+      let resolvedSemester = semester || null;
+
+      if (academicGroupId) {
+        const [grp] = await db.select({ name: academicGroups.name })
+          .from(academicGroups).where(eq(academicGroups.id, academicGroupId));
+        if (grp) resolvedGrade = grp.name;
+      }
+      if (academicPeriodId) {
+        const [per] = await db.select({ name: academicPeriods.name })
+          .from(academicPeriods).where(eq(academicPeriods.id, academicPeriodId));
+        if (per) resolvedSemester = per.name;
+      }
+
+      const [created] = await db.insert(courses).values({
+        institutionId: user.institutionId!,
+        name,
+        subject,
+        description: description || null,
+        teacherId: teacherId || user.id,
+        grade: resolvedGrade,
+        semester: resolvedSemester,
+        academicYear: academicYear || null,
+        academicGroupId: academicGroupId || null,
+        academicPeriodId: academicPeriodId || null,
+        isActive: true,
+      }).returning();
+
+      res.status(201).json(created);
+    } catch (err: any) {
+      console.error("[create course]", err.message);
+      res.status(500).json({ message: err.message || "Error al crear el aula" });
     }
   });
 
@@ -1535,70 +1524,6 @@ export async function registerRoutes(
     }
   });
 
-  // Matricular a todos los estudiantes de un grupo de una vez
-  app.post("/api/classroom/courses/:id/enroll-group", requireAuth, async (req, res) => {
-    try {
-      const { groupId } = req.body;
-      if (!groupId) return res.status(400).json({ error: "groupId requerido" });
-
-      const { db } = await import("./db");
-      const { studentEnrollments, courseEnrollments, users } = await import("@shared/schema");
-      const { eq, and } = await import("drizzle-orm");
-
-      // Obtener estudiantes activos del grupo académico
-      const groupStudents = await db
-        .select({ studentId: studentEnrollments.studentId })
-        .from(studentEnrollments)
-        .innerJoin(users, eq(studentEnrollments.studentId, users.id))
-        .where(and(
-          eq(studentEnrollments.groupId, groupId),
-          eq(users.role, "student"),
-        ));
-
-      if (groupStudents.length === 0) {
-        return res.json({ enrolled: 0, skipped: 0, message: "El grupo no tiene estudiantes matriculados" });
-      }
-
-      // Ya inscritos en este curso
-      const existing = await db
-        .select({ studentId: courseEnrollments.studentId })
-        .from(courseEnrollments)
-        .where(eq(courseEnrollments.courseId, req.params.id));
-      const existingIds = new Set(existing.map(e => e.studentId));
-
-      let enrolled = 0;
-      let skipped = 0;
-      for (const { studentId } of groupStudents) {
-        if (existingIds.has(studentId)) { skipped++; continue; }
-        try {
-          await db.insert(courseEnrollments).values({
-            courseId: req.params.id,
-            studentId,
-            status: "active",
-          });
-          enrolled++;
-        } catch { skipped++; }
-      }
-
-      res.json({ enrolled, skipped, total: groupStudents.length });
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
-  });
-
-  // Docente elimina un estudiante específico del aula
-  app.delete("/api/classroom/courses/:id/students/:studentId", requireAuth, async (req, res) => {
-    try {
-      const { db } = await import("./db");
-      const { courseEnrollments } = await import("@shared/schema");
-      const { and, eq } = await import("drizzle-orm");
-      await db.delete(courseEnrollments).where(and(
-        eq(courseEnrollments.courseId, req.params.id),
-        eq(courseEnrollments.studentId, req.params.studentId),
-      ));
-      res.status(204).end();
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
-  });
-
-  // Estudiante se desinscribe a sí mismo
   app.delete("/api/classroom/courses/:id/enroll", requireAuth, async (req, res) => {
     try {
       await storage.unenrollStudent(req.params.id, req.user!.id);

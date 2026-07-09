@@ -597,6 +597,9 @@ export const courses = pgTable(
     academicYear: varchar("academic_year", { length: 20 }),
     coverImageUrl: varchar("cover_image_url"),
     groupId: varchar("group_id").references(() => groups.id, { onDelete: "set null" }),
+    // Grupo académico (ej: 10-1) y periodo (ej: Periodo 1)
+    academicGroupId: varchar("academic_group_id").references(() => academicGroups.id, { onDelete: "set null" }),
+    academicPeriodId: varchar("academic_period_id").references(() => academicPeriods.id, { onDelete: "set null" }),
     isActive: boolean("is_active").default(true).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

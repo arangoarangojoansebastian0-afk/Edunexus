@@ -3303,7 +3303,10 @@ function TabBoletines() {
  
 function TabClassroom() {
   const { toast } = useToast();
-  const { data: courses = [], isLoading } = useQuery<any[]>({ queryKey: ["/api/courses"] });
+  const { data: courses = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/classroom/courses/all"],
+    queryFn: () => fetch("/api/classroom/courses/all", { credentials: "include" }).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+  });
   const { data: teachers = [] } = useQuery<any[]>({ queryKey: ["/api/admin/users", "teacher"] });
   const { data: academicGroups = [] } = useQuery<any[]>({ queryKey: ["/api/admin/academic-groups"] });
   const { data: gradesList = [] } = useQuery<any[]>({ queryKey: ["/api/admin/grades"] });
@@ -3326,14 +3329,19 @@ function TabClassroom() {
   const activeYear = (years as any[]).find((y: any) => y.isActive);
 
   const create = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/courses", {
-      ...form,
+    mutationFn: () => apiRequest("POST", "/api/classroom/courses", {
+      name: form.name,
+      subject: form.subject,
+      teacherId: form.teacherId,
+      description: form.description,
+      academicGroupId: form.groupId,   // academic group (10-1, etc)
+      academicPeriodId: form.academicPeriodId,
       evaluationType: institution?.evaluationType || "quantitative",
       qualitativeScale: institution?.qualitativeScale,
       gradeScale: institution?.gradeScale,
     }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/courses"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/classroom/courses/all"] });
       setShowForm(false);
       setForm({ name: "", subject: "", teacherId: "", gradeId: "", groupId: "",
         academicYearId: "", academicPeriodId: "", semester: "", description: "" });
@@ -3343,13 +3351,13 @@ function TabClassroom() {
   });
 
   const toggleActive = useMutation({
-    mutationFn: (c: any) => apiRequest("PATCH", `/api/courses/${c.id}`, { isActive: !c.isActive }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/courses"] }),
+    mutationFn: (c: any) => apiRequest("PATCH", `/api/classroom/courses/${c.id}`, { isActive: !c.isActive }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/classroom/courses/all"] }),
   });
 
   const deleteCourse = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/courses/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/courses"] }),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/classroom/courses/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/classroom/courses/all"] }),
   });
 
   const evalLabel = institution?.evaluationType === "qualitative" ? "Cualitativo"
