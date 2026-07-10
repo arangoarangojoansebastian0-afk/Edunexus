@@ -9,6 +9,7 @@ interface CallContextType {
   remoteStream: MediaStream | null;
   isMuted: boolean;
   isCameraOff: boolean;
+  callError: string | null;
   startCall: (targetUserId: string, callerName: string, type?: CallType) => Promise<void>;
   acceptCall: () => Promise<void>;
   rejectCall: () => void;

@@ -10,11 +10,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { getFullName, getInitials } from "@/lib/authUtils";
 import { format, isToday, isYesterday } from "date-fns";
 import { es } from "date-fns/locale";
-import { Send, Search, MessageCircle, ArrowLeft, Check, CheckCheck, Phone, Video, Users, UserPlus2 } from "lucide-react";
+import { Send, Search, MessageCircle, ArrowLeft, Check, CheckCheck, Phone, Video, Users, UserPlus2, Lock, Clock, X as XIcon } from "lucide-react";
 import { useCall } from "@/context/CallContext";
 
 function formatMsgTime(date: string) {
@@ -66,6 +67,7 @@ function CallButtons({ targetUser }: { targetUser: any }) {
 
 export default function DirectMessages() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const params = useParams<{ userId?: string; groupId?: string }>();
   const [, navigate] = useLocation();
   const [otherId, setOtherId] = useState(params.userId || "");
@@ -95,6 +97,22 @@ export default function DirectMessages() {
     queryKey: ["/api/chat-groups"],
     refetchInterval: 5000,
   });
+
+  // Solicitudes de mensaje que me han enviado (perfiles privados) — pendientes de aceptar/rechazar
+  const { data: incomingRequests = [] } = useQuery<any[]>({
+    queryKey: ["/api/message-requests/incoming"],
+    refetchInterval: 5000,
+  });
+
+  // A quiénes ya les mandé solicitud y sigo esperando respuesta (para bloquear el input mientras tanto)
+  const { data: outgoingPendingIds = [] } = useQuery<string[]>({
+    queryKey: ["/api/message-requests/outgoing"],
+    refetchInterval: 5000,
+  });
+
+  const [showRequests, setShowRequests] = useState(false);
+  const [pendingUser, setPendingUser] = useState<any>(null);
+  const hasPendingOutgoingToActive = activeType === "direct" && (outgoingPendingIds as string[]).includes(otherId);
 
   // Mensajes del hilo 1 a 1 activo
   const { data: directMessages = [], isLoading: loadingDirectMsgs } = useQuery<any[]>({
@@ -137,22 +155,62 @@ export default function DirectMessages() {
   const activeConv = (conversations as any[]).find(c =>
     c.otherUser?.id === otherId
   );
-  const activeUser = activeConv?.otherUser;
+  const activeUser = activeConv?.otherUser || (pendingUser?.id === otherId ? pendingUser : undefined);
   const activeGroup = (chatGroups as any[]).find(g => g.id === groupId);
 
   const send = useMutation({
-    mutationFn: () => activeType === "group"
-      ? apiRequest("POST", `/api/chat-groups/${groupId}/messages`, { content: text })
-      : apiRequest("POST", `/api/direct-messages/${otherId}`, { content: text }),
-    onSuccess: () => {
+    mutationFn: async () => {
+      if (activeType === "group") {
+        return apiRequest("POST", `/api/chat-groups/${groupId}/messages`, { content: text });
+      }
+      const res = await fetch(`/api/direct-messages/${otherId}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: text }),
+      });
+      if (res.status === 403) {
+        const data = await res.json().catch(() => ({}));
+        if (data.requiresRequest) {
+          // Perfil privado sin conversación previa: mandamos una solicitud en vez del mensaje directo
+          return apiRequest("POST", `/api/message-requests/${otherId}`, { content: text }).then(() => ({ isRequest: true }));
+        }
+        throw new Error(data.message || "No se pudo enviar el mensaje");
+      }
+      if (!res.ok) throw new Error("No se pudo enviar el mensaje");
+      return res.json();
+    },
+    onSuccess: (data: any) => {
       setText("");
       if (activeType === "group") {
         queryClient.invalidateQueries({ queryKey: ["/api/chat-groups", groupId, "messages"] });
+      } else if (data?.isRequest) {
+        queryClient.invalidateQueries({ queryKey: ["/api/message-requests/outgoing"] });
+        toast({ title: "Solicitud enviada", description: "Te avisaremos cuando la acepten." });
       } else {
         queryClient.invalidateQueries({ queryKey: ["/api/direct-messages", otherId] });
         queryClient.invalidateQueries({ queryKey: ["/api/direct-messages/conversations"] });
       }
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    },
+    onError: (err: any) => {
+      toast({ title: "No se pudo enviar", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const acceptRequest = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/message-requests/${id}/accept`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/message-requests/incoming"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/direct-messages/conversations"] });
+      toast({ title: "Solicitud aceptada", description: "Ya pueden chatear libremente." });
+    },
+  });
+
+  const declineRequest = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/message-requests/${id}/decline`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/message-requests/incoming"] });
     },
   });
 
@@ -201,6 +259,7 @@ export default function DirectMessages() {
   const startChat = (u: any) => {
     setGroupId("");
     setOtherId(u.id);
+    setPendingUser(u);
     setSearch("");
     setShowSearch(false);
     navigate(`/messages/${u.id}`);
@@ -231,6 +290,14 @@ export default function DirectMessages() {
           <div className="p-4 border-b flex items-center justify-between gap-2">
             <h2 className="font-bold text-base">Mensajes</h2>
             <div className="flex items-center gap-1">
+              <Button size="sm" variant="ghost" className="relative" title="Solicitudes de mensaje" onClick={() => setShowRequests(true)}>
+                <UserPlus2 className="h-4 w-4" />
+                {(incomingRequests as any[]).length > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-destructive text-[9px] text-destructive-foreground font-bold flex items-center justify-center">
+                    {(incomingRequests as any[]).length > 9 ? "9+" : (incomingRequests as any[]).length}
+                  </span>
+                )}
+              </Button>
               <Button size="sm" variant="ghost" title="Nuevo grupo privado" onClick={() => setShowCreateGroup(true)}>
                 <Users className="h-4 w-4" />
               </Button>
@@ -261,8 +328,11 @@ export default function DirectMessages() {
                         <AvatarImage src={u.profileImageUrl} />
                         <AvatarFallback className="text-xs">{getInitials(u.firstName, u.lastName)}</AvatarFallback>
                       </Avatar>
-                      <div className="min-w-0">
-                        <p className="font-medium text-sm truncate">{getFullName(u.firstName, u.lastName)}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-sm truncate flex items-center gap-1">
+                          {getFullName(u.firstName, u.lastName)}
+                          {u.isPrivate && <Lock className="h-3 w-3 text-muted-foreground shrink-0" />}
+                        </p>
                         <RoleChip role={u.role} />
                       </div>
                     </button>
@@ -465,24 +535,35 @@ export default function DirectMessages() {
               </div>
 
               {/* Input */}
-              <div className="border-t p-3 flex gap-2 items-end bg-background">
-                <Input
-                  ref={inputRef}
-                  className="flex-1 resize-none rounded-full bg-muted border-0 px-4 text-sm"
-                  placeholder="Escribe un mensaje..."
-                  value={text}
-                  onChange={e => setText(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                />
-                <Button
-                  size="icon"
-                  className="rounded-full shrink-0 h-9 w-9"
-                  onClick={() => send.mutate()}
-                  disabled={!text.trim() || send.isPending}
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
+              {hasPendingOutgoingToActive && (messages as any[]).length === 0 ? (
+                <div className="border-t p-4 flex items-center gap-2 justify-center text-sm text-muted-foreground bg-background">
+                  <Clock className="h-4 w-4" />
+                  Ya le enviaste una solicitud de chat. Te avisaremos cuando la responda.
+                </div>
+              ) : (
+                <div className="border-t p-3 flex gap-2 items-end bg-background">
+                  <Input
+                    ref={inputRef}
+                    className="flex-1 resize-none rounded-full bg-muted border-0 px-4 text-sm"
+                    placeholder={
+                      activeType === "direct" && activeUser?.isPrivate && (messages as any[]).length === 0
+                        ? "Este perfil es privado — tu mensaje se enviará como solicitud..."
+                        : "Escribe un mensaje..."
+                    }
+                    value={text}
+                    onChange={e => setText(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                  />
+                  <Button
+                    size="icon"
+                    className="rounded-full shrink-0 h-9 w-9"
+                    onClick={() => send.mutate()}
+                    disabled={!text.trim() || send.isPending}
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -569,6 +650,51 @@ export default function DirectMessages() {
               Crear grupo
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo: solicitudes de mensaje pendientes (de perfiles privados que aún no me han hablado) */}
+      <Dialog open={showRequests} onOpenChange={setShowRequests}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus2 className="h-5 w-5" /> Solicitudes de mensaje
+            </DialogTitle>
+          </DialogHeader>
+
+          {(incomingRequests as any[]).length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">
+              No tienes solicitudes pendientes.
+            </p>
+          ) : (
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {(incomingRequests as any[]).map((r: any) => (
+                <div key={r.id} className="flex items-start gap-3 p-3 rounded-lg border">
+                  <Avatar className="h-9 w-9 shrink-0">
+                    <AvatarImage src={r.senderAvatar} />
+                    <AvatarFallback className="text-sm">{getInitials(r.senderFirstName, r.senderLastName)}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-semibold truncate">{getFullName(r.senderFirstName, r.senderLastName)}</p>
+                      <RoleChip role={r.senderRole} />
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">{r.content}</p>
+                    <div className="flex gap-2 mt-2">
+                      <Button size="sm" className="h-7 text-xs" disabled={acceptRequest.isPending}
+                        onClick={() => acceptRequest.mutate(r.id)}>
+                        <Check className="h-3.5 w-3.5 mr-1" /> Aceptar
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={declineRequest.isPending}
+                        onClick={() => declineRequest.mutate(r.id)}>
+                        <XIcon className="h-3.5 w-3.5 mr-1" /> Rechazar
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </AppLayout>

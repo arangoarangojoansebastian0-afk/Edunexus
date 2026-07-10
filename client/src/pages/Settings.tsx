@@ -5,10 +5,30 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useTheme } from "@/hooks/useTheme";
+import { useAuth } from "@/hooks/useAuth";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { Settings as SettingsIcon, Moon, Sun, Bell, Shield, LogOut } from "lucide-react";
 
 export default function Settings() {
   const { theme, toggleTheme } = useTheme();
+  const { user } = useAuth();
+  const { toast } = useToast();
+
+  const togglePrivacy = useMutation({
+    mutationFn: (isPrivate: boolean) => apiRequest("PATCH", "/api/users/me/privacy", { isPrivate }),
+    onSuccess: (_data, isPrivate) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      toast({
+        title: isPrivate ? "Perfil privado activado" : "Perfil público activado",
+        description: isPrivate
+          ? "Ahora quien quiera escribirte por primera vez deberá enviarte una solicitud."
+          : "Ahora cualquiera de tu institución puede escribirte directamente.",
+      });
+    },
+    onError: () => toast({ title: "No se pudo actualizar la privacidad", variant: "destructive" }),
+  });
 
   const handleLogout = () => {
     window.location.href = "/api/logout";
@@ -92,10 +112,18 @@ export default function Settings() {
                 <div>
                   <Label htmlFor="profile-public">Perfil público</Label>
                   <p className="text-sm text-muted-foreground">
-                    Permitir que otros vean tu perfil completo
+                    {user?.isPrivate
+                      ? "Tu perfil es privado: solo puedes chatear con quien acepte tu solicitud (o tú la de ellos)."
+                      : "Permitir que cualquiera de tu institución te escriba directamente."}
                   </p>
                 </div>
-                <Switch id="profile-public" defaultChecked data-testid="switch-profile-public" />
+                <Switch
+                  id="profile-public"
+                  checked={!user?.isPrivate}
+                  onCheckedChange={(checked) => togglePrivacy.mutate(!checked)}
+                  disabled={togglePrivacy.isPending}
+                  data-testid="switch-profile-public"
+                />
               </div>
             </div>
 

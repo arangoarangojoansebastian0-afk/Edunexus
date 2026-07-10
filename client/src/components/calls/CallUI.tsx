@@ -1,8 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCall } from "@/context/CallContext";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Phone, PhoneOff, PhoneMissed, Video, VideoOff, Mic, MicOff, PhoneIncoming } from "lucide-react";
+import { Phone, PhoneOff, PhoneMissed, Video, VideoOff, Mic, MicOff, PhoneIncoming, AlertCircle } from "lucide-react";
 
 function VideoEl({ stream, muted = false, className = "" }: { stream: MediaStream | null; muted?: boolean; className?: string }) {
   const ref = useRef<HTMLVideoElement>(null);
@@ -11,6 +11,27 @@ function VideoEl({ stream, muted = false, className = "" }: { stream: MediaStrea
   }, [stream]);
   if (!stream) return null;
   return <video ref={ref} autoPlay playsInline muted={muted} className={className} />;
+}
+
+export function CallErrorToast() {
+  const { callError, callState } = useCall();
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (callError && callState === "idle") {
+      setVisible(true);
+      const t = setTimeout(() => setVisible(false), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [callError, callState]);
+
+  if (!visible || !callError) return null;
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] bg-card border shadow-xl rounded-full px-4 py-2.5 flex items-center gap-2 text-sm animate-in fade-in slide-in-from-bottom-2">
+      <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
+      {callError}
+    </div>
+  );
 }
 
 export function IncomingCallToast() {
@@ -121,6 +142,7 @@ export function GlobalCallUI() {
       <IncomingCallToast />
       <OutgoingCallOverlay />
       <ActiveCallScreen />
+      <CallErrorToast />
     </>
   );
 }

@@ -242,6 +242,20 @@ export async function registerRoutes(
     }
   });
 
+  // Activar/desactivar perfil privado (solo quien te haga una solicitud aceptada te puede escribir)
+  app.patch("/api/users/me/privacy", requireAuth, async (req, res) => {
+    try {
+      const { isPrivate } = req.body as { isPrivate?: boolean };
+      if (typeof isPrivate !== "boolean") {
+        return res.status(400).json({ message: "isPrivate debe ser true o false" });
+      }
+      const user = await storage.updateUser(req.user!.id, { isPrivate });
+      res.json({ isPrivate: user?.isPrivate ?? isPrivate });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update privacy" });
+    }
+  });
+
   app.get("/api/users/:id/posts", requireAuth, async (req, res) => {
     try {
       const posts = await storage.getPostsByUser(req.params.id);
@@ -2073,9 +2087,26 @@ export async function registerRoutes(
   // Enviar mensaje directo
   app.post("/api/direct-messages/:receiverId", requireAuth, async (req, res) => {
     try {
+      const senderId = req.user!.id;
+      const receiverId = req.params.receiverId;
+
+      // Si el perfil del destinatario es privado y todavía no hay ninguna
+      // conversación previa entre ambos, no se permite mandar directo:
+      // hay que pasar primero por una solicitud de mensaje.
+      const receiver = await storage.getUser(receiverId);
+      if (receiver?.isPrivate) {
+        const alreadyTalking = await storage.hasExistingConversation(senderId, receiverId);
+        if (!alreadyTalking) {
+          return res.status(403).json({
+            message: "Este perfil es privado. Envía una solicitud para poder chatear.",
+            requiresRequest: true,
+          });
+        }
+      }
+
       const msg = await storage.sendDirectMessage({
-        senderId: req.user!.id,
-        receiverId: req.params.receiverId,
+        senderId,
+        receiverId,
         institutionId: req.user!.institutionId!,
         content: req.body.content,
       });
@@ -2089,6 +2120,97 @@ export async function registerRoutes(
       const count = await storage.getUnreadDirectMessageCount(req.user!.id);
       res.json({ count });
     } catch { res.json({ count: 0 }); }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // SOLICITUDES DE MENSAJE (perfiles privados)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // Enviar una solicitud de chat a un perfil privado
+  app.post("/api/message-requests/:receiverId", requireAuth, async (req, res) => {
+    try {
+      const senderId = req.user!.id;
+      const receiverId = req.params.receiverId;
+      const { content } = req.body as { content?: string };
+      if (!content || !content.trim()) {
+        return res.status(400).json({ message: "Escribe un mensaje para tu solicitud" });
+      }
+      if (receiverId === senderId) {
+        return res.status(400).json({ message: "No puedes enviarte una solicitud a ti mismo" });
+      }
+
+      const receiver = await storage.getUser(receiverId);
+      if (!receiver || receiver.institutionId !== req.user!.institutionId) {
+        return res.status(404).json({ message: "Usuario no encontrado" });
+      }
+
+      // Si ya existe conversación, no hace falta solicitud: que hable directo
+      const alreadyTalking = await storage.hasExistingConversation(senderId, receiverId);
+      if (alreadyTalking) {
+        return res.status(400).json({ message: "Ya tienen una conversación, puedes escribirle directamente" });
+      }
+
+      const request = await storage.createOrUpdateMessageRequest({
+        senderId, receiverId, institutionId: req.user!.institutionId!, content: content.trim(),
+      });
+      res.status(201).json(request);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Solicitudes pendientes que me han enviado
+  app.get("/api/message-requests/incoming", requireAuth, async (req, res) => {
+    try {
+      const requests = await storage.getIncomingMessageRequests(req.user!.id);
+      res.json(requests);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // A quiénes ya les mandé solicitud y sigo esperando respuesta
+  app.get("/api/message-requests/outgoing", requireAuth, async (req, res) => {
+    try {
+      const receiverIds = await storage.getOutgoingPendingRequestReceiverIds(req.user!.id);
+      res.json(receiverIds);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Aceptar una solicitud: se crea el primer mensaje y queda habilitado el chat directo
+  app.post("/api/message-requests/:id/accept", requireAuth, async (req, res) => {
+    try {
+      const request = await storage.getMessageRequest(req.params.id);
+      if (!request || request.receiverId !== req.user!.id) {
+        return res.status(404).json({ message: "Solicitud no encontrada" });
+      }
+      if (request.status !== "pending") {
+        return res.status(400).json({ message: "Esta solicitud ya fue respondida" });
+      }
+      const message = await storage.acceptMessageRequest(req.params.id);
+      res.json(message);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Rechazar una solicitud
+  app.post("/api/message-requests/:id/decline", requireAuth, async (req, res) => {
+    try {
+      const request = await storage.getMessageRequest(req.params.id);
+      if (!request || request.receiverId !== req.user!.id) {
+        return res.status(404).json({ message: "Solicitud no encontrada" });
+      }
+      if (request.status !== "pending") {
+        return res.status(400).json({ message: "Esta solicitud ya fue respondida" });
+      }
+      await storage.declineMessageRequest(req.params.id);
+      res.json({ message: "Solicitud rechazada" });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -2327,6 +2449,18 @@ export async function registerRoutes(
                 callerName: msg.callerName,
                 callType: msg.callType || "video",
               }));
+            } else {
+              // El destinatario no tiene una sesión de WebSocket activa — avisamos al llamante
+              ws.send(JSON.stringify({ type: "call-unavailable", targetUserId: msg.targetUserId }));
+            }
+            break;
+          }
+          case "call-cancel": {
+            // El llamante colgó antes de que el destinatario aceptara/rechazara.
+            // Como la sala solo se crea al aceptar, avisamos directo por userId.
+            const targetWs = userSockets.get(msg.targetUserId);
+            if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+              targetWs.send(JSON.stringify({ type: "call-cancelled", roomId: msg.roomId }));
             }
             break;
           }
