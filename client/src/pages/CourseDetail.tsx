@@ -1,5 +1,5 @@
 import { FileViewer } from "@/components/FileViewer";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -891,11 +891,35 @@ function GoogleClassroomTab({ courseId, course }: { courseId: string; course: an
   const [syncSubjectId, setSyncSubjectId] = useState("");
   const [syncPeriodId, setSyncPeriodId] = useState("");
 
+  // Al volver del consentimiento de Google, el callback redirige aquí mismo
+  // con ?gc_connected=1 o ?gc_error=... — lo detectamos y refrescamos el estado.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get("gc_connected");
+    const error = params.get("gc_error");
+    if (connected) {
+      refetchStatus();
+      toast({ title: "Google Classroom conectado" });
+      params.delete("gc_connected");
+      const clean = `${window.location.pathname}${params.toString() ? `?${params}` : ""}`;
+      window.history.replaceState({}, "", clean);
+    } else if (error) {
+      toast({ title: "Error al conectar Google Classroom", description: error, variant: "destructive" });
+      params.delete("gc_error");
+      const clean = `${window.location.pathname}${params.toString() ? `?${params}` : ""}`;
+      window.history.replaceState({}, "", clean);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const connectGC = async () => {
-    const res = await fetch("/api/classroom/google/auth-url");
+    const res = await fetch("/api/classroom/google/auth-url?" + new URLSearchParams({
+      returnTo: window.location.pathname,
+    }));
     const { url } = await res.json();
-    window.open(url, "_blank", "width=500,height=600");
-    setTimeout(() => refetchStatus(), 3000);
+    // Redirigir en la misma pestaña: abrir en popup con window.open provocaba
+    // about:blank porque la navegación ocurría fuera del gesto de usuario síncrono.
+    window.location.href = url;
   };
 
   const disconnectGC = useMutation({

@@ -62,6 +62,7 @@ function Router() {
           <Route path="/classroom/:id" component={CourseDetail} />
           <Route path="/schedules" component={Schedules} />
           <Route path="/messages" component={DirectMessages} />
+          <Route path="/messages/group/:groupId" component={DirectMessages} />
           <Route path="/messages/:userId" component={DirectMessages} />
         </>
       )}

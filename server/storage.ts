@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, desc, and, sql, lt, inArray, aliasedTable } from "drizzle-orm";
+import { eq, desc, and, or, ilike, sql, lt, inArray, aliasedTable } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
   institutionSettings,
@@ -97,6 +97,9 @@ import {
   type InsertGradebookEntry,
   type GradebookEntryWithStudent,
   type TeachingAssignment,
+  chatGroups,
+  chatGroupMembers,
+  chatGroupMessages,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -262,6 +265,15 @@ export interface IStorage {
   getReportCards(params: { yearId: string; groupId: string; periodId?: string }): Promise<any>;
   getUsersByRoleAndInstitution(role: string, institutionId: string): Promise<User[]>;
   getUsersByInstitution(institutionId: string): Promise<User[]>;
+  searchUsersByInstitution(institutionId: string, query: string, excludeUserId?: string): Promise<User[]>;
+  createChatGroupWithMembers(params: { institutionId: string; name: string; description?: string | null; createdBy: string; memberIds: string[] }): Promise<any>;
+  getChatGroupsForUser(userId: string): Promise<any[]>;
+  isChatGroupMember(groupId: string, userId: string): Promise<boolean>;
+  getChatGroupMembers(groupId: string): Promise<any[]>;
+  addChatGroupMembers(groupId: string, userIds: string[]): Promise<void>;
+  removeChatGroupMember(groupId: string, userId: string): Promise<void>;
+  getChatGroupMessages(groupId: string): Promise<any[]>;
+  sendChatGroupMessage(data: { groupId: string; senderId: string; content: string; mediaUrl?: string | null; mediaType?: string | null }): Promise<any>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2036,6 +2048,115 @@ async getInstitutionByCode(code: string) {
     } catch { return 0; }
   }
 
+  // ──────────────────────────────────────────────────────────────────────
+  // GRUPOS PRIVADOS DE CHAT — solo quedan los invitados explícitamente,
+  // nadie se agrega automáticamente (a diferencia de "groups" de clubes/cursos)
+  // ──────────────────────────────────────────────────────────────────────
+
+  async createChatGroupWithMembers(params: {
+    institutionId: string;
+    name: string;
+    description?: string | null;
+    createdBy: string;
+    memberIds: string[]; // ids ya validados como pertenecientes a la institución
+  }): Promise<any> {
+    const { institutionId, name, description, createdBy, memberIds } = params;
+
+    const [group] = await db.insert(chatGroups).values({
+      institutionId,
+      name,
+      description: description || null,
+      createdBy,
+    }).returning();
+
+    // El creador queda como "owner"; los invitados como "member". Nadie más.
+    const uniqueMemberIds = Array.from(new Set([createdBy, ...memberIds]));
+    await db.insert(chatGroupMembers).values(
+      uniqueMemberIds.map((userId) => ({
+        groupId: group.id,
+        userId,
+        role: userId === createdBy ? "owner" : "member",
+      }))
+    );
+
+    return group;
+  }
+
+  async getChatGroupsForUser(userId: string): Promise<any[]> {
+    return db.select({
+      id: chatGroups.id,
+      name: chatGroups.name,
+      description: chatGroups.description,
+      avatarUrl: chatGroups.avatarUrl,
+      createdBy: chatGroups.createdBy,
+      createdAt: chatGroups.createdAt,
+    }).from(chatGroups)
+      .innerJoin(chatGroupMembers, eq(chatGroupMembers.groupId, chatGroups.id))
+      .where(eq(chatGroupMembers.userId, userId))
+      .orderBy(desc(chatGroups.createdAt));
+  }
+
+  async isChatGroupMember(groupId: string, userId: string): Promise<boolean> {
+    const [row] = await db.select({ id: chatGroupMembers.id }).from(chatGroupMembers)
+      .where(and(eq(chatGroupMembers.groupId, groupId), eq(chatGroupMembers.userId, userId)));
+    return !!row;
+  }
+
+  async getChatGroupMembers(groupId: string): Promise<any[]> {
+    return db.select({
+      id: users.id,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      email: users.email,
+      profileImageUrl: users.profileImageUrl,
+      role: chatGroupMembers.role,
+    }).from(chatGroupMembers)
+      .innerJoin(users, eq(users.id, chatGroupMembers.userId))
+      .where(eq(chatGroupMembers.groupId, groupId));
+  }
+
+  async addChatGroupMembers(groupId: string, userIds: string[]): Promise<void> {
+    if (userIds.length === 0) return;
+    const existing = await db.select({ userId: chatGroupMembers.userId }).from(chatGroupMembers)
+      .where(eq(chatGroupMembers.groupId, groupId));
+    const existingIds = new Set(existing.map((e) => e.userId));
+    const toAdd = userIds.filter((id) => !existingIds.has(id));
+    if (toAdd.length === 0) return;
+    await db.insert(chatGroupMembers).values(
+      toAdd.map((userId) => ({ groupId, userId, role: "member" }))
+    );
+  }
+
+  async removeChatGroupMember(groupId: string, userId: string): Promise<void> {
+    await db.delete(chatGroupMembers)
+      .where(and(eq(chatGroupMembers.groupId, groupId), eq(chatGroupMembers.userId, userId)));
+  }
+
+  async getChatGroupMessages(groupId: string): Promise<any[]> {
+    return db.select({
+      id: chatGroupMessages.id,
+      groupId: chatGroupMessages.groupId,
+      senderId: chatGroupMessages.senderId,
+      content: chatGroupMessages.content,
+      mediaUrl: chatGroupMessages.mediaUrl,
+      mediaType: chatGroupMessages.mediaType,
+      createdAt: chatGroupMessages.createdAt,
+      senderFirstName: users.firstName,
+      senderLastName: users.lastName,
+      senderAvatar: users.profileImageUrl,
+    }).from(chatGroupMessages)
+      .innerJoin(users, eq(users.id, chatGroupMessages.senderId))
+      .where(eq(chatGroupMessages.groupId, groupId))
+      .orderBy(chatGroupMessages.createdAt);
+  }
+
+  async sendChatGroupMessage(data: {
+    groupId: string; senderId: string; content: string; mediaUrl?: string | null; mediaType?: string | null;
+  }): Promise<any> {
+    const [msg] = await db.insert(chatGroupMessages).values(data).returning();
+    return msg;
+  }
+
   async getUsersByInstitution(institutionId: string): Promise<any[]> {
     try {
       return await db.select({
@@ -2050,6 +2171,40 @@ async getInstitutionByCode(code: string) {
         .orderBy(users.firstName)
         .limit(500);
     } catch { return []; }
+  }
+
+  // Búsqueda de usuarios por institución usando ILIKE en SQL (nombre, apellido o email)
+  async searchUsersByInstitution(institutionId: string, query: string, excludeUserId?: string): Promise<any[]> {
+    const term = `%${query.trim()}%`;
+    const conditions = [
+      eq(users.institutionId, institutionId),
+      or(
+        ilike(users.firstName, term),
+        ilike(users.lastName, term),
+        ilike(users.email, term),
+        // Coincidencia contra "nombre apellido" completo, p.ej. "miguel velez"
+        ilike(sql`${users.firstName} || ' ' || ${users.lastName}`, term),
+      ),
+    ];
+    if (excludeUserId) {
+      conditions.push(sql`${users.id} <> ${excludeUserId}`);
+    }
+    try {
+      return await db.select({
+        id: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+        role: users.role,
+        profileImageUrl: users.profileImageUrl,
+      }).from(users)
+        .where(and(...conditions))
+        .orderBy(users.firstName)
+        .limit(15);
+    } catch (e) {
+      console.error("searchUsersByInstitution error:", e);
+      return [];
+    }
   }
 
 

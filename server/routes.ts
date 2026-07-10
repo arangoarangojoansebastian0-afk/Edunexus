@@ -196,6 +196,23 @@ export async function registerRoutes(
     }
   });
 
+  // IMPORTANTE: esta ruta debe ir ANTES de "/api/users/:id" — Express matchea
+  // por orden de registro, no por especificidad, así que si va después,
+  // "/api/users/search" cae en "/api/users/:id" con id="search" y nunca
+  // llega a este handler (devolviendo 404 y, por ende, [] en el frontend).
+  app.get("/api/users/search", requireAuth, async (req, res) => {
+    try {
+      const q = (req.query.q as string || "").trim();
+      if (!q || q.length < 2) return res.json([]);
+      const results = await storage.searchUsersByInstitution(
+        req.user!.institutionId!,
+        q,
+        req.user!.id,
+      );
+      res.json(results);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   app.get("/api/users/:id", requireAuth, async (req, res) => {
     try {
       const user = await storage.getUser(req.params.id);
@@ -1556,19 +1573,41 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/classroom/courses/:id/activities", requireAuth, async (req, res) => {
-    try {
-      const user = req.user!;
-      if (user.role !== "teacher" && user.role !== "admin") {
-        return res.status(403).json({ message: "Not authorized" });
+  app.post(
+    "/api/classroom/courses/:id/activities",
+    requireAuth,
+    upload.array("attachments", 5),
+    async (req, res) => {
+      try {
+        const user = req.user!;
+        if (user.role !== "teacher" && user.role !== "admin") {
+          return res.status(403).json({ message: "Not authorized" });
+        }
+
+        // multipart/form-data llega como strings: hay que coercionar antes de validar con Zod
+        const files = (req.files as Express.Multer.File[]) || [];
+        const attachmentUrls = await Promise.all(
+          files.map((f) => uploadToSupabase(f, "activities"))
+        );
+
+        const body: Record<string, any> = { ...req.body, courseId: req.params.id };
+        if (body.maxScore !== undefined) body.maxScore = Number(body.maxScore);
+        if (body.isPublished !== undefined) body.isPublished = body.isPublished === "true" || body.isPublished === true;
+        if (attachmentUrls.length > 0) body.attachments = attachmentUrls;
+
+        const data = insertActivitySchema.parse(body);
+        const activity = await storage.createActivity(data);
+        res.status(201).json(activity);
+      } catch (err: any) {
+        console.error("Error creating activity:", err);
+        if (err?.issues) {
+          // Error de validación Zod: devolver detalle para depurar en frontend
+          return res.status(400).json({ message: "Datos inválidos", issues: err.issues });
+        }
+        res.status(500).json({ message: "Failed to create activity" });
       }
-      const data = insertActivitySchema.parse({ ...req.body, courseId: req.params.id });
-      const activity = await storage.createActivity(data);
-      res.status(201).json(activity);
-    } catch (err) {
-      res.status(500).json({ message: "Failed to create activity" });
     }
-  });
+  );
 
   app.delete("/api/classroom/activities/:id", requireAuth, async (req, res) => {
     try {
@@ -1712,7 +1751,7 @@ export async function registerRoutes(
 
   // Iniciar OAuth de Google Classroom para el docente
   app.get("/api/classroom/google/auth-url", requireAuth, (req, res) => {
-    const { gcClientId } = req.query as { gcClientId?: string };
+    const { gcClientId, returnTo } = req.query as { gcClientId?: string; returnTo?: string };
     const clientId = gcClientId || process.env.GOOGLE_CLIENT_ID;
     if (!clientId) return res.status(400).json({ error: "Google Client ID no configurado" });
 
@@ -1726,6 +1765,10 @@ export async function registerRoutes(
       "openid", "email", "profile",
     ].join(" ");
 
+    // "state" guarda la ruta a la que debemos volver tras el consentimiento
+    // (solo se aceptan rutas relativas, para evitar open-redirect)
+    const safeReturnTo = returnTo && returnTo.startsWith("/") ? returnTo : "/";
+
     const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     url.searchParams.set("client_id", clientId);
     url.searchParams.set("redirect_uri", redirectUri);
@@ -1733,7 +1776,7 @@ export async function registerRoutes(
     url.searchParams.set("scope", scope);
     url.searchParams.set("access_type", "offline");
     url.searchParams.set("prompt", "consent");
-    url.searchParams.set("state", req.user!.id);
+    url.searchParams.set("state", safeReturnTo);
 
     res.json({ url: url.toString() });
   });
@@ -1741,7 +1784,9 @@ export async function registerRoutes(
   // Callback OAuth — intercambia código por tokens y los guarda
   app.get("/api/classroom/google/callback", requireAuth, async (req, res) => {
     const { code, state } = req.query as { code?: string; state?: string };
-    if (!code) return res.redirect("/?gc_error=no_code");
+    // La ruta de retorno viaja en "state"; validamos que sea relativa antes de usarla
+    const returnPath = state && state.startsWith("/") ? state : "/";
+    if (!code) return res.redirect(`${returnPath}?gc_error=no_code`);
 
     try {
       const institution = await storage.getInstitutionSettings(req.user!.institutionId!);
@@ -1788,9 +1833,9 @@ export async function registerRoutes(
         },
       });
 
-      res.redirect("/?gc_connected=1");
+      res.redirect(`${returnPath}?gc_connected=1`);
     } catch (e: any) {
-      res.redirect(`/?gc_error=${encodeURIComponent(e.message)}`);
+      res.redirect(`${returnPath}?gc_error=${encodeURIComponent(e.message)}`);
     }
   });
 
@@ -2046,22 +2091,149 @@ export async function registerRoutes(
     } catch { res.json({ count: 0 }); }
   });
 
-  // Buscar usuarios de la institución para iniciar chat
-  app.get("/api/users/search", requireAuth, async (req, res) => {
+  // ──────────────────────────────────────────────────────────────────────────
+  // GRUPOS PRIVADOS DE CHAT
+  // A diferencia de los grupos de clubes/cursos (abiertos a la institución),
+  // estos SOLO tienen como miembros a quien el creador invita explícitamente.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // Crear un grupo privado con los usuarios invitados (y nadie más)
+  app.post("/api/chat-groups", requireAuth, async (req, res) => {
     try {
-      const q = (req.query.q as string || "").toLowerCase();
-      if (!q || q.length < 2) return res.json([]);
-      const all = await storage.getUsersByInstitution(req.user!.institutionId!);
-      const filtered = all
-        .filter(u => u.id !== req.user!.id)
-        .filter(u => {
-          const full = `${u.firstName} ${u.lastName} ${u.email}`.toLowerCase();
-          return full.includes(q);
-        })
-        .slice(0, 15);
-      res.json(filtered);
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+      const { name, description, memberIds } = req.body as {
+        name?: string; description?: string; memberIds?: string[];
+      };
+      if (!name || !name.trim()) {
+        return res.status(400).json({ message: "El nombre del grupo es obligatorio" });
+      }
+      if (!Array.isArray(memberIds) || memberIds.length === 0) {
+        return res.status(400).json({ message: "Debes invitar al menos a una persona" });
+      }
+
+      // Seguridad: solo se permiten invitar personas de la misma institución
+      // (evita que alguien meta usuarios de otro colegio al grupo)
+      const institutionUsers = await storage.getUsersByInstitution(req.user!.institutionId!);
+      const validIds = new Set(institutionUsers.map((u) => u.id));
+      const filteredMemberIds = memberIds.filter((id) => validIds.has(id) && id !== req.user!.id);
+
+      if (filteredMemberIds.length === 0) {
+        return res.status(400).json({ message: "Ninguno de los invitados es válido" });
+      }
+
+      const group = await storage.createChatGroupWithMembers({
+        institutionId: req.user!.institutionId!,
+        name: name.trim(),
+        description: description?.trim() || null,
+        createdBy: req.user!.id,
+        memberIds: filteredMemberIds,
+      });
+
+      res.status(201).json(group);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to create group" });
+    }
   });
+
+  // Listar los grupos privados donde el usuario es miembro (nunca todos los de la institución)
+  app.get("/api/chat-groups", requireAuth, async (req, res) => {
+    try {
+      const groups = await storage.getChatGroupsForUser(req.user!.id);
+      res.json(groups);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Miembros de un grupo — solo visibles para quienes ya son miembros
+  app.get("/api/chat-groups/:id/members", requireAuth, async (req, res) => {
+    try {
+      const isMember = await storage.isChatGroupMember(req.params.id, req.user!.id);
+      if (!isMember) return res.status(403).json({ message: "No perteneces a este grupo" });
+      const members = await storage.getChatGroupMembers(req.params.id);
+      res.json(members);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Invitar más personas a un grupo ya existente (solo miembros pueden invitar)
+  app.post("/api/chat-groups/:id/members", requireAuth, async (req, res) => {
+    try {
+      const isMember = await storage.isChatGroupMember(req.params.id, req.user!.id);
+      if (!isMember) return res.status(403).json({ message: "No perteneces a este grupo" });
+
+      const { memberIds } = req.body as { memberIds?: string[] };
+      if (!Array.isArray(memberIds) || memberIds.length === 0) {
+        return res.status(400).json({ message: "Selecciona al menos una persona para invitar" });
+      }
+
+      const institutionUsers = await storage.getUsersByInstitution(req.user!.institutionId!);
+      const validIds = new Set(institutionUsers.map((u) => u.id));
+      const filteredMemberIds = memberIds.filter((id) => validIds.has(id));
+
+      await storage.addChatGroupMembers(req.params.id, filteredMemberIds);
+      res.json({ message: "Miembros agregados" });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Salir del grupo (o, si eres el creador, remover a alguien)
+  app.delete("/api/chat-groups/:id/members/:userId", requireAuth, async (req, res) => {
+    try {
+      const isMember = await storage.isChatGroupMember(req.params.id, req.user!.id);
+      if (!isMember) return res.status(403).json({ message: "No perteneces a este grupo" });
+
+      if (req.params.userId !== req.user!.id) {
+        const members = await storage.getChatGroupMembers(req.params.id);
+        const me = members.find((m) => m.id === req.user!.id);
+        if (me?.role !== "owner") {
+          return res.status(403).json({ message: "Solo el creador del grupo puede remover miembros" });
+        }
+      }
+
+      await storage.removeChatGroupMember(req.params.id, req.params.userId);
+      res.json({ message: "Listo" });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Mensajes del grupo — solo visibles/enviables por miembros
+  app.get("/api/chat-groups/:id/messages", requireAuth, async (req, res) => {
+    try {
+      const isMember = await storage.isChatGroupMember(req.params.id, req.user!.id);
+      if (!isMember) return res.status(403).json({ message: "No perteneces a este grupo" });
+      const messages = await storage.getChatGroupMessages(req.params.id);
+      res.json(messages);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/chat-groups/:id/messages", requireAuth, async (req, res) => {
+    try {
+      const isMember = await storage.isChatGroupMember(req.params.id, req.user!.id);
+      if (!isMember) return res.status(403).json({ message: "No perteneces a este grupo" });
+
+      const { content } = req.body as { content?: string };
+      if (!content || !content.trim()) {
+        return res.status(400).json({ message: "El mensaje no puede estar vacío" });
+      }
+
+      const msg = await storage.sendChatGroupMessage({
+        groupId: req.params.id,
+        senderId: req.user!.id,
+        content: content.trim(),
+      });
+      res.status(201).json(msg);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Buscar usuarios de la institución para iniciar chat
+  // (la ruta real vive arriba, antes de "/api/users/:id" — ver nota ahí)
 
 
   // ──────────────────────────────────────────────────────────────────────────

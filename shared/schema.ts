@@ -754,6 +754,64 @@ export const directMessages = pgTable(
   ]
 );
 
+// ─── GRUPOS PRIVADOS DE CHAT ───────────────────────────────────────────────
+// A diferencia de "groups" (clubes/cursos, abiertos a la institución), estos
+// grupos SOLO tienen como miembros a quien el creador invita explícitamente.
+export const chatGroups = pgTable(
+  "chat_groups",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }).notNull(),
+    name: varchar("name", { length: 255 }).notNull(),
+    description: text("description"),
+    avatarUrl: varchar("avatar_url"),
+    createdBy: varchar("created_by").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_chat_groups_institution").on(table.institutionId)]
+);
+
+export const chatGroupMembers = pgTable(
+  "chat_group_members",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    groupId: varchar("group_id").references(() => chatGroups.id, { onDelete: "cascade" }).notNull(),
+    userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    role: varchar("role", { length: 20 }).default("member").notNull(), // "owner" | "member"
+    joinedAt: timestamp("joined_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_cgm_group").on(table.groupId),
+    index("idx_cgm_user").on(table.userId),
+  ]
+);
+
+export const chatGroupMessages = pgTable(
+  "chat_group_messages",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    groupId: varchar("group_id").references(() => chatGroups.id, { onDelete: "cascade" }).notNull(),
+    senderId: varchar("sender_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    content: text("content").notNull(),
+    mediaUrl: varchar("media_url"),
+    mediaType: varchar("media_type"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_cgmsg_group").on(table.groupId),
+    index("idx_cgmsg_created").on(table.createdAt),
+  ]
+);
+
+export const insertChatGroupSchema = createInsertSchema(chatGroups).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertChatGroupMessageSchema = createInsertSchema(chatGroupMessages).omit({ id: true, createdAt: true });
+export type ChatGroup = typeof chatGroups.$inferSelect;
+export type InsertChatGroup = z.infer<typeof insertChatGroupSchema>;
+export type ChatGroupMember = typeof chatGroupMembers.$inferSelect;
+export type ChatGroupMessage = typeof chatGroupMessages.$inferSelect;
+export type InsertChatGroupMessage = z.infer<typeof insertChatGroupMessageSchema>;
+
 // Relations definitions
 export const recognitionsRelations = relations(recognitions, ({ one }) => ({
   createdBy: one(users, { fields: [recognitions.createdBy], references: [users.id], relationName: "createdBy" }),
