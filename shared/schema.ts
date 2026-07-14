@@ -22,7 +22,8 @@ export const userRoleEnum = pgEnum("user_role", [
   "director", 
   "coordinator", 
   "secretary", 
-  "admin"
+  "admin",
+  "super_admin", // administrador general de la plataforma — crea y gestiona colegios
 ]);
 export const groupTypeEnum = pgEnum("group_type", ["course", "club"]);
 export const fileVisibilityEnum = pgEnum("file_visibility", ["public", "group", "private"]);
@@ -85,6 +86,7 @@ export const users = pgTable("users", {
   bio: text("bio"),
   verified: boolean("verified").default(false).notNull(),
   blocked: boolean("blocked").default(false).notNull(),
+  isPrivate: boolean("is_private").default(false).notNull(),
   institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -754,6 +756,32 @@ export const directMessages = pgTable(
   ]
 );
 
+// Solicitudes de mensaje — cuando el destinatario tiene el perfil privado,
+// el primer contacto pasa por aquí en vez de crear un mensaje directo
+export const messageRequests = pgTable(
+  "message_requests",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    senderId: varchar("sender_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    receiverId: varchar("receiver_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }).notNull(),
+    content: text("content").notNull(),
+    status: varchar("status", { length: 20 }).default("pending").notNull(), // pending | accepted | declined
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    respondedAt: timestamp("responded_at"),
+  },
+  (table) => [
+    index("idx_mr_receiver").on(table.receiverId),
+    index("idx_mr_sender").on(table.senderId),
+  ]
+);
+
+export const insertMessageRequestSchema = createInsertSchema(messageRequests).omit({
+  id: true, status: true, createdAt: true, respondedAt: true,
+});
+export type MessageRequest = typeof messageRequests.$inferSelect;
+export type InsertMessageRequest = z.infer<typeof insertMessageRequestSchema>;
+
 // ─── GRUPOS PRIVADOS DE CHAT ───────────────────────────────────────────────
 // A diferencia de "groups" (clubes/cursos, abiertos a la institución), estos
 // grupos SOLO tienen como miembros a quien el creador invita explícitamente.
@@ -811,6 +839,63 @@ export type InsertChatGroup = z.infer<typeof insertChatGroupSchema>;
 export type ChatGroupMember = typeof chatGroupMembers.$inferSelect;
 export type ChatGroupMessage = typeof chatGroupMessages.$inferSelect;
 export type InsertChatGroupMessage = z.infer<typeof insertChatGroupMessageSchema>;
+
+// ─── BLOQUEO DE USUARIOS ────────────────────────────────────────────────────
+// Si A bloquea a B, ni B le puede escribir a A (ni con solicitud) ni A a B.
+export const userBlocks = pgTable(
+  "user_blocks",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    blockerId: varchar("blocker_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    blockedId: varchar("blocked_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_user_blocks_blocker").on(table.blockerId),
+    index("idx_user_blocks_blocked").on(table.blockedId),
+  ]
+);
+export type UserBlock = typeof userBlocks.$inferSelect;
+
+// ─── HISTORIAL DE LLAMADAS ──────────────────────────────────────────────────
+export const callStatusEnum = pgEnum("call_status", ["ringing", "answered", "missed", "rejected", "unavailable"]);
+export const callLogs = pgTable(
+  "call_logs",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    roomId: varchar("room_id").notNull(),
+    callerId: varchar("caller_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    receiverId: varchar("receiver_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }),
+    callType: varchar("call_type", { length: 10 }).notNull(), // "video" | "audio"
+    status: callStatusEnum("status").default("ringing").notNull(),
+    startedAt: timestamp("started_at").defaultNow().notNull(),
+    answeredAt: timestamp("answered_at"),
+    endedAt: timestamp("ended_at"),
+    durationSeconds: integer("duration_seconds"),
+  },
+  (table) => [
+    index("idx_call_logs_caller").on(table.callerId),
+    index("idx_call_logs_receiver").on(table.receiverId),
+  ]
+);
+export type CallLog = typeof callLogs.$inferSelect;
+
+// ─── SUSCRIPCIONES A NOTIFICACIONES PUSH (Web Push) ────────────────────────
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    endpoint: text("endpoint").notNull().unique(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_push_subs_user").on(table.userId)]
+);
+export type PushSubscription = typeof pushSubscriptions.$inferSelect;
+
 
 // Relations definitions
 export const recognitionsRelations = relations(recognitions, ({ one }) => ({

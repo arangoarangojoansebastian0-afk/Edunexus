@@ -10,11 +10,13 @@ import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Settings as SettingsIcon, Moon, Sun, Bell, Shield, LogOut } from "lucide-react";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 export default function Settings() {
   const { theme, toggleTheme } = useTheme();
   const { user } = useAuth();
   const { toast } = useToast();
+  const push = usePushNotifications();
 
   const togglePrivacy = useMutation({
     mutationFn: (isPrivate: boolean) => apiRequest("PATCH", "/api/users/me/privacy", { isPrivate }),
@@ -92,10 +94,22 @@ export default function Settings() {
                   <div>
                     <Label htmlFor="push-notifications">Notificaciones push</Label>
                     <p className="text-sm text-muted-foreground">
-                      Recibe notificaciones en tu navegador
+                      {!push.supported
+                        ? "Tu navegador no soporta notificaciones push"
+                        : !push.enabled
+                        ? "El servidor todavía no tiene notificaciones push configuradas"
+                        : push.permission === "denied"
+                        ? "Bloqueaste los permisos de notificación en el navegador"
+                        : "Recibe notificaciones en tu navegador (mensajes, solicitudes, llamadas)"}
                     </p>
                   </div>
-                  <Switch id="push-notifications" data-testid="switch-push-notifications" />
+                  <Switch
+                    id="push-notifications"
+                    checked={push.subscribed}
+                    disabled={!push.supported || !push.enabled || push.permission === "denied" || push.loading}
+                    onCheckedChange={(checked) => checked ? push.subscribe() : push.unsubscribe()}
+                    data-testid="switch-push-notifications"
+                  />
                 </div>
               </div>
             </div>

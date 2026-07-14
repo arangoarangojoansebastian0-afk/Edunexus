@@ -9,13 +9,20 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { getFullName, getInitials } from "@/lib/authUtils";
 import { format, isToday, isYesterday } from "date-fns";
 import { es } from "date-fns/locale";
-import { Send, Search, MessageCircle, ArrowLeft, Check, CheckCheck, Phone, Video, Users, UserPlus2, Lock, Clock, X as XIcon } from "lucide-react";
+import { Send, Search, MessageCircle, ArrowLeft, Check, CheckCheck, Phone, Video, Users, UserPlus2, Lock, Clock, X as XIcon, MoreVertical, ShieldOff, Shield, Settings2, LogOut, Crown, Trash2, PhoneCall } from "lucide-react";
 import { useCall } from "@/context/CallContext";
 
 function formatMsgTime(date: string) {
@@ -110,7 +117,47 @@ export default function DirectMessages() {
     refetchInterval: 5000,
   });
 
+  // Presencia "en línea" — reutiliza la conexión WebSocket de llamadas del lado del servidor
+  const { data: onlineIds = [] } = useQuery<string[]>({
+    queryKey: ["/api/presence/online"],
+    refetchInterval: 15000,
+  });
+  const isOnline = (id: string) => (onlineIds as string[]).includes(id);
+
+  // Usuarios que YO bloqueé
+  const { data: blockedUsers = [] } = useQuery<any[]>({
+    queryKey: ["/api/users/blocked"],
+  });
+  const isBlockedByMe = (id: string) => (blockedUsers as any[]).some((b) => b.id === id);
+
+  // Historial de llamadas (solo se pide cuando se abre el diálogo)
+  const { data: callHistory = [] } = useQuery<any[]>({
+    queryKey: ["/api/calls/history"],
+    enabled: showCallHistory,
+  });
+
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
+  const [showGroupSettings, setShowGroupSettings] = useState(false);
+
+  const blockMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/users/${otherId}/block`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users/blocked"] });
+      toast({ title: "Usuario bloqueado", description: "Ya no podrá escribirte ni con solicitud." });
+      setShowBlockConfirm(false);
+    },
+  });
+
+  const unblockMutation = useMutation({
+    mutationFn: () => apiRequest("DELETE", `/api/users/${otherId}/block`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users/blocked"] });
+      toast({ title: "Usuario desbloqueado" });
+    },
+  });
+
   const [showRequests, setShowRequests] = useState(false);
+  const [showCallHistory, setShowCallHistory] = useState(false);
   const [pendingUser, setPendingUser] = useState<any>(null);
   const hasPendingOutgoingToActive = activeType === "direct" && (outgoingPendingIds as string[]).includes(otherId);
 
@@ -214,6 +261,59 @@ export default function DirectMessages() {
     },
   });
 
+  // Miembros del grupo activo (para el panel de configuración)
+  const { data: groupMembersList = [] } = useQuery<any[]>({
+    queryKey: ["/api/chat-groups", groupId, "members"],
+    queryFn: () => fetch(`/api/chat-groups/${groupId}/members`, { credentials: "include" }).then(r => r.json()),
+    enabled: !!groupId && showGroupSettings,
+  });
+  const myGroupRole = (groupMembersList as any[]).find((m) => m.id === user?.id)?.role;
+
+  const [groupNameEdit, setGroupNameEdit] = useState("");
+  const [groupAddSearch, setGroupAddSearch] = useState("");
+  const { data: groupAddResults = [] } = useQuery<any[]>({
+    queryKey: ["/api/users/search", "add-to-group", groupAddSearch],
+    queryFn: () => fetch(`/api/users/search?q=${encodeURIComponent(groupAddSearch)}`, { credentials: "include" })
+      .then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+    enabled: groupAddSearch.length >= 2,
+  });
+
+  const renameGroupMutation = useMutation({
+    mutationFn: (name: string) => apiRequest("PATCH", `/api/chat-groups/${groupId}`, { name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chat-groups"] });
+      toast({ title: "Grupo actualizado" });
+    },
+  });
+
+  const removeMemberMutation = useMutation({
+    mutationFn: (memberId: string) => apiRequest("DELETE", `/api/chat-groups/${groupId}/members/${memberId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chat-groups", groupId, "members"] });
+      toast({ title: "Miembro removido del grupo" });
+    },
+  });
+
+  const addMemberMutation = useMutation({
+    mutationFn: (memberId: string) => apiRequest("POST", `/api/chat-groups/${groupId}/members`, { memberIds: [memberId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chat-groups", groupId, "members"] });
+      setGroupAddSearch("");
+      toast({ title: "Persona invitada al grupo" });
+    },
+  });
+
+  const leaveGroupMutation = useMutation({
+    mutationFn: () => apiRequest("DELETE", `/api/chat-groups/${groupId}/members/${user!.id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chat-groups"] });
+      setShowGroupSettings(false);
+      setGroupId("");
+      navigate("/messages");
+      toast({ title: "Saliste del grupo" });
+    },
+  });
+
   const createGroup = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/chat-groups", {
@@ -297,6 +397,9 @@ export default function DirectMessages() {
                     {(incomingRequests as any[]).length > 9 ? "9+" : (incomingRequests as any[]).length}
                   </span>
                 )}
+              </Button>
+              <Button size="sm" variant="ghost" title="Historial de llamadas" onClick={() => setShowCallHistory(true)}>
+                <PhoneCall className="h-4 w-4" />
               </Button>
               <Button size="sm" variant="ghost" title="Nuevo grupo privado" onClick={() => setShowCreateGroup(true)}>
                 <Users className="h-4 w-4" />
@@ -403,6 +506,9 @@ export default function DirectMessages() {
                         <AvatarImage src={other?.profileImageUrl} />
                         <AvatarFallback className="text-sm">{getInitials(other?.firstName, other?.lastName)}</AvatarFallback>
                       </Avatar>
+                      {isOnline(other?.id) && (
+                        <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 border-2 border-background" />
+                      )}
                       {conv.unreadCount > 0 && (
                         <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary text-[10px] text-primary-foreground font-bold flex items-center justify-center">
                           {conv.unreadCount > 9 ? "9+" : conv.unreadCount}
@@ -450,15 +556,40 @@ export default function DirectMessages() {
                 </Button>
                 {activeType === "direct" && activeUser && (
                   <>
-                    <Avatar className="h-9 w-9 shrink-0">
-                      <AvatarImage src={activeUser.profileImageUrl} />
-                      <AvatarFallback className="text-sm">{getInitials(activeUser.firstName, activeUser.lastName)}</AvatarFallback>
-                    </Avatar>
+                    <div className="relative shrink-0">
+                      <Avatar className="h-9 w-9">
+                        <AvatarImage src={activeUser.profileImageUrl} />
+                        <AvatarFallback className="text-sm">{getInitials(activeUser.firstName, activeUser.lastName)}</AvatarFallback>
+                      </Avatar>
+                      {isOnline(activeUser.id) && (
+                        <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 border-2 border-background" />
+                      )}
+                    </div>
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-sm">{getFullName(activeUser.firstName, activeUser.lastName)}</p>
-                      <RoleChip role={activeUser.role} />
+                      {isOnline(activeUser.id) ? (
+                        <p className="text-xs text-green-600">En línea</p>
+                      ) : (
+                        <RoleChip role={activeUser.role} />
+                      )}
                     </div>
                     <CallButtons targetUser={activeUser} />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {isBlockedByMe(activeUser.id) ? (
+                          <DropdownMenuItem onClick={() => unblockMutation.mutate()}>
+                            <Shield className="h-4 w-4 mr-2" /> Desbloquear usuario
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem onClick={() => setShowBlockConfirm(true)} className="text-destructive focus:text-destructive">
+                            <ShieldOff className="h-4 w-4 mr-2" /> Bloquear usuario
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </>
                 )}
                 {activeType === "group" && activeGroup && (
@@ -471,9 +602,19 @@ export default function DirectMessages() {
                       <p className="font-semibold text-sm">{activeGroup.name}</p>
                       <p className="text-xs text-muted-foreground">Grupo privado</p>
                     </div>
+                    <Button variant="ghost" size="icon" onClick={() => setShowGroupSettings(true)}>
+                      <Settings2 className="h-4 w-4" />
+                    </Button>
                   </>
                 )}
               </div>
+
+              {/* Aviso de perfil bloqueado */}
+              {activeType === "direct" && activeUser && isBlockedByMe(activeUser.id) && (
+                <div className="bg-destructive/10 text-destructive text-xs px-4 py-2 flex items-center gap-2">
+                  <ShieldOff className="h-3.5 w-3.5" /> Bloqueaste a esta persona — no puede escribirte.
+                </div>
+              )}
 
               {/* Mensajes */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -693,6 +834,165 @@ export default function DirectMessages() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmar bloqueo de usuario */}
+      <AlertDialog open={showBlockConfirm} onOpenChange={setShowBlockConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Bloquear a esta persona?</AlertDialogTitle>
+            <AlertDialogDescription>
+              No podrá escribirte directo ni mandarte solicitudes de mensaje, aunque tu perfil sea público.
+              Puedes desbloquearla cuando quieras desde este mismo menú.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => blockMutation.mutate()} className="bg-destructive hover:bg-destructive/90">
+              Bloquear
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Configuración del grupo — renombrar, invitar, remover miembros (según rol) */}
+      <Dialog open={showGroupSettings} onOpenChange={(open) => { setShowGroupSettings(open); if (!open) { setGroupNameEdit(""); setGroupAddSearch(""); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings2 className="h-5 w-5" /> {activeGroup?.name}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {myGroupRole === "owner" && (
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Nombre del grupo"
+                  defaultValue={activeGroup?.name}
+                  onChange={(e) => setGroupNameEdit(e.target.value)}
+                />
+                <Button
+                  size="sm"
+                  disabled={!groupNameEdit.trim() || renameGroupMutation.isPending}
+                  onClick={() => renameGroupMutation.mutate(groupNameEdit.trim())}
+                >
+                  Guardar
+                </Button>
+              </div>
+            )}
+
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase mb-2">
+                Miembros ({(groupMembersList as any[]).length})
+              </p>
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {(groupMembersList as any[]).map((m: any) => (
+                  <div key={m.id} className="flex items-center gap-2 py-1.5">
+                    <Avatar className="h-7 w-7">
+                      <AvatarImage src={m.profileImageUrl} />
+                      <AvatarFallback className="text-xs">{getInitials(m.firstName, m.lastName)}</AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm truncate flex items-center gap-1">
+                        {getFullName(m.firstName, m.lastName)}
+                        {m.role === "owner" && <Crown className="h-3 w-3 text-amber-500" />}
+                      </p>
+                    </div>
+                    {myGroupRole === "owner" && m.id !== user?.id && (
+                      <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive"
+                        onClick={() => removeMemberMutation.mutate(m.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {myGroupRole === "owner" && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase mb-2">Invitar más gente</p>
+                <Input
+                  placeholder="Buscar personas..."
+                  value={groupAddSearch}
+                  onChange={(e) => setGroupAddSearch(e.target.value)}
+                />
+                {groupAddSearch.length >= 2 && (
+                  <div className="mt-1.5 space-y-1 max-h-40 overflow-y-auto border rounded-md">
+                    {(groupAddResults as any[])
+                      .filter((u: any) => !(groupMembersList as any[]).some((m) => m.id === u.id))
+                      .map((u: any) => (
+                        <button key={u.id} onClick={() => addMemberMutation.mutate(u.id)}
+                          className="w-full flex items-center gap-2 px-3 py-2 hover:bg-muted/60 text-left">
+                          <Avatar className="h-6 w-6">
+                            <AvatarImage src={u.profileImageUrl} />
+                            <AvatarFallback className="text-xs">{getInitials(u.firstName, u.lastName)}</AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm">{getFullName(u.firstName, u.lastName)}</span>
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" className="text-destructive" onClick={() => leaveGroupMutation.mutate()}>
+              <LogOut className="h-4 w-4 mr-1.5" /> Salir del grupo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Historial de llamadas */}
+      <Dialog open={showCallHistory} onOpenChange={setShowCallHistory}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PhoneCall className="h-5 w-5" /> Historial de llamadas
+            </DialogTitle>
+          </DialogHeader>
+
+          {(callHistory as any[]).length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">Sin llamadas todavía.</p>
+          ) : (
+            <div className="space-y-1 max-h-96 overflow-y-auto">
+              {(callHistory as any[]).map((c: any) => {
+                const isOutgoing = c.callerId === user?.id;
+                const otherFirst = isOutgoing ? c.receiverFirstName : c.callerFirstName;
+                const otherLast = isOutgoing ? c.receiverLastName : c.callerLastName;
+                const otherAvatar = isOutgoing ? c.receiverAvatar : c.callerAvatar;
+                const missed = c.status === "missed" || c.status === "rejected" || c.status === "unavailable";
+                const minutes = c.durationSeconds ? Math.floor(c.durationSeconds / 60) : 0;
+                const seconds = c.durationSeconds ? c.durationSeconds % 60 : 0;
+                return (
+                  <div key={c.id} className="flex items-center gap-3 py-2">
+                    <Avatar className="h-9 w-9 shrink-0">
+                      <AvatarImage src={otherAvatar} />
+                      <AvatarFallback className="text-sm">{getInitials(otherFirst, otherLast)}</AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{getFullName(otherFirst, otherLast)}</p>
+                      <p className={`text-xs flex items-center gap-1 ${missed ? "text-destructive" : "text-muted-foreground"}`}>
+                        {isOutgoing ? "Saliente" : "Entrante"} ·{" "}
+                        {c.status === "answered" ? `${minutes}:${String(seconds).padStart(2, "0")}` :
+                         c.status === "missed" ? "Perdida" :
+                         c.status === "rejected" ? "Rechazada" :
+                         c.status === "unavailable" ? "No disponible" : "..."}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      {c.callType === "video" ? <Video className="h-3.5 w-3.5" /> : <Phone className="h-3.5 w-3.5" />}
+                      <span className="text-[11px]">{format(new Date(c.startedAt), "d MMM, HH:mm", { locale: es })}</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </DialogContent>

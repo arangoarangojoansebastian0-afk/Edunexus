@@ -18,6 +18,7 @@ import Tutoring from "@/pages/Tutoring";
 import Calendar from "@/pages/Calendar";
 import Profile from "@/pages/Profile";
 import Admin from "@/pages/Admin";
+import SuperAdmin from "@/pages/SuperAdmin";
 import Notifications from "@/pages/Notifications";
 import Settings from "@/pages/Settings";
 import Classroom from "@/pages/Classroom";
@@ -29,7 +30,7 @@ import { GlobalCallUI } from "@/components/calls/CallUI";
 import NotFound from "@/pages/not-found";
 
 function Router() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) {
     return (
@@ -47,7 +48,7 @@ function Router() {
         <Route path="/" component={Landing} />
       ) : (
         <>
-          <Route path="/" component={Home} />
+          <Route path="/" component={user?.role === "super_admin" ? SuperAdmin : Home} />
           <Route path="/groups" component={Groups} />
           <Route path="/groups/:id" component={GroupDetail} />
           <Route path="/library" component={Library} />
@@ -56,6 +57,7 @@ function Router() {
           <Route path="/profile" component={Profile} />
           <Route path="/profile/:id" component={Profile} />
           <Route path="/admin" component={Admin} />
+          <Route path="/super-admin" component={SuperAdmin} />
           <Route path="/notifications" component={Notifications} />
           <Route path="/settings" component={Settings} />
           <Route path="/classroom" component={Classroom} />

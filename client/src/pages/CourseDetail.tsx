@@ -387,11 +387,13 @@ function SubmitDialog({
 function GradeDialog({
   submission,
   maxScore,
+  courseId,
   open,
   onClose,
 }: {
   submission: SubmissionWithStudent | null;
   maxScore: number;
+  courseId: string;
   open: boolean;
   onClose: () => void;
 }) {
@@ -412,7 +414,12 @@ function GradeDialog({
         feedback,
       }),
     onSuccess: () => {
+      // OJO: la grilla de calificaciones del curso usa una queryKey distinta
+      // ("all-submissions"), no solo "activities" — si no se invalida también,
+      // la nota se guarda bien en la BD pero la vista se queda con el dato viejo.
       queryClient.invalidateQueries({ queryKey: ["/api/classroom/activities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/classroom/courses", courseId, "all-submissions"] });
+      queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === "/api/classroom/activities" && q.queryKey[2] === "submissions" });
       toast({ title: "Calificación guardada" });
       setGrade(""); setFeedback("");
       onClose();
@@ -1602,6 +1609,7 @@ export default function CourseDetail() {
       <GradeDialog
         submission={gradeSubmission}
         maxScore={gradingActivity?.maxScore || 100}
+        courseId={id}
         open={!!gradeSubmission}
         onClose={() => setGradeSubmission(null)}
       />

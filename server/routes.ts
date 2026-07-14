@@ -26,6 +26,8 @@ import multer from "multer";
 import path from "path";
 import session from "express-session";
 import { supabase } from "./supabase";
+import { sendPushToUser, getVapidPublicKey, pushEnabled } from "./push";
+import { hashPassword } from "./authSimple";
 
 interface Request extends ExpressRequest {
   user?: User;
@@ -70,6 +72,13 @@ function requireVerified(req: Request, res: Response, next: NextFunction) {
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (req.user?.role !== "admin") {
     return res.status(403).json({ message: "Admin access required" });
+  }
+  next();
+}
+
+function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
+  if (req.user?.role !== "super_admin") {
+    return res.status(403).json({ message: "Super admin access required" });
   }
   next();
 }
@@ -569,6 +578,64 @@ export async function registerRoutes(
   });
 
   // ─── ADMIN PANEL & CONFIGURATIONS ────────────────────────────────────
+
+  // ─── SUPER ADMIN — administra TODOS los colegios de la plataforma ────────
+  // (crea colegios nuevos para que puedan empezar a usar el sistema)
+
+  app.get("/api/super-admin/institutions", requireAuth, requireSuperAdmin, async (req, res) => {
+    try {
+      const list = await storage.getAllInstitutionsWithStats();
+      res.json(list);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/super-admin/institutions", requireAuth, requireSuperAdmin, async (req, res) => {
+    try {
+      const {
+        institutionName, institutionCode, emailAllowedDomain,
+        adminEmail, adminPassword, adminFirstName, adminLastName,
+      } = req.body as Record<string, string>;
+
+      if (!institutionName?.trim() || !institutionCode?.trim()) {
+        return res.status(400).json({ message: "Nombre y código del colegio son obligatorios" });
+      }
+      if (!adminEmail?.trim() || !adminPassword || !adminFirstName?.trim() || !adminLastName?.trim()) {
+        return res.status(400).json({ message: "Faltan los datos del administrador inicial del colegio" });
+      }
+      if (adminPassword.length < 8) {
+        return res.status(400).json({ message: "La contraseña del administrador debe tener al menos 8 caracteres" });
+      }
+
+      const existing = await storage.getUserByEmail(adminEmail.trim());
+      if (existing) {
+        return res.status(400).json({ message: "Ya existe una cuenta con ese correo" });
+      }
+
+      // 1. Crear el colegio (institución) con su código único
+      const institution = await storage.createInstitution({
+        institutionName: institutionName.trim(),
+        institutionCode: institutionCode.trim().toUpperCase(),
+        emailAllowedDomain: emailAllowedDomain?.trim() || null,
+      });
+
+      // 2. Crear el primer usuario admin de ESE colegio, para que pueda
+      // entrar y terminar de configurarlo (materias, docentes, etc.)
+      const passwordHash = await hashPassword(adminPassword);
+      const admin = await storage.upsertUser({
+        email: adminEmail.trim(),
+        passwordHash,
+        firstName: adminFirstName.trim(),
+        lastName: adminLastName.trim(),
+        role: "admin",
+        verified: true,
+        institutionId: institution.id,
+      });
+
+      res.status(201).json({ institution, admin: { id: admin.id, email: admin.email } });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "No se pudo crear el colegio" });
+    }
+  });
 
   app.get("/api/admin/institution", requireAuth, async (req, res) => {
     try {
@@ -1598,6 +1665,18 @@ export async function registerRoutes(
           return res.status(403).json({ message: "Not authorized" });
         }
 
+        // Verificar que el curso exista, sea de la misma institución, y que
+        // (si es docente) sea quien lo dicta — evita que cualquier profesor
+        // le cree actividades a cursos de otros colegios o de otros docentes.
+        const course = await storage.getCourse(req.params.id);
+        if (!course) return res.status(404).json({ message: "Curso no encontrado" });
+        if (course.institutionId !== user.institutionId) {
+          return res.status(403).json({ message: "Not authorized" });
+        }
+        if (user.role === "teacher" && course.teacherId !== user.id) {
+          return res.status(403).json({ message: "No eres el docente de este curso" });
+        }
+
         // multipart/form-data llega como strings: hay que coercionar antes de validar con Zod
         const files = (req.files as Express.Multer.File[]) || [];
         const attachmentUrls = await Promise.all(
@@ -1629,6 +1708,17 @@ export async function registerRoutes(
       if (user.role !== "teacher" && user.role !== "admin") {
         return res.status(403).json({ message: "Not authorized" });
       }
+
+      const activity = await storage.getActivity(req.params.id);
+      if (!activity) return res.status(404).json({ message: "Actividad no encontrada" });
+      const course = await storage.getCourse(activity.courseId);
+      if (!course || course.institutionId !== user.institutionId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      if (user.role === "teacher" && course.teacherId !== user.id) {
+        return res.status(403).json({ message: "No eres el docente de este curso" });
+      }
+
       await storage.deleteActivity(req.params.id);
       res.json({ message: "Activity deleted" });
     } catch (err) {
@@ -1639,6 +1729,21 @@ export async function registerRoutes(
   // Entregas de una actividad específica (para docente)
   app.get("/api/classroom/activities/:id/submissions", requireAuth, async (req, res) => {
     try {
+      const user = req.user!;
+      const activity = await storage.getActivity(req.params.id);
+      if (!activity) return res.status(404).json({ message: "Actividad no encontrada" });
+      const course = await storage.getCourse(activity.courseId);
+      if (!course || course.institutionId !== user.institutionId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      // Solo el docente dueño del curso o un admin pueden ver las entregas de todos;
+      // un estudiante solo vería las suyas (filtradas del lado del cliente si aplica).
+      if (user.role === "teacher" && course.teacherId !== user.id) {
+        return res.status(403).json({ message: "No eres el docente de este curso" });
+      }
+      if (user.role === "student") {
+        return res.status(403).json({ message: "Not authorized" });
+      }
       const subs = await storage.getSubmissions(req.params.id);
       res.json(subs);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -1647,6 +1752,18 @@ export async function registerRoutes(
   // Todas las entregas de un curso (para la matriz de calificaciones)
   app.get("/api/classroom/courses/:id/submissions", requireAuth, async (req, res) => {
     try {
+      const user = req.user!;
+      const course = await storage.getCourse(req.params.id);
+      if (!course || course.institutionId !== user.institutionId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      if (user.role === "teacher" && course.teacherId !== user.id) {
+        return res.status(403).json({ message: "No eres el docente de este curso" });
+      }
+      if (user.role === "student") {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+
       const { db } = await import("./db");
       const { submissions, activities, users } = await import("@shared/schema");
       const { eq, inArray } = await import("drizzle-orm");
@@ -1669,12 +1786,26 @@ export async function registerRoutes(
   // Calificar una entrega — acepta grade como string (cuantitativo o cualitativo)
   app.patch("/api/classroom/submissions/:id/grade", requireAuth, async (req, res) => {
     try {
-      if (req.user!.role !== "teacher" && req.user!.role !== "admin") {
+      const user = req.user!;
+      if (user.role !== "teacher" && user.role !== "admin") {
         return res.status(403).json({ message: "No autorizado" });
       }
       const { db } = await import("./db");
-      const { submissions } = await import("@shared/schema");
+      const { submissions, activities } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
+
+      const [sub] = await db.select().from(submissions).where(eq(submissions.id, req.params.id));
+      if (!sub) return res.status(404).json({ message: "Entrega no encontrada" });
+      const [activity] = await db.select().from(activities).where(eq(activities.id, sub.activityId));
+      if (!activity) return res.status(404).json({ message: "Actividad no encontrada" });
+      const course = await storage.getCourse(activity.courseId);
+      if (!course || course.institutionId !== user.institutionId) {
+        return res.status(403).json({ message: "No autorizado" });
+      }
+      if (user.role === "teacher" && course.teacherId !== user.id) {
+        return res.status(403).json({ message: "No eres el docente de este curso" });
+      }
+
       const [updated] = await db.update(submissions)
         .set({
           grade: String(req.body.grade),
@@ -2090,6 +2221,12 @@ export async function registerRoutes(
       const senderId = req.user!.id;
       const receiverId = req.params.receiverId;
 
+      // Si alguno de los dos bloqueó al otro, no se permite ningún mensaje
+      const blocked = await storage.isBlockedEitherWay(senderId, receiverId);
+      if (blocked) {
+        return res.status(403).json({ message: "No puedes escribirle a este usuario" });
+      }
+
       // Si el perfil del destinatario es privado y todavía no hay ninguna
       // conversación previa entre ambos, no se permite mandar directo:
       // hay que pasar primero por una solicitud de mensaje.
@@ -2111,6 +2248,65 @@ export async function registerRoutes(
         content: req.body.content,
       });
       res.status(201).json(msg);
+      sendPushToUser(receiverId, {
+        title: `${req.user!.firstName} ${req.user!.lastName}`,
+        body: req.body.content?.slice(0, 120) || "Nuevo mensaje",
+        url: `/messages/${senderId}`,
+      }).catch(() => {});
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ── Bloquear / desbloquear usuarios ─────────────────────────────────────
+  app.post("/api/users/:id/block", requireAuth, async (req, res) => {
+    try {
+      if (req.params.id === req.user!.id) {
+        return res.status(400).json({ message: "No puedes bloquearte a ti mismo" });
+      }
+      await storage.blockUserInChat(req.user!.id, req.params.id);
+      res.json({ message: "Usuario bloqueado" });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/users/:id/block", requireAuth, async (req, res) => {
+    try {
+      await storage.unblockUserInChat(req.user!.id, req.params.id);
+      res.json({ message: "Usuario desbloqueado" });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.get("/api/users/blocked", requireAuth, async (req, res) => {
+    try {
+      const list = await storage.getBlockedUsers(req.user!.id);
+      res.json(list);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ── Presencia "en línea" — reutiliza el registro de WebSocket de llamadas ──
+  app.get("/api/presence/online", requireAuth, (req, res) => {
+    res.json(Array.from(userSockets.keys()));
+  });
+
+  // ── Notificaciones push (Web Push) ──────────────────────────────────────
+  app.get("/api/push/vapid-public-key", (req, res) => {
+    res.json({ publicKey: getVapidPublicKey(), enabled: pushEnabled });
+  });
+
+  app.post("/api/push/subscribe", requireAuth, async (req, res) => {
+    try {
+      const { endpoint, keys } = req.body as { endpoint?: string; keys?: { p256dh: string; auth: string } };
+      if (!endpoint || !keys?.p256dh || !keys?.auth) {
+        return res.status(400).json({ message: "Suscripción inválida" });
+      }
+      await storage.savePushSubscription(req.user!.id, { endpoint, p256dh: keys.p256dh, auth: keys.auth });
+      res.json({ message: "Suscrito" });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/push/unsubscribe", requireAuth, async (req, res) => {
+    try {
+      const { endpoint } = req.body as { endpoint?: string };
+      if (endpoint) await storage.removePushSubscription(endpoint);
+      res.json({ message: "Desuscrito" });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
@@ -2144,6 +2340,11 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Usuario no encontrado" });
       }
 
+      const blocked = await storage.isBlockedEitherWay(senderId, receiverId);
+      if (blocked) {
+        return res.status(403).json({ message: "No puedes escribirle a este usuario" });
+      }
+
       // Si ya existe conversación, no hace falta solicitud: que hable directo
       const alreadyTalking = await storage.hasExistingConversation(senderId, receiverId);
       if (alreadyTalking) {
@@ -2154,6 +2355,11 @@ export async function registerRoutes(
         senderId, receiverId, institutionId: req.user!.institutionId!, content: content.trim(),
       });
       res.status(201).json(request);
+      sendPushToUser(receiverId, {
+        title: "Nueva solicitud de mensaje",
+        body: `${req.user!.firstName} ${req.user!.lastName} quiere escribirte`,
+        url: "/messages",
+      }).catch(() => {});
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
@@ -2266,6 +2472,25 @@ export async function registerRoutes(
     }
   });
 
+  // Editar nombre/descripción del grupo — solo quien lo creó (owner)
+  app.patch("/api/chat-groups/:id", requireAuth, async (req, res) => {
+    try {
+      const role = await storage.getChatGroupMemberRole(req.params.id, req.user!.id);
+      if (!role) return res.status(403).json({ message: "No perteneces a este grupo" });
+      if (role !== "owner") return res.status(403).json({ message: "Solo el creador del grupo puede editarlo" });
+
+      const { name, description } = req.body as { name?: string; description?: string };
+      const patch: any = {};
+      if (typeof name === "string" && name.trim()) patch.name = name.trim();
+      if (typeof description === "string") patch.description = description.trim() || null;
+
+      const updated = await storage.updateChatGroup(req.params.id, patch);
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // Miembros de un grupo — solo visibles para quienes ya son miembros
   app.get("/api/chat-groups/:id/members", requireAuth, async (req, res) => {
     try {
@@ -2349,6 +2574,20 @@ export async function registerRoutes(
         content: content.trim(),
       });
       res.status(201).json(msg);
+
+      // Notificar a los demás miembros del grupo (no a quien escribió)
+      storage.getChatGroupMembers(req.params.id).then((members) => {
+        const group = members; // solo para claridad
+        Promise.all(
+          members
+            .filter((m: any) => m.id !== req.user!.id)
+            .map((m: any) => sendPushToUser(m.id, {
+              title: `Grupo`,
+              body: `${req.user!.firstName}: ${content.trim().slice(0, 100)}`,
+              url: `/messages/group/${req.params.id}`,
+            }))
+        ).catch(() => {});
+      }).catch(() => {});
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
@@ -2415,18 +2654,33 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  // ── WebSocket signaling server ─────────────────────────────────────────────
+  // ── Historial de llamadas ────────────────────────────────────────────────
+  app.get("/api/calls/history", requireAuth, async (req, res) => {
+    try {
+      const history = await storage.getCallHistoryForUser(req.user!.id);
+      res.json(history);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+
   const wss = new WebSocketServer({ server: httpServer, path: "/ws/calls" });
   // Map roomId → Map<userId, WebSocket>
   const rooms = new Map<string, Map<string, WebSocket>>();
   // Map userId → WebSocket (for direct signaling)
   const userSockets = new Map<string, WebSocket>();
 
+  // Finaliza el registro de historial de una llamada (missed/rejected/unavailable)
+  async function finalizeCallLog(roomId: string, status: "missed" | "rejected" | "unavailable") {
+    try {
+      await storage.updateCallLogByRoom(roomId, { status, endedAt: new Date() });
+    } catch (e) { console.error("Error finalizando historial de llamada:", e); }
+  }
+
   wss.on("connection", (ws: WebSocket, req) => {
     let currentUserId: string | null = null;
     let currentRoomId: string | null = null;
 
-    ws.on("message", (raw) => {
+    ws.on("message", async (raw) => {
       try {
         const msg = JSON.parse(raw.toString());
 
@@ -2441,6 +2695,19 @@ export async function registerRoutes(
           case "call-request": {
             // { type: "call-request", roomId, targetUserId, callerId, callerName, callType }
             const targetWs = userSockets.get(msg.targetUserId);
+
+            // Registrar en el historial de llamadas (queda como "ringing" hasta que se conteste/rechace/cancele)
+            try {
+              const caller = await storage.getUser(msg.callerId);
+              await storage.createCallLog({
+                roomId: msg.roomId,
+                callerId: msg.callerId,
+                receiverId: msg.targetUserId,
+                institutionId: caller?.institutionId || null,
+                callType: msg.callType || "video",
+              });
+            } catch (e) { console.error("Error creando historial de llamada:", e); }
+
             if (targetWs && targetWs.readyState === WebSocket.OPEN) {
               targetWs.send(JSON.stringify({
                 type: "incoming-call",
@@ -2452,7 +2719,14 @@ export async function registerRoutes(
             } else {
               // El destinatario no tiene una sesión de WebSocket activa — avisamos al llamante
               ws.send(JSON.stringify({ type: "call-unavailable", targetUserId: msg.targetUserId }));
+              finalizeCallLog(msg.roomId, "unavailable");
             }
+            // Aviso push por si tiene la app cerrada (no bloquea el flujo si falla)
+            sendPushToUser(msg.targetUserId, {
+              title: "Llamada entrante",
+              body: `${msg.callerName} te está llamando`,
+              url: "/messages",
+            }).catch(() => {});
             break;
           }
           case "call-cancel": {
@@ -2462,6 +2736,7 @@ export async function registerRoutes(
             if (targetWs && targetWs.readyState === WebSocket.OPEN) {
               targetWs.send(JSON.stringify({ type: "call-cancelled", roomId: msg.roomId }));
             }
+            finalizeCallLog(msg.roomId, "missed");
             break;
           }
           case "call-accepted": {
@@ -2470,6 +2745,8 @@ export async function registerRoutes(
             if (callerWs && callerWs.readyState === WebSocket.OPEN) {
               callerWs.send(JSON.stringify({ type: "call-accepted", roomId: msg.roomId }));
             }
+            storage.updateCallLogByRoom(msg.roomId, { status: "answered", answeredAt: new Date() })
+              .catch((e) => console.error("Error actualizando historial de llamada:", e));
             break;
           }
           case "call-rejected": {
@@ -2477,6 +2754,7 @@ export async function registerRoutes(
             if (callerWs && callerWs.readyState === WebSocket.OPEN) {
               callerWs.send(JSON.stringify({ type: "call-rejected", roomId: msg.roomId }));
             }
+            finalizeCallLog(msg.roomId, "rejected");
             break;
           }
           case "join-room": {
@@ -2511,12 +2789,29 @@ export async function registerRoutes(
             // Notify all peers in room
             if (!currentRoomId) break;
             const room = rooms.get(currentRoomId);
-            if (!room) break;
-            room.forEach((peerWs, peerId) => {
-              if (peerId !== currentUserId && peerWs.readyState === WebSocket.OPEN) {
-                peerWs.send(JSON.stringify({ type: "call-ended", fromId: currentUserId }));
-              }
-            });
+            if (room) {
+              room.forEach((peerWs, peerId) => {
+                if (peerId !== currentUserId && peerWs.readyState === WebSocket.OPEN) {
+                  peerWs.send(JSON.stringify({ type: "call-ended", fromId: currentUserId }));
+                }
+              });
+            }
+            // Calcular duración real si la llamada llegó a contestarse
+            (async () => {
+              try {
+                const { db } = await import("./db");
+                const { callLogs } = await import("@shared/schema");
+                const { eq } = await import("drizzle-orm");
+                const [log] = await db.select().from(callLogs).where(eq(callLogs.roomId, currentRoomId!));
+                const endedAt = new Date();
+                if (log?.answeredAt) {
+                  const durationSeconds = Math.max(0, Math.round((endedAt.getTime() - new Date(log.answeredAt).getTime()) / 1000));
+                  await storage.updateCallLogByRoom(currentRoomId!, { status: "answered", endedAt, durationSeconds });
+                } else {
+                  await storage.updateCallLogByRoom(currentRoomId!, { status: "missed", endedAt });
+                }
+              } catch (e) { console.error("Error cerrando historial de llamada:", e); }
+            })();
             break;
           }
         }
@@ -2539,6 +2834,25 @@ export async function registerRoutes(
             });
           }
         }
+        // Cierre abrupto (se cerró la pestaña/perdió conexión) en medio de una
+        // llamada — cerramos el historial igual que en "call-ended".
+        (async () => {
+          try {
+            const { db } = await import("./db");
+            const { callLogs } = await import("@shared/schema");
+            const { eq } = await import("drizzle-orm");
+            const [log] = await db.select().from(callLogs).where(eq(callLogs.roomId, currentRoomId!));
+            if (log && !log.endedAt) {
+              const endedAt = new Date();
+              if (log.answeredAt) {
+                const durationSeconds = Math.max(0, Math.round((endedAt.getTime() - new Date(log.answeredAt).getTime()) / 1000));
+                await storage.updateCallLogByRoom(currentRoomId!, { status: "answered", endedAt, durationSeconds });
+              } else {
+                await storage.updateCallLogByRoom(currentRoomId!, { status: "missed", endedAt });
+              }
+            }
+          } catch { /* best-effort */ }
+        })();
       }
     });
   });

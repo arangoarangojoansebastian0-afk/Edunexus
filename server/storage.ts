@@ -100,6 +100,10 @@ import {
   chatGroups,
   chatGroupMembers,
   chatGroupMessages,
+  messageRequests,
+  userBlocks,
+  callLogs,
+  pushSubscriptions,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -274,6 +278,27 @@ export interface IStorage {
   removeChatGroupMember(groupId: string, userId: string): Promise<void>;
   getChatGroupMessages(groupId: string): Promise<any[]>;
   sendChatGroupMessage(data: { groupId: string; senderId: string; content: string; mediaUrl?: string | null; mediaType?: string | null }): Promise<any>;
+  hasExistingConversation(userA: string, userB: string): Promise<boolean>;
+  createOrUpdateMessageRequest(params: { senderId: string; receiverId: string; institutionId: string; content: string }): Promise<any>;
+  getIncomingMessageRequests(userId: string): Promise<any[]>;
+  getOutgoingPendingRequestReceiverIds(userId: string): Promise<string[]>;
+  getMessageRequest(id: string): Promise<any | undefined>;
+  acceptMessageRequest(id: string): Promise<any>;
+  declineMessageRequest(id: string): Promise<void>;
+  getChatGroupMemberRole(groupId: string, userId: string): Promise<string | null>;
+  updateChatGroup(groupId: string, patch: { name?: string; description?: string | null; avatarUrl?: string | null }): Promise<any>;
+  blockUserInChat(blockerId: string, blockedId: string): Promise<void>;
+  unblockUserInChat(blockerId: string, blockedId: string): Promise<void>;
+  isBlockedEitherWay(userA: string, userB: string): Promise<boolean>;
+  getBlockedUsers(blockerId: string): Promise<any[]>;
+  createCallLog(data: { roomId: string; callerId: string; receiverId: string; institutionId?: string | null; callType: string }): Promise<any>;
+  updateCallLogByRoom(roomId: string, patch: Partial<{ status: "ringing" | "answered" | "missed" | "rejected" | "unavailable"; answeredAt: Date; endedAt: Date; durationSeconds: number }>): Promise<void>;
+  getCallHistoryForUser(userId: string): Promise<any[]>;
+  savePushSubscription(userId: string, sub: { endpoint: string; p256dh: string; auth: string }): Promise<void>;
+  removePushSubscription(endpoint: string): Promise<void>;
+  getPushSubscriptionsForUser(userId: string): Promise<any[]>;
+  createInstitution(data: { institutionName: string; institutionCode: string; emailAllowedDomain?: string | null }): Promise<any>;
+  getAllInstitutionsWithStats(): Promise<any[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2096,6 +2121,20 @@ async getInstitutionByCode(code: string) {
       .orderBy(desc(chatGroups.createdAt));
   }
 
+  async getChatGroupMemberRole(groupId: string, userId: string): Promise<string | null> {
+    const [row] = await db.select({ role: chatGroupMembers.role }).from(chatGroupMembers)
+      .where(and(eq(chatGroupMembers.groupId, groupId), eq(chatGroupMembers.userId, userId)));
+    return row?.role || null;
+  }
+
+  async updateChatGroup(groupId: string, patch: { name?: string; description?: string | null; avatarUrl?: string | null }): Promise<any> {
+    const [updated] = await db.update(chatGroups)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(chatGroups.id, groupId))
+      .returning();
+    return updated;
+  }
+
   async isChatGroupMember(groupId: string, userId: string): Promise<boolean> {
     const [row] = await db.select({ id: chatGroupMembers.id }).from(chatGroupMembers)
       .where(and(eq(chatGroupMembers.groupId, groupId), eq(chatGroupMembers.userId, userId)));
@@ -2157,6 +2196,239 @@ async getInstitutionByCode(code: string) {
     return msg;
   }
 
+  // ──────────────────────────────────────────────────────────────────────
+  // SOLICITUDES DE MENSAJE — gate de contacto para perfiles privados
+  // ──────────────────────────────────────────────────────────────────────
+
+  // ¿Ya existe algún mensaje directo entre estos dos usuarios (en cualquier sentido)?
+  async hasExistingConversation(userA: string, userB: string): Promise<boolean> {
+    const { directMessages } = await import("@shared/schema");
+    const [row] = await db.select({ id: directMessages.id }).from(directMessages)
+      .where(or(
+        and(eq(directMessages.senderId, userA), eq(directMessages.receiverId, userB)),
+        and(eq(directMessages.senderId, userB), eq(directMessages.receiverId, userA)),
+      ))
+      .limit(1);
+    return !!row;
+  }
+
+  // Crea la solicitud, o si ya había una pendiente del mismo remitente, la actualiza
+  async createOrUpdateMessageRequest(params: {
+    senderId: string; receiverId: string; institutionId: string; content: string;
+  }): Promise<any> {
+    const { senderId, receiverId, institutionId, content } = params;
+    const [existing] = await db.select().from(messageRequests)
+      .where(and(
+        eq(messageRequests.senderId, senderId),
+        eq(messageRequests.receiverId, receiverId),
+        eq(messageRequests.status, "pending"),
+      ));
+    if (existing) {
+      const [updated] = await db.update(messageRequests)
+        .set({ content })
+        .where(eq(messageRequests.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(messageRequests).values({
+      senderId, receiverId, institutionId, content,
+    }).returning();
+    return created;
+  }
+
+  async getIncomingMessageRequests(userId: string): Promise<any[]> {
+    return db.select({
+      id: messageRequests.id,
+      content: messageRequests.content,
+      createdAt: messageRequests.createdAt,
+      senderId: users.id,
+      senderFirstName: users.firstName,
+      senderLastName: users.lastName,
+      senderAvatar: users.profileImageUrl,
+      senderRole: users.role,
+    }).from(messageRequests)
+      .innerJoin(users, eq(users.id, messageRequests.senderId))
+      .where(and(eq(messageRequests.receiverId, userId), eq(messageRequests.status, "pending")))
+      .orderBy(desc(messageRequests.createdAt));
+  }
+
+  // Mis solicitudes salientes pendientes (para saber a quién ya le escribí y estoy esperando respuesta)
+  async getOutgoingPendingRequestReceiverIds(userId: string): Promise<string[]> {
+    const rows = await db.select({ receiverId: messageRequests.receiverId }).from(messageRequests)
+      .where(and(eq(messageRequests.senderId, userId), eq(messageRequests.status, "pending")));
+    return rows.map((r) => r.receiverId);
+  }
+
+  async getMessageRequest(id: string): Promise<any | undefined> {
+    const [row] = await db.select().from(messageRequests).where(eq(messageRequests.id, id));
+    return row;
+  }
+
+  // Aceptar: se marca la solicitud y se crea el primer mensaje directo real
+  async acceptMessageRequest(id: string): Promise<any> {
+    const { directMessages } = await import("@shared/schema");
+    const [reqRow] = await db.select().from(messageRequests).where(eq(messageRequests.id, id));
+    if (!reqRow) throw new Error("Solicitud no encontrada");
+
+    const [message] = await db.insert(directMessages).values({
+      senderId: reqRow.senderId,
+      receiverId: reqRow.receiverId,
+      institutionId: reqRow.institutionId,
+      content: reqRow.content,
+    }).returning();
+
+    await db.update(messageRequests)
+      .set({ status: "accepted", respondedAt: new Date() })
+      .where(eq(messageRequests.id, id));
+
+    return message;
+  }
+
+  async declineMessageRequest(id: string): Promise<void> {
+    await db.update(messageRequests)
+      .set({ status: "declined", respondedAt: new Date() })
+      .where(eq(messageRequests.id, id));
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // BLOQUEO DE USUARIOS
+  // ──────────────────────────────────────────────────────────────────────
+
+  async blockUserInChat(blockerId: string, blockedId: string): Promise<void> {
+    const existing = await db.select().from(userBlocks)
+      .where(and(eq(userBlocks.blockerId, blockerId), eq(userBlocks.blockedId, blockedId)));
+    if (existing.length > 0) return;
+    await db.insert(userBlocks).values({ blockerId, blockedId });
+  }
+
+  async unblockUserInChat(blockerId: string, blockedId: string): Promise<void> {
+    await db.delete(userBlocks)
+      .where(and(eq(userBlocks.blockerId, blockerId), eq(userBlocks.blockedId, blockedId)));
+  }
+
+  // true si CUALQUIERA de los dos bloqueó al otro (bloqueo es "mutuo" en efecto)
+  async isBlockedEitherWay(userA: string, userB: string): Promise<boolean> {
+    const rows = await db.select({ id: userBlocks.id }).from(userBlocks).where(
+      or(
+        and(eq(userBlocks.blockerId, userA), eq(userBlocks.blockedId, userB)),
+        and(eq(userBlocks.blockerId, userB), eq(userBlocks.blockedId, userA)),
+      )
+    );
+    return rows.length > 0;
+  }
+
+  async getBlockedUsers(blockerId: string): Promise<any[]> {
+    return db.select({
+      id: users.id, firstName: users.firstName, lastName: users.lastName,
+      email: users.email, profileImageUrl: users.profileImageUrl,
+    }).from(userBlocks)
+      .innerJoin(users, eq(users.id, userBlocks.blockedId))
+      .where(eq(userBlocks.blockerId, blockerId));
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // HISTORIAL DE LLAMADAS
+  // ──────────────────────────────────────────────────────────────────────
+
+  async createCallLog(data: {
+    roomId: string; callerId: string; receiverId: string; institutionId?: string | null; callType: string;
+  }): Promise<any> {
+    const [log] = await db.insert(callLogs).values({
+      roomId: data.roomId,
+      callerId: data.callerId,
+      receiverId: data.receiverId,
+      institutionId: data.institutionId || null,
+      callType: data.callType,
+      status: "ringing",
+    }).returning();
+    return log;
+  }
+
+  async updateCallLogByRoom(roomId: string, patch: Partial<{
+    status: "ringing" | "answered" | "missed" | "rejected" | "unavailable";
+    answeredAt: Date; endedAt: Date; durationSeconds: number;
+  }>): Promise<void> {
+    await db.update(callLogs).set(patch).where(eq(callLogs.roomId, roomId));
+  }
+
+  async getCallHistoryForUser(userId: string): Promise<any[]> {
+    const caller = aliasedTable(users, "caller");
+    const receiver = aliasedTable(users, "receiver");
+    const rows = await db.select({
+      id: callLogs.id,
+      roomId: callLogs.roomId,
+      callType: callLogs.callType,
+      status: callLogs.status,
+      startedAt: callLogs.startedAt,
+      answeredAt: callLogs.answeredAt,
+      endedAt: callLogs.endedAt,
+      durationSeconds: callLogs.durationSeconds,
+      callerId: callLogs.callerId,
+      receiverId: callLogs.receiverId,
+      callerFirstName: caller.firstName,
+      callerLastName: caller.lastName,
+      callerAvatar: caller.profileImageUrl,
+      receiverFirstName: receiver.firstName,
+      receiverLastName: receiver.lastName,
+      receiverAvatar: receiver.profileImageUrl,
+    }).from(callLogs)
+      .innerJoin(caller, eq(caller.id, callLogs.callerId))
+      .innerJoin(receiver, eq(receiver.id, callLogs.receiverId))
+      .where(or(eq(callLogs.callerId, userId), eq(callLogs.receiverId, userId)))
+      .orderBy(desc(callLogs.startedAt))
+      .limit(100);
+    return rows;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // NOTIFICACIONES PUSH (Web Push)
+  // ──────────────────────────────────────────────────────────────────────
+
+  async savePushSubscription(userId: string, sub: { endpoint: string; p256dh: string; auth: string }): Promise<void> {
+    const existing = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.endpoint, sub.endpoint));
+    if (existing.length > 0) {
+      await db.update(pushSubscriptions).set({ userId, p256dh: sub.p256dh, auth: sub.auth })
+        .where(eq(pushSubscriptions.endpoint, sub.endpoint));
+    } else {
+      await db.insert(pushSubscriptions).values({ userId, endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth });
+    }
+  }
+
+  async removePushSubscription(endpoint: string): Promise<void> {
+    await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint));
+  }
+
+  async getPushSubscriptionsForUser(userId: string): Promise<any[]> {
+    return db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // SUPER ADMIN — creación y gestión de colegios (instituciones)
+  // ──────────────────────────────────────────────────────────────────────
+
+  async createInstitution(data: {
+    institutionName: string; institutionCode: string; emailAllowedDomain?: string | null;
+  }): Promise<any> {
+    const [inst] = await db.insert(institutionSettings).values({
+      institutionName: data.institutionName,
+      institutionCode: data.institutionCode,
+      emailAllowedDomain: data.emailAllowedDomain || null,
+      evaluationType: "quantitative",
+      gradeScale: "1.0-5.0",
+    }).returning();
+    return inst;
+  }
+
+  async getAllInstitutionsWithStats(): Promise<any[]> {
+    const insts = await db.select().from(institutionSettings).orderBy(desc(institutionSettings.createdAt));
+    const withCounts = await Promise.all(insts.map(async (inst) => {
+      const [{ count }] = await db.select({ count: sql<number>`count(*)` })
+        .from(users).where(eq(users.institutionId, inst.id));
+      return { ...inst, userCount: Number(count || 0) };
+    }));
+    return withCounts;
+  }
+
   async getUsersByInstitution(institutionId: string): Promise<any[]> {
     try {
       return await db.select({
@@ -2197,6 +2469,7 @@ async getInstitutionByCode(code: string) {
         email: users.email,
         role: users.role,
         profileImageUrl: users.profileImageUrl,
+        isPrivate: users.isPrivate,
       }).from(users)
         .where(and(...conditions))
         .orderBy(users.firstName)
