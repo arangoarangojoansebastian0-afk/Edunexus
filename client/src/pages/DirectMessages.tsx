@@ -90,6 +90,8 @@ export default function DirectMessages() {
   const [groupNameInput, setGroupNameInput] = useState("");
   const [groupMemberSearch, setGroupMemberSearch] = useState("");
   const [selectedMembers, setSelectedMembers] = useState<any[]>([]);
+  const [showRequests, setShowRequests] = useState(false);
+  const [showCallHistory, setShowCallHistory] = useState(false);
 
   const activeType: "direct" | "group" | null = groupId ? "group" : otherId ? "direct" : null;
 
@@ -156,8 +158,6 @@ export default function DirectMessages() {
     },
   });
 
-  const [showRequests, setShowRequests] = useState(false);
-  const [showCallHistory, setShowCallHistory] = useState(false);
   const [pendingUser, setPendingUser] = useState<any>(null);
   const hasPendingOutgoingToActive = activeType === "direct" && (outgoingPendingIds as string[]).includes(otherId);
 

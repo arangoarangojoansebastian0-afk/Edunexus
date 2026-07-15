@@ -40,6 +40,10 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      "/ws/calls": {
+        target: "ws://localhost:2000",
+        ws: true,
+      },
     },
     fs: {
       strict: true,

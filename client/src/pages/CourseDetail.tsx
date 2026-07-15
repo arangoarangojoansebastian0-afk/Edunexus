@@ -1198,7 +1198,7 @@ export default function CourseDetail() {
     queryFn: () =>
       fetch(`/api/classroom/courses/${id}/submissions`, { credentials: "include" })
         .then((r) => r.ok ? r.json() : []),
-    enabled: !!id,
+    enabled: !!id && (user?.role === "teacher" || user?.role === "admin"),
   });
 
   const isTeacher = user?.role === "teacher" || user?.role === "admin";

@@ -750,7 +750,7 @@ export async function registerRoutes(
     catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.get("/api/admin/academic-groups", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/academic-groups", requireAuth, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -1075,7 +1075,7 @@ export async function registerRoutes(
     try { res.json(await storage.getAllPeriods(req.query.yearId as string)); } catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.get("/api/admin/schedules", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/schedules", requireAuth, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -1168,7 +1168,7 @@ export async function registerRoutes(
     try { res.status(201).json(await storage.createTeacherAssignment(req.body)); } catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.get("/api/admin/subjects", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/subjects", requireAuth, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -1192,7 +1192,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/users/:role", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/users/:role", requireAuth, async (req, res) => {
     try {
       const { role } = req.params;
       if (!req.user?.institutionId) {
