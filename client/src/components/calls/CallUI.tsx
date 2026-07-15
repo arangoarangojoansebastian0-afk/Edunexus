@@ -13,6 +13,18 @@ function VideoEl({ stream, muted = false, className = "" }: { stream: MediaStrea
   return <video ref={ref} autoPlay playsInline muted={muted} className={className} />;
 }
 
+// Para llamadas de audio (sin video): reproduce el stream remoto sin
+// necesidad de un <video> visible. Un <video oculto puede quedar pausado
+// por políticas de ahorro de batería en algunos navegadores; <audio> no.
+function RemoteAudio({ stream }: { stream: MediaStream | null }) {
+  const ref = useRef<HTMLAudioElement>(null);
+  useEffect(() => {
+    if (ref.current && stream) { ref.current.srcObject = stream; ref.current.play().catch(() => {}); }
+  }, [stream]);
+  if (!stream) return null;
+  return <audio ref={ref} autoPlay />;
+}
+
 export function CallErrorToast() {
   const { callError, callState } = useCall();
   const [visible, setVisible] = useState(false);
@@ -108,6 +120,13 @@ export function ActiveCallScreen() {
             <p className="text-lg font-medium">En llamada</p>
           </div>
         </div>
+      )}
+      {/* Llamadas de audio: el remoteStream nunca se conecta a ningún
+          elemento cuando no hay video (la rama de arriba solo monta un
+          <video> si callType === "video"), así que sin esto el audio del
+          otro lado llega por WebRTC pero jamás se reproduce. */}
+      {callType !== "video" && remoteStream && (
+        <RemoteAudio stream={remoteStream} />
       )}
       {callType === "video" && localStream && (
         <div className="absolute top-4 right-4 w-32 h-44 rounded-xl overflow-hidden border-2 border-white/20 shadow-xl">
