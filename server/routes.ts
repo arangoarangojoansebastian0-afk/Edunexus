@@ -222,6 +222,16 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  // Mismo motivo que "/api/users/search" arriba: debe ir ANTES de
+  // "/api/users/:id" o cae ahí con id="blocked" y responde 404 "User not
+  // found" en vez de la lista de usuarios bloqueados.
+  app.get("/api/users/blocked", requireAuth, async (req, res) => {
+    try {
+      const list = await storage.getBlockedUsers(req.user!.id);
+      res.json(list);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   app.get("/api/users/:id", requireAuth, async (req, res) => {
     try {
       const user = await storage.getUser(req.params.id);
@@ -2271,13 +2281,6 @@ export async function registerRoutes(
     try {
       await storage.unblockUserInChat(req.user!.id, req.params.id);
       res.json({ message: "Usuario desbloqueado" });
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
-  });
-
-  app.get("/api/users/blocked", requireAuth, async (req, res) => {
-    try {
-      const list = await storage.getBlockedUsers(req.user!.id);
-      res.json(list);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
