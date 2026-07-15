@@ -38,16 +38,31 @@ export function useWebRTC() {
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [callError, setCallError] = useState<string | null>(null);
+
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const cameraTrackRef = useRef<MediaStreamTrack | null>(null);
 
   const setCallState = (s: CallState) => { callStateRef.current = s; setCallStateRaw(s); };
   const setRoomId = (id: string | null) => { roomIdRef.current = id; setRoomIdRaw(id); };
   const setPeerId = (id: string | null) => { peerIdRef.current = id; setPeerIdRaw(id); };
 
-  const iceServers = [
+  // Servidores ICE (STUN + TURN). Se cargan desde el backend porque sin TURN
+  // las llamadas fallan (o van en un solo sentido) en redes con NAT
+  // simétrico/firewall restrictivo. Empezamos con un respaldo de solo-STUN
+  // por si el fetch todavía no resolvió cuando se crea la primera conexión.
+  const iceServersRef = useRef<RTCIceServer[]>([
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
-  ];
+  ]);
+
+  useEffect(() => {
+    fetch("/api/calls/ice-servers", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (data?.iceServers?.length) iceServersRef.current = data.iceServers; })
+      .catch(() => { /* nos quedamos con el respaldo de solo-STUN */ });
+  }, []);
 
   const clearRingTimeout = () => {
     if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
@@ -75,7 +90,7 @@ export function useWebRTC() {
 
         case "call-accepted":
           clearRingTimeout();
-          await startPeerConnection(msg.roomId, true);
+          await startPeerConnection(msg.roomId, true, peerIdRef.current || undefined);
           break;
 
         case "call-rejected":
@@ -183,7 +198,7 @@ export function useWebRTC() {
 
   // ── Create RTCPeerConnection ──────────────────────────────────────────────
   const createPC = (rId: string, pId?: string): RTCPeerConnection => {
-    const connection = new RTCPeerConnection({ iceServers });
+    const connection = new RTCPeerConnection({ iceServers: iceServersRef.current });
     pc.current = connection;
 
     connection.onicecandidate = (e) => {
@@ -212,8 +227,17 @@ export function useWebRTC() {
     return connection;
   };
 
-  const startPeerConnection = async (rId: string, isInitiator: boolean) => {
+  const startPeerConnection = async (rId: string, isInitiator: boolean, pId?: string) => {
     isInitiatorRef.current = isInitiator;
+    // IMPORTANTE: fijar el peerId ANTES de crear el RTCPeerConnection. La
+    // recolección de candidatos ICE empieza de inmediato al crear la conexión
+    // (no espera a la oferta/respuesta), y onicecandidate necesita saber a
+    // quién reenviar cada candidato. Si esto se deja para después de crear la
+    // conexión, los primeros candidatos del que contesta la llamada se
+    // generan con peerId todavía en null, se envían con targetId vacío y el
+    // servidor los descarta — la llamada "conecta" en la UI pero el audio o
+    // video nunca llega a uno de los dos lados.
+    if (pId) setPeerId(pId);
     const stream = localStream.current || await getLocalMedia(callType);
     const connection = createPC(rId);
     stream.getTracks().forEach(t => connection.addTrack(t, stream));
@@ -255,6 +279,9 @@ export function useWebRTC() {
     isInitiatorRef.current = false;
     localStream.current?.getTracks().forEach(t => t.stop());
     localStream.current = null;
+    screenStreamRef.current?.getTracks().forEach(t => t.stop());
+    screenStreamRef.current = null;
+    cameraTrackRef.current = null;
     setLocalStream_(null);
     setRemoteStream(null);
     setCallState("idle");
@@ -263,6 +290,7 @@ export function useWebRTC() {
     setIncomingCall(null);
     setIsMuted(false);
     setIsCameraOff(false);
+    setIsScreenSharing(false);
   }, []);
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -303,7 +331,7 @@ export function useWebRTC() {
       setCallType(type);
       await getLocalMedia(type);
       ws.current?.send(JSON.stringify({ type: "call-accepted", roomId: incomingCall.roomId, callerId: incomingCall.callerId }));
-      await startPeerConnection(incomingCall.roomId, false);
+      await startPeerConnection(incomingCall.roomId, false, incomingCall.callerId);
       setIncomingCall(null);
     } catch (e) {
       hangUpInternal(false);
@@ -333,10 +361,49 @@ export function useWebRTC() {
     setIsCameraOff(c => !c);
   }, []);
 
+  // ── Compartir pantalla ────────────────────────────────────────────────────
+  // Reemplaza el track de video que se envía al otro lado por el de la
+  // pantalla, sin renegociar la conexión (replaceTrack reutiliza el mismo
+  // transceiver, así que el otro lado no necesita hacer nada especial).
+  const stopScreenShare = useCallback(async () => {
+    if (!screenStreamRef.current) return;
+    screenStreamRef.current.getTracks().forEach(t => t.stop());
+    screenStreamRef.current = null;
+
+    const sender = pc.current?.getSenders().find(s => s.track?.kind === "video");
+    if (sender && cameraTrackRef.current) {
+      try { await sender.replaceTrack(cameraTrackRef.current); } catch (err) { console.error("Error restaurando cámara:", err); }
+    }
+    cameraTrackRef.current = null;
+    setIsScreenSharing(false);
+  }, []);
+
+  const toggleScreenShare = useCallback(async () => {
+    if (isScreenSharing) { await stopScreenShare(); return; }
+    if (!pc.current) return;
+    try {
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const screenTrack = displayStream.getVideoTracks()[0];
+      screenStreamRef.current = displayStream;
+
+      const sender = pc.current.getSenders().find(s => s.track?.kind === "video");
+      cameraTrackRef.current = sender?.track ?? localStream.current?.getVideoTracks()[0] ?? null;
+      if (sender) await sender.replaceTrack(screenTrack);
+
+      // Si el usuario detiene el compartir desde el control nativo del
+      // navegador (en vez del botón de la app), volvemos a la cámara.
+      screenTrack.onended = () => { stopScreenShare(); };
+
+      setIsScreenSharing(true);
+    } catch (err) {
+      console.error("Error compartiendo pantalla:", err);
+    }
+  }, [isScreenSharing, stopScreenShare]);
+
   return {
     callState, callType, incomingCall, roomId, peerId,
     localStream: localStream_, remoteStream,
-    isMuted, isCameraOff, callError,
-    startCall, acceptCall, rejectCall, hangUp, toggleMute, toggleCamera,
+    isMuted, isCameraOff, isScreenSharing, callError,
+    startCall, acceptCall, rejectCall, hangUp, toggleMute, toggleCamera, toggleScreenShare,
   };
 }

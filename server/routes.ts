@@ -2662,6 +2662,38 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  // ── Servidores ICE (STUN/TURN) para WebRTC ───────────────────────────────
+  // Sin un servidor TURN, las llamadas fallan (o solo transmiten audio/video
+  // en un sentido) apenas alguno de los dos está detrás de un NAT simétrico o
+  // firewall restrictivo (muy común en redes escolares/corporativas y datos
+  // móviles). Las variables de entorno permiten usar un TURN propio en
+  // producción; si no están configuradas, se usa un TURN público gratuito de
+  // respaldo (Open Relay Project) para que las llamadas no queden rotas.
+  app.get("/api/calls/ice-servers", requireAuth, async (_req, res) => {
+    const servers: RTCIceServer[] = [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun1.l.google.com:19302" },
+    ];
+
+    if (process.env.TURN_URL && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
+      servers.push({
+        urls: process.env.TURN_URL.split(",").map((u) => u.trim()),
+        username: process.env.TURN_USERNAME,
+        credential: process.env.TURN_CREDENTIAL,
+      });
+    } else {
+      // Respaldo público (rate-limited, solo para no dejar las llamadas rotas
+      // mientras se configura un TURN dedicado — ver TURN_URL/TURN_USERNAME/TURN_CREDENTIAL)
+      servers.push(
+        { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+        { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+        { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
+      );
+    }
+
+    res.json({ iceServers: servers });
+  });
+
 
   const wss = new WebSocketServer({ server: httpServer, path: "/ws/calls" });
   // Map roomId → Map<userId, WebSocket>

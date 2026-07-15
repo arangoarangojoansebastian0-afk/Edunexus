@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useCall } from "@/context/CallContext";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Phone, PhoneOff, PhoneMissed, Video, VideoOff, Mic, MicOff, PhoneIncoming, AlertCircle } from "lucide-react";
+import { Phone, PhoneOff, PhoneMissed, Video, VideoOff, Mic, MicOff, PhoneIncoming, AlertCircle, MonitorUp, MonitorOff } from "lucide-react";
 
 function VideoEl({ stream, muted = false, className = "" }: { stream: MediaStream | null; muted?: boolean; className?: string }) {
   const ref = useRef<HTMLVideoElement>(null);
@@ -93,7 +93,7 @@ export function OutgoingCallOverlay() {
 }
 
 export function ActiveCallScreen() {
-  const { callState, callType, localStream, remoteStream, isMuted, isCameraOff, hangUp, toggleMute, toggleCamera } = useCall();
+  const { callState, callType, localStream, remoteStream, isMuted, isCameraOff, isScreenSharing, hangUp, toggleMute, toggleCamera, toggleScreenShare } = useCall();
   if (callState !== "connected") return null;
   return (
     <div className="fixed inset-0 z-[9997] bg-black flex flex-col">
@@ -126,6 +126,11 @@ export function ActiveCallScreen() {
         {callType === "video" && (
           <Button onClick={toggleCamera} size="lg" className={`h-14 w-14 rounded-full p-0 ${isCameraOff ? "bg-red-600 hover:bg-red-700" : "bg-white/20 hover:bg-white/30"}`}>
             {isCameraOff ? <VideoOff className="h-5 w-5 text-white" /> : <Video className="h-5 w-5 text-white" />}
+          </Button>
+        )}
+        {callType === "video" && (
+          <Button onClick={toggleScreenShare} size="lg" className={`h-14 w-14 rounded-full p-0 ${isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : "bg-white/20 hover:bg-white/30"}`} title={isScreenSharing ? "Dejar de compartir pantalla" : "Compartir pantalla"}>
+            {isScreenSharing ? <MonitorOff className="h-5 w-5 text-white" /> : <MonitorUp className="h-5 w-5 text-white" />}
           </Button>
         )}
         <Button onClick={hangUp} size="lg" className="h-14 w-14 rounded-full p-0 bg-red-600 hover:bg-red-700">

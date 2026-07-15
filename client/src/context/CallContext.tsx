@@ -9,6 +9,7 @@ interface CallContextType {
   remoteStream: MediaStream | null;
   isMuted: boolean;
   isCameraOff: boolean;
+  isScreenSharing: boolean;
   callError: string | null;
   startCall: (targetUserId: string, callerName: string, type?: CallType) => Promise<void>;
   acceptCall: () => Promise<void>;
@@ -16,6 +17,7 @@ interface CallContextType {
   hangUp: () => void;
   toggleMute: () => void;
   toggleCamera: () => void;
+  toggleScreenShare: () => Promise<void>;
 }
 
 const CallContext = createContext<CallContextType | null>(null);
