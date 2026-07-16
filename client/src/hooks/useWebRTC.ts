@@ -195,6 +195,24 @@ export function useWebRTC() {
   }, [user?.id]);
 
   // ── Get local media ───────────────────────────────────────────────────────
+  const mediaErrorMessage = (err: any): string => {
+    switch (err?.name) {
+      case "NotAllowedError":
+      case "PermissionDeniedError":
+        return "No se pudo acceder a la cámara/micrófono: revisa los permisos del navegador para este sitio.";
+      case "NotFoundError":
+      case "DevicesNotFoundError":
+        return "No se encontró cámara o micrófono en este dispositivo.";
+      case "NotReadableError":
+      case "TrackStartError":
+        return "La cámara o el micrófono ya están siendo usados por otra aplicación.";
+      case "OverconstrainedError":
+        return "La cámara no admite la configuración solicitada.";
+      default:
+        return "No se pudo iniciar la llamada. Revisa los permisos de cámara/micrófono.";
+    }
+  };
+
   const getLocalMedia = async (type: CallType): Promise<MediaStream> => {
     const constraints = type === "video"
       ? { video: { width: 1280, height: 720, facingMode: "user" }, audio: true }
@@ -337,8 +355,9 @@ export function useWebRTC() {
         hangUpInternal(true);
       }, RING_TIMEOUT_MS);
     } catch (e) {
-      setCallState("idle");
-      throw e;
+      console.error("Error al iniciar la llamada:", e);
+      setCallError(mediaErrorMessage(e));
+      hangUpInternal(false);
     }
   }, [user, hangUpInternal]);
 
@@ -353,6 +372,8 @@ export function useWebRTC() {
       await startPeerConnection(incomingCall.roomId, false, incomingCall.callerId);
       setIncomingCall(null);
     } catch (e) {
+      console.error("Error al aceptar la llamada:", e);
+      setCallError(mediaErrorMessage(e));
       hangUpInternal(false);
     }
   }, [incomingCall]);
