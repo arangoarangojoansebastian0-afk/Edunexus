@@ -2704,6 +2704,31 @@ export async function registerRoutes(
   // Map userId → WebSocket (for direct signaling)
   const userSockets = new Map<string, WebSocket>();
 
+  // ── Detección de conexiones "zombie" ─────────────────────────────────────
+  // En redes de datos móviles es común que el operador corte la conexión TCP
+  // en silencio (sin FIN/RST) tras un rato sin tráfico de bajo nivel. Ni el
+  // navegador ni el servidor se enteran solos — el socket queda "abierto"
+  // para ambos lados pero ya no transmite nada. El "ping" de aplicación que
+  // manda el cliente no lo detecta (si el socket está muerto, ese mensaje
+  // simplemente se pierde sin error). Un ping/pong a nivel de protocolo
+  // WebSocket sí lo detecta: si un cliente no responde al ping del servidor
+  // dentro del siguiente ciclo, se da por muerto y se cierra su registro
+  // (userSockets/rooms), evitando que quede "disponible" en la lista de
+  // conectados sin realmente estarlo — que es justo lo que hace que a quien
+  // llama nunca le llegue el "call-accepted".
+  wss.on("connection", (ws: WebSocket) => {
+    (ws as any).isAlive = true;
+    ws.on("pong", () => { (ws as any).isAlive = true; });
+  });
+  const healthCheckInterval = setInterval(() => {
+    wss.clients.forEach((client) => {
+      if ((client as any).isAlive === false) return client.terminate();
+      (client as any).isAlive = false;
+      try { client.ping(); } catch { /* socket ya cerrándose */ }
+    });
+  }, 25000);
+  wss.on("close", () => clearInterval(healthCheckInterval));
+
   // Finaliza el registro de historial de una llamada (missed/rejected/unavailable)
   async function finalizeCallLog(roomId: string, status: "missed" | "rejected" | "unavailable") {
     try {
@@ -2860,7 +2885,13 @@ export async function registerRoutes(
     });
 
     ws.on("close", () => {
-      if (currentUserId) userSockets.delete(currentUserId);
+      // Solo borrar el registro si sigue apuntando a ESTA conexión — si el
+      // usuario ya se reconectó (userSockets tiene un ws más nuevo) y recién
+      // ahora llega el "close" de la conexión vieja/zombie, no queremos
+      // borrar por error el registro válido y dejarlo como "no disponible".
+      if (currentUserId && userSockets.get(currentUserId) === ws) {
+        userSockets.delete(currentUserId);
+      }
       if (currentRoomId && currentUserId) {
         const room = rooms.get(currentRoomId);
         if (room) {
