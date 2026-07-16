@@ -2720,6 +2720,12 @@ export async function registerRoutes(
         const msg = JSON.parse(raw.toString());
 
         switch (msg.type) {
+          case "ping": {
+            // Heartbeat del cliente: solo mantiene el socket con tráfico
+            // reciente para que Cloudflare/el proxy de Render no lo cierre
+            // por inactividad. No requiere respuesta.
+            break;
+          }
           case "register": {
             // { type: "register", userId: string }
             currentUserId = msg.userId;

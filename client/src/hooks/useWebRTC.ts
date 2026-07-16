@@ -22,6 +22,7 @@ export function useWebRTC() {
   const pendingCandidates = useRef<RTCIceCandidateInit[]>([]);
   const isInitiatorRef = useRef(false);
   const ringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Refs "espejo" del estado — evitan closures obsoletos dentro del
   // handler de WebSocket, que se crea una sola vez por conexión.
@@ -166,13 +167,31 @@ export function useWebRTC() {
     };
 
     socket.onclose = () => {
+      if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
       setTimeout(() => connectWS(), 3000);
     };
+
+    // Cloudflare (y otros proxies delante de Render) cierran los WebSocket
+    // inactivos después de ~100s sin tráfico. Como después de "registrarse"
+    // no se manda nada hasta que hay una llamada, el socket queda inactivo
+    // el tiempo suficiente para que lo cierren en silencio — el navegador a
+    // veces ni se entera (el objeto queda "zombie", reportándose abierto sin
+    // estarlo), así que nunca reconecta, y el servidor ya lo dio de baja.
+    // Esto se ve como "esa persona no está disponible" con la app abierta.
+    if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    heartbeatRef.current = setInterval(() => {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "ping" }));
+      }
+    }, 30000);
   }, [user?.id]);
 
   useEffect(() => {
     if (user?.id) connectWS();
-    return () => { ws.current?.close(); };
+    return () => {
+      ws.current?.close();
+      if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
+    };
   }, [user?.id]);
 
   // ── Get local media ───────────────────────────────────────────────────────
