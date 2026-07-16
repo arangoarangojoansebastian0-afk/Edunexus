@@ -91,7 +91,13 @@ export function useWebRTC() {
 
         case "call-accepted":
           clearRingTimeout();
-          await startPeerConnection(msg.roomId, true, peerIdRef.current || undefined);
+          try {
+            await startPeerConnection(msg.roomId, true, peerIdRef.current || undefined);
+          } catch (err) {
+            console.error("Error al iniciar la conexión tras ser aceptada la llamada:", err);
+            setCallError(mediaErrorMessage(err));
+            hangUpInternal(false);
+          }
           break;
 
         case "call-rejected":
