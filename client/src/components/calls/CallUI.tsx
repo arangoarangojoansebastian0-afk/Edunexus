@@ -110,7 +110,7 @@ export function ActiveCallScreen() {
   return (
     <div className="fixed inset-0 z-[9997] bg-black flex flex-col">
       {callType === "video" && remoteStream ? (
-        <VideoEl stream={remoteStream} className="absolute inset-0 w-full h-full object-cover" />
+        <VideoEl stream={remoteStream} className="absolute inset-0 w-full h-full object-contain" />
       ) : (
         <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center">
           <div className="text-center text-white space-y-3">
@@ -129,7 +129,7 @@ export function ActiveCallScreen() {
         <RemoteAudio stream={remoteStream} />
       )}
       {callType === "video" && localStream && (
-        <div className="absolute top-4 right-4 w-32 h-44 rounded-xl overflow-hidden border-2 border-white/20 shadow-xl">
+        <div className="absolute top-3 right-3 sm:top-4 sm:right-4 w-20 h-28 sm:w-32 sm:h-44 rounded-xl overflow-hidden border-2 border-white/20 shadow-xl">
           <VideoEl stream={localStream} muted className="w-full h-full object-cover" />
           {isCameraOff && (
             <div className="absolute inset-0 bg-slate-800 flex items-center justify-center">
@@ -138,21 +138,21 @@ export function ActiveCallScreen() {
           )}
         </div>
       )}
-      <div className="absolute bottom-10 left-0 right-0 flex justify-center gap-4">
-        <Button onClick={toggleMute} size="lg" className={`h-14 w-14 rounded-full p-0 ${isMuted ? "bg-red-600 hover:bg-red-700" : "bg-white/20 hover:bg-white/30"}`}>
+      <div className="absolute bottom-6 sm:bottom-10 left-0 right-0 flex justify-center gap-2 sm:gap-4 px-2">
+        <Button onClick={toggleMute} size="lg" className={`h-12 w-12 sm:h-14 sm:w-14 rounded-full p-0 ${isMuted ? "bg-red-600 hover:bg-red-700" : "bg-white/20 hover:bg-white/30"}`}>
           {isMuted ? <MicOff className="h-5 w-5 text-white" /> : <Mic className="h-5 w-5 text-white" />}
         </Button>
         {callType === "video" && (
-          <Button onClick={toggleCamera} size="lg" className={`h-14 w-14 rounded-full p-0 ${isCameraOff ? "bg-red-600 hover:bg-red-700" : "bg-white/20 hover:bg-white/30"}`}>
+          <Button onClick={toggleCamera} size="lg" className={`h-12 w-12 sm:h-14 sm:w-14 rounded-full p-0 ${isCameraOff ? "bg-red-600 hover:bg-red-700" : "bg-white/20 hover:bg-white/30"}`}>
             {isCameraOff ? <VideoOff className="h-5 w-5 text-white" /> : <Video className="h-5 w-5 text-white" />}
           </Button>
         )}
         {callType === "video" && (
-          <Button onClick={toggleScreenShare} size="lg" className={`h-14 w-14 rounded-full p-0 ${isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : "bg-white/20 hover:bg-white/30"}`} title={isScreenSharing ? "Dejar de compartir pantalla" : "Compartir pantalla"}>
+          <Button onClick={toggleScreenShare} size="lg" className={`h-12 w-12 sm:h-14 sm:w-14 rounded-full p-0 ${isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : "bg-white/20 hover:bg-white/30"}`} title={isScreenSharing ? "Dejar de compartir pantalla" : "Compartir pantalla"}>
             {isScreenSharing ? <MonitorOff className="h-5 w-5 text-white" /> : <MonitorUp className="h-5 w-5 text-white" />}
           </Button>
         )}
-        <Button onClick={hangUp} size="lg" className="h-14 w-14 rounded-full p-0 bg-red-600 hover:bg-red-700">
+        <Button onClick={hangUp} size="lg" className="h-12 w-12 sm:h-14 sm:w-14 rounded-full p-0 bg-red-600 hover:bg-red-700">
           <PhoneOff className="h-5 w-5 text-white" />
         </Button>
       </div>

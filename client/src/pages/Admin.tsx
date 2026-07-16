@@ -721,7 +721,7 @@ function TabConfigAcademica() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-1">
               <Label>Tipo de evaluación</Label>
               <Select
@@ -2894,7 +2894,7 @@ function TabHorarios() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
                 <Label>Día</Label>
                 <Select value={form.day} onValueChange={(v) => setF("day", v)}>
@@ -3173,7 +3173,7 @@ function TabBoletines() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-1">
               <Label>Año académico</Label>
               <Select value={selectedYear || "__all__"} onValueChange={(v) => setSelectedYear(v === "__all__" ? "" : v)}>
