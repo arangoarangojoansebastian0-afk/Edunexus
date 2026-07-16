@@ -896,6 +896,66 @@ export const pushSubscriptions = pgTable(
 );
 export type PushSubscription = typeof pushSubscriptions.$inferSelect;
 
+// ─── SALAS DE VIDEOLLAMADA GRUPAL ("Meet") — asesorías, clases, reuniones ──
+export const meetVisibilityEnum = pgEnum("meet_visibility", ["public", "private"]);
+export const meetStatusEnum = pgEnum("meet_status", ["scheduled", "live", "ended", "cancelled"]);
+
+export const meetSessions = pgTable(
+  "meet_sessions",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }).notNull(),
+    hostId: varchar("host_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    title: varchar("title", { length: 255 }).notNull(),
+    description: text("description"),
+    // Nombre de la sala en LiveKit — único, no confundir con el "id" (que es
+    // la fila de agenda; la sala se crea al empezar la sesión, no antes).
+    roomName: varchar("room_name").notNull().unique(),
+    visibility: meetVisibilityEnum("visibility").default("private").notNull(),
+    status: meetStatusEnum("status").default("scheduled").notNull(),
+    scheduledAt: timestamp("scheduled_at").notNull(),
+    durationMinutes: integer("duration_minutes").default(60).notNull(),
+    startedAt: timestamp("started_at"),
+    endedAt: timestamp("ended_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_meet_sessions_institution").on(table.institutionId),
+    index("idx_meet_sessions_host").on(table.hostId),
+  ]
+);
+export type MeetSession = typeof meetSessions.$inferSelect;
+
+// Grupos invitados a una sesión privada (si está vacío y es privada, solo
+// entra quien tenga el link directo + sea de la misma institución).
+export const meetSessionInvites = pgTable(
+  "meet_session_invites",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    sessionId: varchar("session_id").references(() => meetSessions.id, { onDelete: "cascade" }).notNull(),
+    groupId: varchar("group_id").references(() => groups.id, { onDelete: "cascade" }).notNull(),
+  },
+  (table) => [index("idx_meet_invites_session").on(table.sessionId)]
+);
+
+export const meetParticipants = pgTable(
+  "meet_participants",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    sessionId: varchar("session_id").references(() => meetSessions.id, { onDelete: "cascade" }).notNull(),
+    userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    joinedAt: timestamp("joined_at").defaultNow().notNull(),
+    leftAt: timestamp("left_at"),
+  },
+  (table) => [index("idx_meet_participants_session").on(table.sessionId)]
+);
+
+export const insertMeetSessionSchema = createInsertSchema(meetSessions, {
+  scheduledAt: z.coerce.date(),
+})
+  .omit({ id: true, hostId: true, institutionId: true, roomName: true, status: true, startedAt: true, endedAt: true, createdAt: true })
+  .extend({ invitedGroupIds: z.array(z.string()).optional() });
+
 
 // Relations definitions
 export const recognitionsRelations = relations(recognitions, ({ one }) => ({

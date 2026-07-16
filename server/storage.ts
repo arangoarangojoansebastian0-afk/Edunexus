@@ -104,6 +104,9 @@ import {
   userBlocks,
   callLogs,
   pushSubscriptions,
+  meetSessions,
+  meetSessionInvites,
+  meetParticipants,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -294,6 +297,13 @@ export interface IStorage {
   createCallLog(data: { roomId: string; callerId: string; receiverId: string; institutionId?: string | null; callType: string }): Promise<any>;
   updateCallLogByRoom(roomId: string, patch: Partial<{ status: "ringing" | "answered" | "missed" | "rejected" | "unavailable"; answeredAt: Date; endedAt: Date; durationSeconds: number }>): Promise<void>;
   getCallHistoryForUser(userId: string): Promise<any[]>;
+  createMeetSession(data: { hostId: string; institutionId: string; title: string; description?: string | null; visibility: "public" | "private"; scheduledAt: Date; durationMinutes: number; invitedGroupIds?: string[] }): Promise<any>;
+  getMeetSession(id: string): Promise<any | undefined>;
+  getMeetSessionsForUser(userId: string, institutionId: string): Promise<any[]>;
+  canUserJoinMeetSession(session: any, userId: string): Promise<boolean>;
+  updateMeetSessionStatus(id: string, patch: Partial<{ status: "scheduled" | "live" | "ended" | "cancelled"; startedAt: Date; endedAt: Date }>): Promise<void>;
+  recordMeetParticipantJoin(sessionId: string, userId: string): Promise<void>;
+  recordMeetParticipantLeave(sessionId: string, userId: string): Promise<void>;
   savePushSubscription(userId: string, sub: { endpoint: string; p256dh: string; auth: string }): Promise<void>;
   removePushSubscription(endpoint: string): Promise<void>;
   getPushSubscriptionsForUser(userId: string): Promise<any[]>;
@@ -2396,6 +2406,110 @@ async getInstitutionByCode(code: string) {
 
   async removePushSubscription(endpoint: string): Promise<void> {
     await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint));
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // SALAS DE VIDEOLLAMADA GRUPAL ("Meet") — asesorías, clases, reuniones
+  // ──────────────────────────────────────────────────────────────────────
+
+  async createMeetSession(data: {
+    hostId: string; institutionId: string; title: string; description?: string | null;
+    visibility: "public" | "private"; scheduledAt: Date; durationMinutes: number;
+    invitedGroupIds?: string[];
+  }): Promise<any> {
+    const roomName = `meet-${randomUUID()}`;
+    const [session] = await db.insert(meetSessions).values({
+      hostId: data.hostId,
+      institutionId: data.institutionId,
+      title: data.title,
+      description: data.description || null,
+      roomName,
+      visibility: data.visibility,
+      scheduledAt: data.scheduledAt,
+      durationMinutes: data.durationMinutes,
+    }).returning();
+
+    if (data.invitedGroupIds?.length) {
+      await db.insert(meetSessionInvites).values(
+        data.invitedGroupIds.map((groupId) => ({ sessionId: session.id, groupId }))
+      );
+    }
+    return session;
+  }
+
+  async getMeetSession(id: string): Promise<any | undefined> {
+    const [session] = await db.select().from(meetSessions).where(eq(meetSessions.id, id));
+    return session;
+  }
+
+  // Sesiones visibles para un usuario: las suyas (como host), las públicas de
+  // su institución, y las privadas donde está invitado alguno de sus grupos.
+  async getMeetSessionsForUser(userId: string, institutionId: string): Promise<any[]> {
+    const myGroupIds = (await db.select({ groupId: groupMembers.groupId }).from(groupMembers).where(eq(groupMembers.userId, userId)))
+      .map((r) => r.groupId);
+
+    const invitedSessionIds = myGroupIds.length
+      ? (await db.select({ sessionId: meetSessionInvites.sessionId }).from(meetSessionInvites).where(inArray(meetSessionInvites.groupId, myGroupIds)))
+          .map((r) => r.sessionId)
+      : [];
+
+    const host = aliasedTable(users, "meet_host");
+    const conditions = [
+      eq(meetSessions.hostId, userId),
+      and(eq(meetSessions.institutionId, institutionId), eq(meetSessions.visibility, "public")),
+    ];
+    if (invitedSessionIds.length) conditions.push(inArray(meetSessions.id, invitedSessionIds));
+
+    const rows = await db.select({
+      id: meetSessions.id,
+      title: meetSessions.title,
+      description: meetSessions.description,
+      roomName: meetSessions.roomName,
+      visibility: meetSessions.visibility,
+      status: meetSessions.status,
+      scheduledAt: meetSessions.scheduledAt,
+      durationMinutes: meetSessions.durationMinutes,
+      startedAt: meetSessions.startedAt,
+      endedAt: meetSessions.endedAt,
+      hostId: meetSessions.hostId,
+      hostFirstName: host.firstName,
+      hostLastName: host.lastName,
+    }).from(meetSessions)
+      .innerJoin(host, eq(host.id, meetSessions.hostId))
+      .where(and(eq(meetSessions.institutionId, institutionId), or(...conditions)))
+      .orderBy(desc(meetSessions.scheduledAt))
+      .limit(100);
+    return rows;
+  }
+
+  async canUserJoinMeetSession(session: any, userId: string): Promise<boolean> {
+    if (session.hostId === userId) return true;
+    if (session.visibility === "public") return true;
+    const invites = await db.select().from(meetSessionInvites).where(eq(meetSessionInvites.sessionId, session.id));
+    if (invites.length === 0) return true; // privada sin grupos = cualquiera de la institución con el link
+    const invitedGroupIds = invites.map((i) => i.groupId);
+    const membership = await db.select().from(groupMembers)
+      .where(and(eq(groupMembers.userId, userId), inArray(groupMembers.groupId, invitedGroupIds)));
+    return membership.length > 0;
+  }
+
+  async updateMeetSessionStatus(id: string, patch: Partial<{
+    status: "scheduled" | "live" | "ended" | "cancelled"; startedAt: Date; endedAt: Date;
+  }>): Promise<void> {
+    await db.update(meetSessions).set(patch).where(eq(meetSessions.id, id));
+  }
+
+  async recordMeetParticipantJoin(sessionId: string, userId: string): Promise<void> {
+    await db.insert(meetParticipants).values({ sessionId, userId });
+  }
+
+  async recordMeetParticipantLeave(sessionId: string, userId: string): Promise<void> {
+    const [row] = await db.select().from(meetParticipants)
+      .where(and(eq(meetParticipants.sessionId, sessionId), eq(meetParticipants.userId, userId)))
+      .orderBy(desc(meetParticipants.joinedAt)).limit(1);
+    if (row && !row.leftAt) {
+      await db.update(meetParticipants).set({ leftAt: new Date() }).where(eq(meetParticipants.id, row.id));
+    }
   }
 
   async getPushSubscriptionsForUser(userId: string): Promise<any[]> {

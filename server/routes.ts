@@ -28,6 +28,8 @@ import session from "express-session";
 import { supabase } from "./supabase";
 import { sendPushToUser, getVapidPublicKey, pushEnabled } from "./push";
 import { hashPassword } from "./authSimple";
+import { AccessToken, RoomServiceClient, TrackType } from "livekit-server-sdk";
+import { insertMeetSessionSchema } from "@shared/schema";
 
 interface Request extends ExpressRequest {
   user?: User;
@@ -2695,6 +2697,159 @@ export async function registerRoutes(
     }
 
     res.json({ iceServers: servers });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // MEET — salas de videollamada grupal (asesorías, clases, reuniones)
+  // Usa LiveKit (SFU externo) porque el sistema 1:1 de arriba es P2P directo
+  // y no escala más allá de ~6-8 personas — para grupos grandes se necesita
+  // un servidor que reciba una vez y reenvíe a todos (ver LIVEKIT_URL,
+  // LIVEKIT_API_KEY, LIVEKIT_API_SECRET en las variables de entorno).
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const livekitConfigured = !!(process.env.LIVEKIT_URL && process.env.LIVEKIT_API_KEY && process.env.LIVEKIT_API_SECRET);
+  const roomService = livekitConfigured
+    ? new RoomServiceClient(process.env.LIVEKIT_URL!, process.env.LIVEKIT_API_KEY!, process.env.LIVEKIT_API_SECRET!)
+    : null;
+
+  function requireLiveKit(res: Response): boolean {
+    if (!livekitConfigured) {
+      res.status(503).json({ message: "El sistema de videollamadas grupales no está configurado (faltan LIVEKIT_URL/LIVEKIT_API_KEY/LIVEKIT_API_SECRET)." });
+      return false;
+    }
+    return true;
+  }
+
+  // Crear una sesión (agendarla). No abre la sala todavía — eso pasa cuando
+  // el host se une por primera vez (ver /join más abajo).
+  app.post("/api/meet/sessions", requireAuth, async (req, res) => {
+    try {
+      const data = insertMeetSessionSchema.parse(req.body);
+      if (!req.user!.institutionId) return res.status(400).json({ message: "Tu cuenta no tiene institución asignada." });
+      const session = await storage.createMeetSession({
+        hostId: req.user!.id,
+        institutionId: req.user!.institutionId,
+        title: data.title,
+        description: data.description ?? null,
+        visibility: data.visibility ?? "private",
+        scheduledAt: data.scheduledAt,
+        durationMinutes: data.durationMinutes ?? 60,
+        invitedGroupIds: data.invitedGroupIds,
+      });
+      res.status(201).json(session);
+    } catch (e: any) {
+      if (e instanceof z.ZodError) return res.status(400).json({ message: "Datos inválidos", errors: e.errors });
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Lista las sesiones que el usuario puede ver: las suyas, las públicas de
+  // su institución, y las privadas donde está invitado alguno de sus grupos.
+  app.get("/api/meet/sessions", requireAuth, async (req, res) => {
+    try {
+      if (!req.user!.institutionId) return res.json([]);
+      const sessions = await storage.getMeetSessionsForUser(req.user!.id, req.user!.institutionId);
+      res.json(sessions);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/meet/sessions/:id", requireAuth, async (req, res) => {
+    try {
+      const session = await storage.getMeetSession(req.params.id);
+      if (!session) return res.status(404).json({ message: "Sesión no encontrada" });
+      if (session.hostId !== req.user!.id) return res.status(403).json({ message: "Solo el anfitrión puede cancelar la sesión" });
+      await storage.updateMeetSessionStatus(session.id, { status: "cancelled" });
+      res.json({ message: "Sesión cancelada" });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Unirse a una sesión: valida permisos, marca la sesión como "live" si es
+  // la primera vez que alguien entra, y devuelve el token de acceso a la
+  // sala de LiveKit (con permisos de host o de participante normal).
+  app.post("/api/meet/sessions/:id/join", requireAuth, async (req, res) => {
+    if (!requireLiveKit(res)) return;
+    try {
+      const session = await storage.getMeetSession(req.params.id);
+      if (!session) return res.status(404).json({ message: "Sesión no encontrada" });
+      if (session.status === "cancelled" || session.status === "ended") {
+        return res.status(410).json({ message: "Esta sesión ya terminó o fue cancelada." });
+      }
+      const canJoin = await storage.canUserJoinMeetSession(session, req.user!.id);
+      if (!canJoin) return res.status(403).json({ message: "No tienes acceso a esta sesión." });
+
+      const isHost = session.hostId === req.user!.id;
+      if (session.status === "scheduled") {
+        await storage.updateMeetSessionStatus(session.id, { status: "live", startedAt: new Date() });
+      }
+      await storage.recordMeetParticipantJoin(session.id, req.user!.id);
+
+      const at = new AccessToken(process.env.LIVEKIT_API_KEY!, process.env.LIVEKIT_API_SECRET!, {
+        identity: req.user!.id,
+        name: `${req.user!.firstName} ${req.user!.lastName}`,
+      });
+      at.addGrant({
+        room: session.roomName,
+        roomJoin: true,
+        canPublish: true,
+        canSubscribe: true,
+        canPublishData: true,
+        // Solo el host puede mutear/expulsar a otros desde la sala.
+        roomAdmin: isHost,
+        roomRecord: false,
+      });
+      const token = await at.toJwt();
+
+      res.json({ token, url: process.env.LIVEKIT_URL, roomName: session.roomName, isHost, title: session.title });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/meet/sessions/:id/leave", requireAuth, async (req, res) => {
+    try {
+      await storage.recordMeetParticipantLeave(req.params.id, req.user!.id);
+      res.json({ message: "ok" });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Solo el host puede terminar la sesión para todos.
+  app.post("/api/meet/sessions/:id/end", requireAuth, async (req, res) => {
+    if (!requireLiveKit(res)) return;
+    try {
+      const session = await storage.getMeetSession(req.params.id);
+      if (!session) return res.status(404).json({ message: "Sesión no encontrada" });
+      if (session.hostId !== req.user!.id) return res.status(403).json({ message: "Solo el anfitrión puede terminar la sesión" });
+      await storage.updateMeetSessionStatus(session.id, { status: "ended", endedAt: new Date() });
+      try { await roomService!.deleteRoom(session.roomName); } catch { /* la sala puede no existir todavía en LiveKit */ }
+      res.json({ message: "Sesión terminada" });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ── Controles de anfitrión dentro de la sala (mutear / expulsar) ─────────
+  app.post("/api/meet/sessions/:id/mute/:participantId", requireAuth, async (req, res) => {
+    if (!requireLiveKit(res)) return;
+    try {
+      const session = await storage.getMeetSession(req.params.id);
+      if (!session) return res.status(404).json({ message: "Sesión no encontrada" });
+      if (session.hostId !== req.user!.id) return res.status(403).json({ message: "Solo el anfitrión puede silenciar participantes" });
+
+      const participant = await roomService!.getParticipant(session.roomName, req.params.participantId);
+      for (const track of participant.tracks) {
+        if (track.type === TrackType.AUDIO) {
+          await roomService!.mutePublishedTrack(session.roomName, req.params.participantId, track.sid, true);
+        }
+      }
+      res.json({ message: "Participante silenciado" });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/meet/sessions/:id/remove/:participantId", requireAuth, async (req, res) => {
+    if (!requireLiveKit(res)) return;
+    try {
+      const session = await storage.getMeetSession(req.params.id);
+      if (!session) return res.status(404).json({ message: "Sesión no encontrada" });
+      if (session.hostId !== req.user!.id) return res.status(403).json({ message: "Solo el anfitrión puede expulsar participantes" });
+      await roomService!.removeParticipant(session.roomName, req.params.participantId);
+      res.json({ message: "Participante expulsado" });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
 

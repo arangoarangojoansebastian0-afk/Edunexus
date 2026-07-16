@@ -22,6 +22,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/EmptyState";
@@ -35,6 +37,8 @@ import {
   Calendar as CalendarIcon,
   Clock,
   Video,
+  Lock,
+  Globe,
 } from "lucide-react";
 import type { EventWithHost } from "@shared/schema";
 import { useForm } from "react-hook-form";
@@ -74,6 +78,9 @@ const createEventSchema = z.object({
   maxParticipants: z.string().optional(),
   participantsType: z.enum(["limited", "unlimited"]).default("limited"),
   locationUrl: z.string().url("Ingresa un enlace válido").optional().or(z.literal("")),
+  useMeet: z.boolean().default(false),
+  meetVisibility: z.enum(["public", "private"]).default("public"),
+  invitedGroupIds: z.array(z.string()).default([]),
 }).refine(
   (data) => data.participantsType === "unlimited" || (data.maxParticipants && data.maxParticipants.trim() !== ""),
   {
@@ -115,6 +122,9 @@ export default function Tutoring() {
       maxParticipants: "5",
       participantsType: "limited",
       locationUrl: "",
+      useMeet: false,
+      meetVisibility: "public",
+      invitedGroupIds: [],
     },
   });
 
@@ -131,6 +141,10 @@ export default function Tutoring() {
   const { data: myBookings, refetch: refetchMyBookings } = useQuery<EventWithHost[]>({
     queryKey: ["/api/events/booked"],
     refetchInterval: 3000,
+  });
+
+  const { data: allGroups } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/groups"],
   });
 
   const bookedEventIds = new Set(myBookings?.map((e) => e.id) || []);
@@ -157,6 +171,25 @@ export default function Tutoring() {
       );
       const endTime = addHours(startTime, parseInt(data.duration) / 60);
 
+      let locationUrl = data.locationUrl || null;
+      if (data.useMeet) {
+        // Creamos primero la sala de Meet (con su propia visibilidad y
+        // grupos invitados) y usamos un enlace interno como locationUrl —
+        // así el botón de "unirse" en la tarjeta de la asesoría entra
+        // directo a la videollamada de la plataforma en vez de abrir un
+        // enlace externo.
+        const meetRes = await apiRequest("POST", "/api/meet/sessions", {
+          title: data.title,
+          description: data.description || null,
+          visibility: data.meetVisibility,
+          scheduledAt: startTime.toISOString(),
+          durationMinutes: parseInt(data.duration),
+          invitedGroupIds: data.meetVisibility === "private" ? data.invitedGroupIds : undefined,
+        });
+        const meetSession = await meetRes.json();
+        locationUrl = `/meet/${meetSession.id}`;
+      }
+
       await apiRequest("POST", "/api/events", {
         title: data.title,
         description: data.description || null,
@@ -164,7 +197,7 @@ export default function Tutoring() {
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
         maxParticipants: data.participantsType === "unlimited" ? null : parseInt(data.maxParticipants || "1"),
-        locationUrl: data.locationUrl || null,
+        locationUrl,
       });
     },
     onSuccess: () => {
@@ -468,28 +501,121 @@ export default function Tutoring() {
 
                       <FormField
                         control={form.control}
-                        name="locationUrl"
+                        name="useMeet"
                         render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Enlace de videollamada (opcional)</FormLabel>
+                          <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                            <div className="space-y-0.5">
+                              <FormLabel className="flex items-center gap-2">
+                                <Video className="h-4 w-4" /> Videollamada en la plataforma
+                              </FormLabel>
+                              <FormDescription>
+                                Crea la sala directo aquí, con controles de anfitrión, chat y pantalla compartida.
+                              </FormDescription>
+                            </div>
                             <FormControl>
-                              <div className="relative">
-                                <Video className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                <Input
-                                  placeholder="https://meet.google.com/..."
-                                  className="pl-9"
-                                  {...field}
-                                  data-testid="input-location-url"
-                                />
-                              </div>
+                              <Switch checked={field.value} onCheckedChange={field.onChange} data-testid="switch-use-meet" />
                             </FormControl>
-                            <FormDescription>
-                              Enlace de Google Meet, Zoom, etc.
-                            </FormDescription>
-                            <FormMessage />
                           </FormItem>
                         )}
                       />
+
+                      {form.watch("useMeet") ? (
+                        <div className="space-y-4 rounded-lg border p-3">
+                          <FormField
+                            control={form.control}
+                            name="meetVisibility"
+                            render={({ field }) => (
+                              <FormItem className="space-y-2">
+                                <FormLabel>Visibilidad</FormLabel>
+                                <div className="flex gap-2">
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "public" ? "default" : "outline"}
+                                    size="sm"
+                                    className="gap-1.5 flex-1"
+                                    onClick={() => field.onChange("public")}
+                                  >
+                                    <Globe className="h-3.5 w-3.5" /> Pública
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={field.value === "private" ? "default" : "outline"}
+                                    size="sm"
+                                    className="gap-1.5 flex-1"
+                                    onClick={() => field.onChange("private")}
+                                  >
+                                    <Lock className="h-3.5 w-3.5" /> Privada
+                                  </Button>
+                                </div>
+                                <FormDescription>
+                                  {field.value === "public"
+                                    ? "Cualquiera en tu institución puede ver y unirse (ideal para clases abiertas)."
+                                    : "Solo los grupos que invites pueden unirse (ideal para asesorías puntuales)."}
+                                </FormDescription>
+                              </FormItem>
+                            )}
+                          />
+
+                          {form.watch("meetVisibility") === "private" && (
+                            <FormField
+                              control={form.control}
+                              name="invitedGroupIds"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Invitar grupos</FormLabel>
+                                  <div className="space-y-1.5 max-h-40 overflow-y-auto rounded-md border p-2">
+                                    {allGroups?.length ? allGroups.map((g) => (
+                                      <label key={g.id} className="flex items-center gap-2 text-sm py-1 cursor-pointer">
+                                        <Checkbox
+                                          checked={field.value.includes(g.id)}
+                                          onCheckedChange={(checked) => {
+                                            field.onChange(
+                                              checked
+                                                ? [...field.value, g.id]
+                                                : field.value.filter((id: string) => id !== g.id)
+                                            );
+                                          }}
+                                        />
+                                        {g.name}
+                                      </label>
+                                    )) : (
+                                      <p className="text-xs text-muted-foreground py-1">No tienes grupos disponibles todavía.</p>
+                                    )}
+                                  </div>
+                                  <FormDescription>
+                                    Si no invitas ningún grupo, cualquiera con el enlace y de tu institución podrá entrar.
+                                  </FormDescription>
+                                </FormItem>
+                              )}
+                            />
+                          )}
+                        </div>
+                      ) : (
+                        <FormField
+                          control={form.control}
+                          name="locationUrl"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Enlace de videollamada (opcional)</FormLabel>
+                              <FormControl>
+                                <div className="relative">
+                                  <Video className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                  <Input
+                                    placeholder="https://meet.google.com/..."
+                                    className="pl-9"
+                                    {...field}
+                                    data-testid="input-location-url"
+                                  />
+                                </div>
+                              </FormControl>
+                              <FormDescription>
+                                Enlace de Google Meet, Zoom, etc.
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
 
                       <FormField
                         control={form.control}
