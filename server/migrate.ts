@@ -158,15 +158,15 @@ export async function runMigrations(): Promise<void> {
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_courses_teacher ON courses(teacher_id);
       CREATE INDEX IF NOT EXISTS idx_courses_active ON courses(is_active);
-    \`);
+    `);
 
-    await client.query(\`
+    await client.query(`
       ALTER TABLE courses
         ADD COLUMN IF NOT EXISTS academic_group_id VARCHAR REFERENCES academic_groups(id) ON DELETE SET NULL,
         ADD COLUMN IF NOT EXISTS academic_period_id VARCHAR REFERENCES academic_periods(id) ON DELETE SET NULL;
-    \`);
+    `);
 
-    await client.query(\`
+    await client.query(`
       CREATE INDEX IF NOT EXISTS idx_enrollments_course ON course_enrollments(course_id);
       CREATE INDEX IF NOT EXISTS idx_enrollments_student ON course_enrollments(student_id);
       CREATE INDEX IF NOT EXISTS idx_activities_course ON activities(course_id);
