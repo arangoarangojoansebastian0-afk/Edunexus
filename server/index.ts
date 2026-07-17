@@ -6,6 +6,8 @@ import { runMigrations } from "./migrate";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import { pool } from "./db";
 
 const app = express();
 const httpServer = createServer(app);
@@ -25,8 +27,23 @@ app.use(
   }),
 );
 
+// IMPORTANTE: sin un "store" explícito, express-session usa MemoryStore por
+// defecto — vive solo en la RAM del proceso. Cada vez que Render reinicia el
+// servidor (cualquier deploy, o si el plan gratuito "duerme" el servicio por
+// inactividad y luego arranca de nuevo), esa memoria se borra por completo y
+// TODAS las sesiones activas desaparecen de golpe — por eso todos quedaban
+// deslogueados aunque la cookie en su navegador siguiera siendo válida por 7
+// días: el servidor ya no tenía con qué reconocerla. Usamos Postgres (la
+// misma base de datos de la app) para que la sesión sobreviva a reinicios.
+const PgSession = connectPgSimple(session);
+
 app.use(
   session({
+    store: new PgSession({
+      pool,
+      tableName: "session",
+      createTableIfMissing: true,
+    }),
     secret: process.env.SESSION_SECRET || "loyola-community-secret",
     resave: false,
     saveUninitialized: false,
