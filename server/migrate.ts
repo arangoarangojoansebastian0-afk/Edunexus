@@ -201,6 +201,30 @@ export async function runMigrations(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_dm_created ON direct_messages(created_at);
     `);
 
+    // ── Tabla de sesiones (connect-pg-simple) ───────────────────────────────
+    // La creamos aquí (con manejo de errores ya probado) en vez de dejar que
+    // connect-pg-simple la cree sola con "createTableIfMissing" — si el rol
+    // de conexión no tiene permiso de CREATE TABLE (común en algunos
+    // proveedores gestionados), ese intento fallaba sin control y tumbaba el
+    // proceso en cada arranque, lo que hacía parecer que el login "no pegaba"
+    // y el sistema se reiniciaba solo.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS "session" (
+        "sid" varchar NOT NULL COLLATE "default",
+        "sess" json NOT NULL,
+        "expire" timestamp(6) NOT NULL
+      ) WITH (OIDS=FALSE);
+    `);
+    await client.query(`
+      DO $$
+      BEGIN
+        ALTER TABLE "session" ADD CONSTRAINT "session_pkey" PRIMARY KEY ("sid") NOT DEFERRABLE INITIALLY IMMEDIATE;
+      EXCEPTION WHEN duplicate_object THEN
+        NULL; -- la restricción ya existe, no hacer nada
+      END $$;
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");`);
+
     await client.query("COMMIT");
     console.log("[migrate] All migrations OK");
   } catch (err: any) {

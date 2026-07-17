@@ -12,6 +12,18 @@ import { pool } from "./db";
 const app = express();
 const httpServer = createServer(app);
 
+// Red de seguridad: en versiones recientes de Node, una promesa rechazada
+// sin manejar (unhandledRejection) o una excepción no atrapada por defecto
+// TUMBAN el proceso completo — con ~2900 líneas de rutas y websockets, un
+// solo error suelto en cualquier parte podía desconectar a todos los
+// usuarios de golpe. Preferimos loguearlo y seguir funcionando.
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection]", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException]", err);
+});
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
@@ -42,7 +54,7 @@ app.use(
     store: new PgSession({
       pool,
       tableName: "session",
-      createTableIfMissing: true,
+      createTableIfMissing: false,
     }),
     secret: process.env.SESSION_SECRET || "loyola-community-secret",
     resave: false,
@@ -105,8 +117,16 @@ app.use((req, res, next) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    res.status(status).json({ message });
-    throw err;
+    // OJO: antes había un "throw err;" aquí después de responder. Eso lanza
+    // una excepción por fuera de cualquier try/catch (el error-handler de
+    // Express ya no la atrapa), y sin un manejador global de excepciones no
+    // capturadas, Node se cae por completo — tumbando la conexión de TODOS
+    // los usuarios conectados, no solo la de quien causó el error original.
+    // Render reinicia el contenedor automáticamente después de eso, lo cual
+    // se sentía como "el sistema se reinicia solo" en momentos aleatorios
+    // (cualquier error de una sola petición podía derribar todo el servidor).
+    console.error(`[error] ${status} ${message}`, err.stack || err);
+    if (!res.headersSent) res.status(status).json({ message });
   });
 
   // importantly only setup vite in development and after
