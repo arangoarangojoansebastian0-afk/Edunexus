@@ -37,6 +37,7 @@ import {
   Clock,
   School,
   MessageCircle,
+  Video,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { getFullName, getInitials, formatRole } from "@/lib/authUtils";
@@ -48,6 +49,7 @@ const mainNavItems = [
   { title: "Grupos", url: "/groups", icon: Users },
   { title: "Mensajes", url: "/messages", icon: MessageCircle },
   { title: "Biblioteca", url: "/library", icon: BookOpen },
+  { title: "Meet", url: "/meet", icon: Video },
   { title: "Asesorías", url: "/tutoring", icon: Calendar },
   { title: "Calendario", url: "/calendar", icon: Clock },
 ];

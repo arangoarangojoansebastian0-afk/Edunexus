@@ -15,6 +15,7 @@ import Groups from "@/pages/Groups";
 import GroupDetail from "@/pages/GroupDetail";
 import Library from "@/pages/Library";
 import Tutoring from "@/pages/Tutoring";
+import Meet from "@/pages/Meet";
 import MeetRoom from "@/pages/MeetRoom";
 import Calendar from "@/pages/Calendar";
 import Profile from "@/pages/Profile";
@@ -54,6 +55,7 @@ function Router() {
           <Route path="/groups/:id" component={GroupDetail} />
           <Route path="/library" component={Library} />
           <Route path="/tutoring" component={Tutoring} />
+          <Route path="/meet" component={Meet} />
           <Route path="/meet/:id" component={MeetRoom} />
           <Route path="/calendar" component={Calendar} />
           <Route path="/profile" component={Profile} />
