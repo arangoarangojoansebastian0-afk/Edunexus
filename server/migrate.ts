@@ -213,7 +213,7 @@ export async function runMigrations(): Promise<void> {
         "sid" varchar NOT NULL COLLATE "default",
         "sess" json NOT NULL,
         "expire" timestamp(6) NOT NULL
-      ) WITH (OIDS=FALSE);
+      );
     `);
     await client.query(`
       DO $$
