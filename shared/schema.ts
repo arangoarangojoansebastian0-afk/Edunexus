@@ -24,6 +24,7 @@ export const userRoleEnum = pgEnum("user_role", [
   "secretary", 
   "admin",
   "super_admin", // administrador general de la plataforma — crea y gestiona colegios
+  "parent", // acudiente/padre de familia — acceso de solo lectura a sus hijos vinculados
 ]);
 export const groupTypeEnum = pgEnum("group_type", ["course", "club"]);
 export const fileVisibilityEnum = pgEnum("file_visibility", ["public", "group", "private"]);
@@ -955,6 +956,30 @@ export const insertMeetSessionSchema = createInsertSchema(meetSessions, {
 })
   .omit({ id: true, hostId: true, institutionId: true, roomName: true, status: true, startedAt: true, endedAt: true, createdAt: true })
   .extend({ invitedGroupIds: z.array(z.string()).optional() });
+
+// ─── VÍNCULOS PADRE/ACUDIENTE ↔ ESTUDIANTE ──────────────────────────────────
+export const parentLinkStatusEnum = pgEnum("parent_link_status", ["pending", "approved", "rejected"]);
+
+export const parentStudentLinks = pgTable(
+  "parent_student_links",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    parentId: varchar("parent_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    studentId: varchar("student_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }).notNull(),
+    status: parentLinkStatusEnum("status").default("pending").notNull(),
+    // Quién lo aprobó: el propio estudiante o un admin — útil para trazabilidad,
+    // ya que en primaria muchas veces aprueba el colegio y no el niño.
+    approvedBy: varchar("approved_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    respondedAt: timestamp("responded_at"),
+  },
+  (table) => [
+    index("idx_parent_links_parent").on(table.parentId),
+    index("idx_parent_links_student").on(table.studentId),
+  ]
+);
+export type ParentStudentLink = typeof parentStudentLinks.$inferSelect;
 
 
 // Relations definitions

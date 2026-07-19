@@ -85,6 +85,13 @@ function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+function requireParent(req: Request, res: Response, next: NextFunction) {
+  if (req.user?.role !== "parent") {
+    return res.status(403).json({ message: "Solo cuentas de padre/acudiente pueden acceder a esto." });
+  }
+  next();
+}
+
 const uploadToSupabase = async (file: Express.Multer.File, folder: string): Promise<string> => {
   const fileName = `${folder}/${Date.now()}-${file.originalname.replace(/\s/g, "_")}`;
   const { data, error } = await supabase.storage
@@ -2849,6 +2856,109 @@ export async function registerRoutes(
       if (session.hostId !== req.user!.id) return res.status(403).json({ message: "Solo el anfitrión puede expulsar participantes" });
       await roomService!.removeParticipant(session.roomName, req.params.participantId);
       res.json({ message: "Participante expulsado" });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // PORTAL DE PADRES/ACUDIENTES
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // El padre solicita vincularse a un hijo ya registrado (queda "pending"
+  // hasta que el estudiante o un admin lo apruebe).
+  app.post("/api/parent/link-requests", requireAuth, requireParent, async (req, res) => {
+    try {
+      if (!req.user!.institutionId) return res.status(400).json({ message: "Tu cuenta no tiene institución asignada." });
+      const { studentEmail } = req.body;
+      if (!studentEmail) return res.status(400).json({ message: "Ingresa el correo del estudiante." });
+      const link = await storage.createParentLinkRequest(req.user!.id, studentEmail, req.user!.institutionId);
+      res.status(201).json(link);
+    } catch (e: any) { res.status(400).json({ message: e.message }); }
+  });
+
+  // Hijos ya vinculados (aprobados) de este padre.
+  app.get("/api/parent/children", requireAuth, requireParent, async (req, res) => {
+    try {
+      const children = await storage.getChildrenForParent(req.user!.id);
+      res.json(children);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Solicitudes de vínculo pendientes que ESTE estudiante (el que está
+  // logueado) debe aprobar o rechazar.
+  app.get("/api/students/me/link-requests", requireAuth, async (req, res) => {
+    try {
+      const requests = await storage.getPendingParentLinksForStudent(req.user!.id);
+      res.json(requests);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/students/me/link-requests/:id/respond", requireAuth, async (req, res) => {
+    try {
+      const { approve } = req.body as { approve: boolean };
+      await storage.respondToParentLink(req.params.id, req.user!.id, !!approve);
+      res.json({ message: approve ? "Vínculo aprobado" : "Solicitud rechazada" });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Verifica el vínculo antes de exponer CUALQUIER dato del hijo — sin esto,
+  // un padre podría cambiar el :studentId en la URL y ver datos de cualquier
+  // otro estudiante de la institución.
+  async function assertParentOfChild(req: Request, res: Response, studentId: string): Promise<boolean> {
+    const ok = await storage.isApprovedParentOf(req.user!.id, studentId);
+    if (!ok) { res.status(403).json({ message: "No tienes un vínculo aprobado con este estudiante." }); return false; }
+    return true;
+  }
+
+  app.get("/api/parent/children/:studentId/periods", requireAuth, requireParent, async (req, res) => {
+    try {
+      if (!(await assertParentOfChild(req, res, req.params.studentId))) return;
+      res.json(await storage.getAllPeriods(req.query.yearId as string));
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.get("/api/parent/children/:studentId/report-card/:periodId", requireAuth, requireParent, async (req, res) => {
+    try {
+      if (!(await assertParentOfChild(req, res, req.params.studentId))) return;
+      const entries = await storage.getStudentReportCard(req.params.studentId, req.params.periodId);
+      res.json(entries);
+    } catch (e: any) { res.status(500).json({ message: "Error al generar boletín" }); }
+  });
+
+  app.get("/api/parent/children/:studentId/attendance", requireAuth, requireParent, async (req, res) => {
+    try {
+      if (!(await assertParentOfChild(req, res, req.params.studentId))) return;
+      res.json(await storage.getAttendanceForStudent(req.params.studentId));
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.get("/api/parent/children/:studentId/observations", requireAuth, requireParent, async (req, res) => {
+    try {
+      if (!(await assertParentOfChild(req, res, req.params.studentId))) return;
+      res.json(await storage.getObservationsByStudent(req.params.studentId));
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ── Administración de vínculos (respaldo cuando el estudiante no puede
+  // aprobar por sí mismo, típico en primaria) ──────────────────────────────
+  app.get("/api/admin/parent-links", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      if (!req.user!.institutionId) return res.json([]);
+      res.json(await storage.getAllParentLinksForInstitution(req.user!.institutionId));
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/admin/parent-links/:id/respond", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { approve } = req.body as { approve: boolean };
+      await storage.respondToParentLink(req.params.id, req.user!.id, !!approve);
+      res.json({ message: approve ? "Vínculo aprobado" : "Solicitud rechazada" });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/admin/parent-links/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteParentLink(req.params.id);
+      res.json({ message: "Vínculo eliminado" });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 

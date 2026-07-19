@@ -8,10 +8,11 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/AuthContext";
 import { GraduationCap, ArrowRight, Loader2, ChevronDown } from "lucide-react";
 
-type Role = "student" | "teacher" | "director" | "coordinator" | "secretary" | "admin";
+type Role = "student" | "teacher" | "director" | "coordinator" | "secretary" | "admin" | "parent";
 
 const roleOptions: { value: Role; label: string; description: string; needsCode: boolean }[] = [
   { value: "student",     label: "Estudiante",    description: "Acceso al aula y comunidad",         needsCode: false },
+  { value: "parent",      label: "Padre/Acudiente", description: "Seguimiento de tus hijos",         needsCode: false },
   { value: "teacher",     label: "Maestro",       description: "Gestión de cursos y calificaciones", needsCode: true  },
   { value: "coordinator", label: "Coordinador",   description: "Coordinación académica",             needsCode: true  },
   { value: "director",    label: "Director",      description: "Dirección de grupo o área",          needsCode: true  },
@@ -39,6 +40,7 @@ export default function Register() {
     gradeId: "",
     groupId: "",
     institutionId: "", // FIX: campo correcto sin typo
+    studentEmail: "", // solo para role === "parent"
   });
 
   const selectedRole = roleOptions.find((r) => r.value === formData.role) || roleOptions[0];
@@ -49,7 +51,7 @@ export default function Register() {
   };
 
   const handleRoleSelect = (role: Role) => {
-    setFormData((prev) => ({ ...prev, role, accessCode: "", gradeId: "", groupId: "" }));
+    setFormData((prev) => ({ ...prev, role, accessCode: "", gradeId: "", groupId: "", studentEmail: "" }));
   };
 
   const handleVerifySchool = async () => {
@@ -105,6 +107,7 @@ export default function Register() {
         institutionId: formData.institutionId || undefined, // FIX: enviamos institutionId al backend
         gradeId: formData.role === "student" ? formData.gradeId : null,
         groupId: formData.role === "student" ? formData.groupId : null,
+        studentEmail: formData.role === "parent" && formData.studentEmail ? formData.studentEmail : undefined,
       };
 
       const response = await fetch("/api/auth/register", {
@@ -118,10 +121,22 @@ export default function Register() {
         throw new Error(errorData.error || "Error en el registro");
       }
 
-      toast({
-        title: "Registro exitoso",
-        description: "Tu cuenta ha sido creada correctamente.",
-      });
+      const result = await response.json();
+
+      if (formData.role === "parent") {
+        toast(
+          result.linkWarning
+            ? { variant: "destructive", title: "Cuenta creada, pero...", description: result.linkWarning }
+            : formData.studentEmail
+              ? { title: "Registro exitoso", description: "Enviamos la solicitud de vínculo. Cuando el estudiante (o el colegio) la apruebe, podrás ver su información." }
+              : { title: "Registro exitoso", description: "Ya puedes agregar a tus hijos desde tu panel." }
+        );
+      } else {
+        toast({
+          title: "Registro exitoso",
+          description: "Tu cuenta ha sido creada correctamente.",
+        });
+      }
 
       await refetchUser(); // FIX: actualiza el contexto de auth antes de redirigir
       setLocation("/");
@@ -310,6 +325,24 @@ export default function Register() {
                     </div>
                   </div>
 
+                </div>
+              )}
+
+              {/* PADRE/ACUDIENTE: vincular con un hijo ya registrado (opcional aquí) */}
+              {formData.role === "parent" && (
+                <div className="space-y-2 border border-slate-200 p-4 rounded-xl bg-slate-50/50 animate-in fade-in duration-200">
+                  <Label htmlFor="studentEmail" className="text-slate-700 font-medium">Correo de tu hijo/a (opcional)</Label>
+                  <Input
+                    id="studentEmail"
+                    name="studentEmail"
+                    type="email"
+                    placeholder="correo@ejemplo.com"
+                    value={formData.studentEmail}
+                    onChange={handleChange}
+                  />
+                  <p className="text-xs text-slate-500">
+                    Debe ser el correo con el que tu hijo/a ya está registrado. Quedará pendiente hasta que él/ella (o el colegio) lo apruebe. Si no lo tienes ahora, puedes agregarlo después desde tu panel.
+                  </p>
                 </div>
               )}
 

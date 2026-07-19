@@ -30,7 +30,7 @@ import {
   Users, UserCheck, ClipboardList, Calendar, Key, BarChart2,
   Clock, Eye, BookMarked, Plus, Trash2, Edit, CheckCircle,
   XCircle, Save, RefreshCw, AlertTriangle, TrendingUp,
-  UserX, FileText, Bell, Layers, Monitor, Award, Shield,
+  UserX, FileText, Bell, Layers, Monitor, Award, Shield, Link2,
 } from "lucide-react";
 import type { User } from "@shared/schema";
  
@@ -2934,6 +2934,91 @@ function TabHorarios() {
 
 // ─── OBSERVADOR DEL ESTUDIANTE ────────────────────────────────────────────────
  
+function TabVinculosPadres() {
+  const { toast } = useToast();
+  const { data: links = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/admin/parent-links"],
+  });
+
+  const respond = useMutation({
+    mutationFn: ({ id, approve }: { id: string; approve: boolean }) =>
+      apiRequest("POST", `/api/admin/parent-links/${id}/respond`, { approve }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/parent-links"] });
+      toast({ title: "Actualizado" });
+    },
+    onError: () => toast({ title: "Error al actualizar", variant: "destructive" }),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/admin/parent-links/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/parent-links"] });
+      toast({ title: "Vínculo eliminado" });
+    },
+  });
+
+  const statusConfig: Record<string, { label: string; variant: any }> = {
+    pending: { label: "Pendiente", variant: "outline" },
+    approved: { label: "Aprobado", variant: "default" },
+    rejected: { label: "Rechazado", variant: "destructive" },
+  };
+
+  if (isLoading) return <p className="text-sm text-muted-foreground">Cargando...</p>;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Link2 className="h-5 w-5" /> Vínculos padres/acudientes ↔ estudiantes
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Cuando un padre se registra y da el correo de su hijo/a, aparece aquí como pendiente. Normalmente lo aprueba
+          el propio estudiante desde su perfil, pero para primaria (o si el estudiante no responde) puedes aprobarlo tú directamente.
+        </p>
+      </div>
+
+      {!links.length ? (
+        <p className="text-sm text-muted-foreground py-6 text-center">No hay solicitudes de vínculo todavía.</p>
+      ) : (
+        <div className="divide-y rounded-lg border">
+          {links.map((link: any) => (
+            <div key={link.id} className="flex items-center justify-between gap-3 px-4 py-3 flex-wrap">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">
+                  {link.parentFirstName} {link.parentLastName}
+                  <span className="text-muted-foreground font-normal"> ({link.parentEmail})</span>
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  → hijo/a: {link.studentFirstName} {link.studentLastName}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Badge variant={statusConfig[link.status]?.variant || "outline"}>
+                  {statusConfig[link.status]?.label || link.status}
+                </Badge>
+                {link.status === "pending" && (
+                  <>
+                    <Button size="sm" variant="outline" className="text-red-600" onClick={() => respond.mutate({ id: link.id, approve: false })}>
+                      Rechazar
+                    </Button>
+                    <Button size="sm" onClick={() => respond.mutate({ id: link.id, approve: true })}>
+                      Aprobar
+                    </Button>
+                  </>
+                )}
+                <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-red-600" onClick={() => remove.mutate(link.id)}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TabObservador() {
   const { toast } = useToast();
   const { data: users = [] } = useQuery<User[]>({ queryKey: ["/api/admin/users", "student"] });
@@ -3734,6 +3819,12 @@ const TAB_SECTIONS = [
     label: "Observador",
     icon: Eye,
     component: TabObservador,
+  },
+  {
+    id: "vinculos-padres",
+    label: "Padres/Acudientes",
+    icon: Link2,
+    component: TabVinculosPadres,
   },
   {
     id: "boletines",

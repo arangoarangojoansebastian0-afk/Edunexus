@@ -9,10 +9,13 @@ const registerSchema = z.object({
   firstName: z.string().min(2, "Nombre requerido"),
   lastName: z.string().min(2, "Apellido requerido"),
   role: z
-    .enum(["student", "teacher", "director", "coordinator", "secretary", "admin"])
+    .enum(["student", "teacher", "director", "coordinator", "secretary", "admin", "parent"])
     .default("student"),
   accessCode: z.string().optional(),
   institutionId: z.string().optional(), // <-- FIX: recibimos el ID de institución
+  // Correo del hijo/a — solo aplica cuando role === "parent". Queda pendiente
+  // de aprobación por el estudiante (o un admin) antes de ver cualquier dato.
+  studentEmail: z.string().email().optional(),
 });
 
 const loginSchema = z.object({
@@ -37,12 +40,26 @@ export function setupAuthRoutes(app: Express) {
 
       req.session.userId = user.id;
 
+      // Si se registró como padre/acudiente y dio el correo de su hijo/a,
+      // creamos la solicitud de vínculo (queda pendiente de aprobación). Si
+      // falla (correo no existe, no es estudiante, etc.) no bloqueamos el
+      // registro del padre — puede intentarlo de nuevo luego desde su panel.
+      let linkWarning: string | undefined;
+      if (data.role === "parent" && data.studentEmail && user.institutionId) {
+        try {
+          await storage.createParentLinkRequest(user.id, data.studentEmail, user.institutionId);
+        } catch (linkError: any) {
+          linkWarning = linkError.message;
+        }
+      }
+
       res.json({
         id: user.id,
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
+        linkWarning,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Error en registro";

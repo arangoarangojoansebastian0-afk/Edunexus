@@ -54,6 +54,13 @@ const mainNavItems = [
   { title: "Calendario", url: "/calendar", icon: Clock },
 ];
 
+// Los padres/acudientes no tienen curso, grupo ni calificaciones propias —
+// solo necesitan ver a sus hijos y poder escribirle al colegio.
+const parentNavItems = [
+  { title: "Mis hijos", url: "/parent", icon: Users },
+  { title: "Mensajes", url: "/messages", icon: MessageCircle },
+];
+
 const personalNavItems = [
   { title: "Mi Perfil", url: "/profile", icon: User },
 ];
@@ -77,6 +84,7 @@ export function AppSidebar() {
   };
 
   const isAdmin = user?.role === "admin";
+  const navItems = user?.role === "parent" ? parentNavItems : mainNavItems;
 
   return (
     <Sidebar>
@@ -95,7 +103,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>Navegación</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainNavItems.map((item) => (
+              {navItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild

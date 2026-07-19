@@ -20,7 +20,7 @@ export async function verifyPassword(
   return bcrypt.compare(password, hash);
 }
 
-type RegisterRole = "student" | "teacher" | "director" | "coordinator" | "secretary" | "admin";
+type RegisterRole = "student" | "teacher" | "director" | "coordinator" | "secretary" | "admin" | "parent";
 
 export async function registerUser(
   email: string,

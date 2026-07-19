@@ -107,6 +107,7 @@ import {
   meetSessions,
   meetSessionInvites,
   meetParticipants,
+  parentStudentLinks,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -304,6 +305,14 @@ export interface IStorage {
   updateMeetSessionStatus(id: string, patch: Partial<{ status: "scheduled" | "live" | "ended" | "cancelled"; startedAt: Date; endedAt: Date }>): Promise<void>;
   recordMeetParticipantJoin(sessionId: string, userId: string): Promise<void>;
   recordMeetParticipantLeave(sessionId: string, userId: string): Promise<void>;
+  createParentLinkRequest(parentId: string, studentEmail: string, institutionId: string): Promise<any>;
+  getAttendanceForStudent(studentId: string, limit?: number): Promise<any[]>;
+  getPendingParentLinksForStudent(studentId: string): Promise<any[]>;
+  respondToParentLink(linkId: string, respondedBy: string, approve: boolean): Promise<void>;
+  getChildrenForParent(parentId: string): Promise<any[]>;
+  isApprovedParentOf(parentId: string, studentId: string): Promise<boolean>;
+  getAllParentLinksForInstitution(institutionId: string): Promise<any[]>;
+  deleteParentLink(id: string): Promise<void>;
   savePushSubscription(userId: string, sub: { endpoint: string; p256dh: string; auth: string }): Promise<void>;
   removePushSubscription(endpoint: string): Promise<void>;
   getPushSubscriptionsForUser(userId: string): Promise<any[]>;
@@ -2510,6 +2519,116 @@ async getInstitutionByCode(code: string) {
     if (row && !row.leftAt) {
       await db.update(meetParticipants).set({ leftAt: new Date() }).where(eq(meetParticipants.id, row.id));
     }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // VÍNCULOS PADRE/ACUDIENTE ↔ ESTUDIANTE
+  // ──────────────────────────────────────────────────────────────────────
+
+  async getAttendanceForStudent(studentId: string, limit = 30): Promise<any[]> {
+    return db.select({
+      id: attendance.id,
+      date: attendance.date,
+      status: attendance.status,
+      courseId: attendance.courseId,
+      courseName: courses.name,
+    }).from(attendance)
+      .innerJoin(courses, eq(attendance.courseId, courses.id))
+      .where(eq(attendance.studentId, studentId))
+      .orderBy(desc(attendance.date))
+      .limit(limit);
+  }
+
+  async createParentLinkRequest(parentId: string, studentEmail: string, institutionId: string): Promise<any> {
+    const student = await this.getUserByEmail(studentEmail);
+    if (!student) throw new Error("No se encontró ningún estudiante con ese correo.");
+    if (student.role !== "student") throw new Error("Esa cuenta no es de un estudiante.");
+    if (student.institutionId !== institutionId) throw new Error("Ese estudiante no pertenece a tu institución.");
+
+    const existing = await db.select().from(parentStudentLinks)
+      .where(and(eq(parentStudentLinks.parentId, parentId), eq(parentStudentLinks.studentId, student.id)));
+    if (existing.length > 0) throw new Error("Ya existe una solicitud con este estudiante.");
+
+    const [link] = await db.insert(parentStudentLinks).values({
+      parentId, studentId: student.id, institutionId,
+    }).returning();
+    return { ...link, studentName: `${student.firstName} ${student.lastName}` };
+  }
+
+  // Solicitudes pendientes que un estudiante debe aprobar/rechazar.
+  async getPendingParentLinksForStudent(studentId: string): Promise<any[]> {
+    const parent = aliasedTable(users, "link_parent");
+    return db.select({
+      id: parentStudentLinks.id,
+      createdAt: parentStudentLinks.createdAt,
+      parentId: parentStudentLinks.parentId,
+      parentFirstName: parent.firstName,
+      parentLastName: parent.lastName,
+      parentEmail: parent.email,
+    }).from(parentStudentLinks)
+      .innerJoin(parent, eq(parent.id, parentStudentLinks.parentId))
+      .where(and(eq(parentStudentLinks.studentId, studentId), eq(parentStudentLinks.status, "pending")));
+  }
+
+  async respondToParentLink(linkId: string, respondedBy: string, approve: boolean): Promise<void> {
+    await db.update(parentStudentLinks).set({
+      status: approve ? "approved" : "rejected",
+      approvedBy: respondedBy,
+      respondedAt: new Date(),
+    }).where(eq(parentStudentLinks.id, linkId));
+  }
+
+  // Hijos vinculados y aprobados de un padre/acudiente.
+  async getChildrenForParent(parentId: string): Promise<any[]> {
+    const student = aliasedTable(users, "link_student");
+    return db.select({
+      linkId: parentStudentLinks.id,
+      studentId: parentStudentLinks.studentId,
+      firstName: student.firstName,
+      lastName: student.lastName,
+      grade: student.grade,
+      profileImageUrl: student.profileImageUrl,
+    }).from(parentStudentLinks)
+      .innerJoin(student, eq(student.id, parentStudentLinks.studentId))
+      .where(and(eq(parentStudentLinks.parentId, parentId), eq(parentStudentLinks.status, "approved")));
+  }
+
+  // Verifica que un padre tenga un vínculo aprobado con ese estudiante —
+  // se usa como chequeo de permisos antes de exponerle cualquier dato del hijo.
+  async isApprovedParentOf(parentId: string, studentId: string): Promise<boolean> {
+    const rows = await db.select().from(parentStudentLinks).where(and(
+      eq(parentStudentLinks.parentId, parentId),
+      eq(parentStudentLinks.studentId, studentId),
+      eq(parentStudentLinks.status, "approved"),
+    ));
+    return rows.length > 0;
+  }
+
+  // Para el panel de admin: todos los vínculos de la institución (de cualquier estado).
+  async getAllParentLinksForInstitution(institutionId: string): Promise<any[]> {
+    const parent = aliasedTable(users, "admin_link_parent");
+    const student = aliasedTable(users, "admin_link_student");
+    return db.select({
+      id: parentStudentLinks.id,
+      status: parentStudentLinks.status,
+      createdAt: parentStudentLinks.createdAt,
+      respondedAt: parentStudentLinks.respondedAt,
+      parentId: parentStudentLinks.parentId,
+      parentFirstName: parent.firstName,
+      parentLastName: parent.lastName,
+      parentEmail: parent.email,
+      studentId: parentStudentLinks.studentId,
+      studentFirstName: student.firstName,
+      studentLastName: student.lastName,
+    }).from(parentStudentLinks)
+      .innerJoin(parent, eq(parent.id, parentStudentLinks.parentId))
+      .innerJoin(student, eq(student.id, parentStudentLinks.studentId))
+      .where(eq(parentStudentLinks.institutionId, institutionId))
+      .orderBy(desc(parentStudentLinks.createdAt));
+  }
+
+  async deleteParentLink(id: string): Promise<void> {
+    await db.delete(parentStudentLinks).where(eq(parentStudentLinks.id, id));
   }
 
   async getPushSubscriptionsForUser(userId: string): Promise<any[]> {

@@ -17,6 +17,7 @@ import Library from "@/pages/Library";
 import Tutoring from "@/pages/Tutoring";
 import Meet from "@/pages/Meet";
 import MeetRoom from "@/pages/MeetRoom";
+import ParentPortal from "@/pages/ParentPortal";
 import Calendar from "@/pages/Calendar";
 import Profile from "@/pages/Profile";
 import Admin from "@/pages/Admin";
@@ -50,12 +51,13 @@ function Router() {
         <Route path="/" component={Landing} />
       ) : (
         <>
-          <Route path="/" component={user?.role === "super_admin" ? SuperAdmin : Home} />
+          <Route path="/" component={user?.role === "super_admin" ? SuperAdmin : user?.role === "parent" ? ParentPortal : Home} />
           <Route path="/groups" component={Groups} />
           <Route path="/groups/:id" component={GroupDetail} />
           <Route path="/library" component={Library} />
           <Route path="/tutoring" component={Tutoring} />
           <Route path="/meet" component={Meet} />
+          <Route path="/parent" component={ParentPortal} />
           <Route path="/meet/:id" component={MeetRoom} />
           <Route path="/calendar" component={Calendar} />
           <Route path="/profile" component={Profile} />

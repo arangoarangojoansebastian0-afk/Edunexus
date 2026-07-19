@@ -34,6 +34,11 @@ export function formatRole(role: string): string {
     student: "Estudiante",
     teacher: "Profesor",
     admin: "Administrador",
+    parent: "Padre/Acudiente",
+    director: "Director",
+    coordinator: "Coordinador",
+    secretary: "Secretaria",
+    super_admin: "Super Admin",
   };
   return roleMap[role] || role;
 }
