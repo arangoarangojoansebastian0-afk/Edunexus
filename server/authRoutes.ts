@@ -1,7 +1,10 @@
 import type { Express, Request, Response } from "express";
-import { registerUser, loginUser } from "./authSimple";
+import { registerUser, loginUser, hashPassword } from "./authSimple";
 import { z } from "zod";
 import { storage } from "./storage";
+import { db } from "./db";
+import { users } from "@shared/schema";
+import { eq, sql } from "drizzle-orm";
 
 const registerSchema = z.object({
   email: z.string().email("Email inválido"),
@@ -137,5 +140,56 @@ export function setupAuthRoutes(app: Express) {
       if (err) return res.status(500).json({ error: "Logout failed" });
       res.json({ success: true });
     });
+  });
+
+  // ── Arranque del primer Super Admin ─────────────────────────────────────
+  // "super_admin" NO es un rol seleccionable en /register (con buena razón:
+  // administra TODOS los colegios de la plataforma, no uno solo) — pero sin
+  // esto, no existe ninguna forma de crear el primero. Este endpoint solo
+  // funciona si: (a) la clave secreta coincide con SUPER_ADMIN_SETUP_KEY
+  // (variable de entorno, la defines tú en Render, no queda en el código),
+  // y (b) todavía no existe NINGÚN super_admin en la base de datos — una vez
+  // creado el primero, este endpoint se autodesactiva solo, así que no es un
+  // backdoor permanente aunque la clave se filtre después.
+  app.post("/api/setup/super-admin", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.SUPER_ADMIN_SETUP_KEY) {
+        return res.status(503).json({ error: "Configura SUPER_ADMIN_SETUP_KEY en las variables de entorno para habilitar esto." });
+      }
+      const schema = z.object({
+        setupKey: z.string(),
+        email: z.string().email(),
+        password: z.string().min(8),
+        firstName: z.string().min(2),
+        lastName: z.string().min(2),
+      });
+      const data = schema.parse(req.body);
+
+      if (data.setupKey !== process.env.SUPER_ADMIN_SETUP_KEY) {
+        return res.status(403).json({ error: "Clave de configuración incorrecta." });
+      }
+
+      const [existing] = await db.select({ count: sql<number>`count(*)` })
+        .from(users).where(eq(users.role, "super_admin"));
+      if (Number(existing.count) > 0) {
+        return res.status(409).json({ error: "Ya existe un super administrador — este endpoint ya cumplió su propósito y no se puede volver a usar." });
+      }
+
+      const passwordHash = await hashPassword(data.password);
+      const user = await storage.upsertUser({
+        email: data.email,
+        passwordHash,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        verified: true,
+        role: "super_admin",
+      });
+
+      req.session.userId = user.id;
+      res.status(201).json({ id: user.id, email: user.email, role: user.role });
+    } catch (error: any) {
+      const message = error instanceof Error ? error.message : "Error creando el super administrador";
+      res.status(400).json({ error: message });
+    }
   });
 }

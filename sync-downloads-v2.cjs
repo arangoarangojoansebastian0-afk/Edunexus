@@ -11,6 +11,9 @@
  *        "Meet-nuevo.tsx" ~ "Meet.tsx").
  * 4. Te pregunta si quieres reemplazar. Si no hay ninguna coincidencia,
  *    te pide la ruta donde colocarlo (o te deja omitirlo).
+ * 5. Cada archivo que sí se copia/reemplaza se BORRA de la carpeta de origen
+ *    (Descargas) — así no te vuelve a preguntar por el mismo la próxima vez.
+ *    Los que omites (o donde no escribes ruta) se quedan intactos ahí.
  *
  * USO:
  *   node sync-downloads.cjs
@@ -28,6 +31,21 @@ const IGNORED_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", 
 
 const sourceDir = process.argv[2] || DEFAULT_DOWNLOADS;
 const projectDir = process.argv[3] || process.cwd();
+
+// ── Mapa de ubicaciones conocidas ───────────────────────────────────────────
+// Si un archivo nuevo (sin coincidencia en el proyecto) aparece aquí, se
+// coloca directo en esa ruta sin pedir que la escribas. Se puede ir
+// actualizando a mano, o dejando que Claude te dé un file-map.json nuevo cada
+// vez que te comparta archivos nuevos.
+const MANIFEST_PATH = path.join(path.dirname(process.argv[1]), "file-map.json");
+function loadManifest() {
+  try {
+    return JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8"));
+  } catch {
+    return {};
+  }
+}
+const knownLocations = loadManifest();
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 const ask = (q) => new Promise((resolve) => rl.question(q, resolve));
@@ -90,6 +108,13 @@ function listSourceFiles(dir, allowedExts) {
 function copyFile(src, dest) {
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.copyFileSync(src, dest);
+  // Ya quedó copiado al proyecto — lo borramos de Descargas para no
+  // volver a preguntar por el mismo archivo la próxima vez que corras esto.
+  try {
+    fs.unlinkSync(src);
+  } catch (err) {
+    console.log(`   ⚠️  Se copió, pero no se pudo borrar el original de Descargas (${err.code || err.message}).`);
+  }
 }
 
 async function promptManualPath(srcPath, fileName, projectDir) {
@@ -110,6 +135,7 @@ async function main() {
   console.log("Detectando qué tipos de archivo usa el proyecto...");
   const projectExts = collectProjectExtensions(projectDir);
   console.log(`Tipos encontrados: ${[...projectExts].sort().join(", ")}\n`);
+  console.log(`Mapa de ubicaciones conocidas: ${Object.keys(knownLocations).length} entradas (file-map.json)\n`);
 
   const sourceFiles = listSourceFiles(sourceDir, projectExts);
   if (sourceFiles.length === 0) {
@@ -141,6 +167,16 @@ async function main() {
     const isExact = exact.length > 0;
 
     if (matches.length === 0) {
+      const known = knownLocations[fileName];
+      if (known) {
+        const dest = path.join(projectDir, known);
+        const existed = fs.existsSync(dest);
+        console.log(`   📍 Ubicación conocida (file-map.json): ${known}`);
+        copyFile(srcPath, dest);
+        console.log(existed ? "   ✅ Reemplazado." : "   ✅ Colocado.");
+        existed ? replaced++ : placed++;
+        continue;
+      }
       console.log("   No se encontró ninguna coincidencia (ni exacta ni parecida) en el proyecto.");
       const done = await promptManualPath(srcPath, fileName, projectDir);
       done ? placed++ : skipped++;

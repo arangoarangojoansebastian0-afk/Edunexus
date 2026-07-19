@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -82,15 +82,36 @@ export default function Register() {
     } catch (err) {
       setSchoolData(null);
       setFormData(prev => ({ ...prev, institutionId: "" }));
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "El código de colegio no es válido o no existe.",
-      });
+      // Solo mostramos el toast de error si el usuario ya terminó de escribir
+      // un código con pinta de completo — si no, sería un error molesto por
+      // cada letra que todavía no forma un código válido.
+      if (schoolCode.trim().length >= 4) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "El código de colegio no es válido o no existe.",
+        });
+      }
     } finally {
       setIsSearchingSchool(false);
     }
   };
+
+  // Verificación automática con debounce: antes había que acordarse de
+  // apretar "Verificar" — muchos ni lo notaban y creían que el registro
+  // estaba roto. Ahora, medio segundo después de dejar de escribir, se
+  // verifica solo (el botón sigue ahí como respaldo/manual).
+  const lastAutoVerified = useRef<string>("");
+  useEffect(() => {
+    const code = schoolCode.trim();
+    if (!code || code === lastAutoVerified.current) return;
+    const timeout = setTimeout(() => {
+      lastAutoVerified.current = code;
+      handleVerifySchool();
+    }, 600);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schoolCode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -250,7 +271,7 @@ export default function Register() {
                     type="text"
                     placeholder="Ej: SCH001"
                     value={schoolCode}
-                    onChange={(e) => setSchoolCode(e.target.value)}
+                    onChange={(e) => { setSchoolCode(e.target.value); setSchoolData(null); }}
                     disabled={isSearchingSchool}
                     required
                   />

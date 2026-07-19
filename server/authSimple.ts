@@ -67,7 +67,10 @@ export async function registerUser(
   }
 
   // ── Email domain restriction ─────────────────────────────────────────────
-  if (institutionId) {
+  // Los padres/acudientes normalmente NO tienen correo institucional (usan su
+  // correo personal), así que quedan exentos de esta restricción — aplica
+  // solo a estudiantes y staff, que sí suelen tener correo del colegio.
+  if (institutionId && role !== "parent") {
     const institution = await db
       .select({ emailAllowedDomain: institutionSettings.emailAllowedDomain })
       .from(institutionSettings)

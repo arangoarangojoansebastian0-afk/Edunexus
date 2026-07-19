@@ -9,6 +9,7 @@ import { PageLoader } from "@/components/LoadingSpinner";
 
 import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
+import SetupSuperAdmin from "@/pages/SetupSuperAdmin";
 import Register from "@/pages/Register";
 import Home from "@/pages/Home";
 import Groups from "@/pages/Groups";
@@ -46,6 +47,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
+      <Route path="/setup-super-admin" component={SetupSuperAdmin} />
       <Route path="/register" component={Register} />
       {!isAuthenticated ? (
         <Route path="/" component={Landing} />
