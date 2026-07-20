@@ -25,7 +25,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { FileText, Users, TrendingUp, Calendar, BookOpen } from "lucide-react";
+import { FileText, Users, Calendar, BookOpen } from "lucide-react";
 import type { PostWithAuthor, Group, EventWithHost, User } from "@shared/schema";
 import { Link } from "wouter";
 import { getFullName, getInitials } from "@/lib/authUtils";
@@ -54,17 +54,12 @@ export default function Home() {
     queryKey: ["/api/users"],
   });
 
-  const { data: stats } = useQuery<{
-    totalPosts: number;
-    totalUsers: number;
-    totalGroups: number;
-    totalEvents: number;
-  }>({
-    queryKey: ["/api/stats"],
-  });
-
   const { data: events, isLoading: eventsLoading } = useQuery<EventWithHost[]>({
     queryKey: ["/api/events"],
+  });
+
+  const { data: conversations } = useQuery<{ unreadCount: number }[]>({
+    queryKey: ["/api/direct-messages/conversations"],
   });
 
   const createPostMutation = useMutation({
@@ -109,6 +104,12 @@ export default function Home() {
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
     },
   });
+
+  const upcomingEvents = (events || [])
+    .filter((e) => new Date(e.startTime) > new Date())
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+    .slice(0, 3);
+  const unreadMessagesTotal = (conversations || []).reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
   return (
     <AppLayout title="Inicio" showSearch>
@@ -214,41 +215,40 @@ export default function Home() {
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Stats Card */}
+            {/* Próximos eventos + mensajes sin leer */}
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4" />
-                  Comunidad
+                  <Calendar className="h-4 w-4" />
+                  Próximamente
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center p-3 rounded-lg bg-muted/50">
-                    <p className="text-2xl font-bold text-primary">
-                      {stats?.totalUsers || 0}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Miembros</p>
+              <CardContent className="space-y-3">
+                <Link href="/messages">
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors cursor-pointer">
+                    <span className="text-sm font-medium">Mensajes sin leer</span>
+                    <Badge variant={unreadMessagesTotal > 0 ? "default" : "outline"}>
+                      {unreadMessagesTotal}
+                    </Badge>
                   </div>
-                  <div className="text-center p-3 rounded-lg bg-muted/50">
-                    <p className="text-2xl font-bold text-primary">
-                      {stats?.totalPosts || 0}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Publicaciones</p>
+                </Link>
+
+                {upcomingEvents.length > 0 ? (
+                  <div className="space-y-2">
+                    {upcomingEvents.map((event) => (
+                      <Link key={event.id} href="/tutoring">
+                        <div className="p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors cursor-pointer">
+                          <p className="text-sm font-medium truncate">{event.title}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(event.startTime).toLocaleDateString("es-CO", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
+                          </p>
+                        </div>
+                      </Link>
+                    ))}
                   </div>
-                  <div className="text-center p-3 rounded-lg bg-muted/50">
-                    <p className="text-2xl font-bold text-primary">
-                      {stats?.totalGroups || 0}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Grupos</p>
-                  </div>
-                  <div className="text-center p-3 rounded-lg bg-muted/50">
-                    <p className="text-2xl font-bold text-primary">
-                      {stats?.totalEvents || 0}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Asesorías</p>
-                  </div>
-                </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground text-center py-2">No tienes eventos próximos.</p>
+                )}
               </CardContent>
             </Card>
 
