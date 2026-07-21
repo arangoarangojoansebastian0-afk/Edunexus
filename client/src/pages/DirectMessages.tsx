@@ -199,6 +199,11 @@ export default function DirectMessages() {
   });
 
   // Usuario activo con quien chateamos (solo aplica en chats 1 a 1)
+  const totalUnread = (conversations as any[]).reduce(
+    (sum: number, c: any) => sum + (c.unreadCount || 0),
+    0
+  );
+
   const activeConv = (conversations as any[]).find(c =>
     c.otherUser?.id === otherId
   );
@@ -388,7 +393,14 @@ export default function DirectMessages() {
         <div className={`w-full md:w-80 border-r flex flex-col shrink-0 ${otherId ? "hidden md:flex" : "flex"}`}>
           {/* Header */}
           <div className="p-4 border-b flex items-center justify-between gap-2">
-            <h2 className="font-bold text-base">Mensajes</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="font-bold text-base">Mensajes</h2>
+              {totalUnread > 0 && (
+                <Badge variant="destructive" className="h-5 min-w-5 px-1.5 flex items-center justify-center text-[10px]">
+                  {totalUnread > 99 ? "99+" : totalUnread}
+                </Badge>
+              )}
+            </div>
             <div className="flex items-center gap-1">
               <Button size="sm" variant="ghost" className="relative" title="Solicitudes de mensaje" onClick={() => setShowRequests(true)}>
                 <UserPlus2 className="h-4 w-4" />

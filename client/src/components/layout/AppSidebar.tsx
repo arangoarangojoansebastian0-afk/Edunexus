@@ -13,6 +13,7 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -74,6 +75,13 @@ export function AppSidebar() {
     queryKey: ["/api/admin/institution"],
   });
 
+  const { data: unread } = useQuery<{ count: number }>({
+    queryKey: ["/api/direct-messages/unread/count"],
+    enabled: !!user,
+    refetchInterval: 15000,
+  });
+  const unreadCount = unread?.count || 0;
+
   const handleLogout = async () => {
     try {
       await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
@@ -110,9 +118,17 @@ export function AppSidebar() {
                     isActive={location === item.url}
                     data-testid={`nav-${item.title.toLowerCase()}`}
                   >
-                    <Link href={item.url}>
+                    <Link href={item.url} className="flex items-center gap-2 w-full">
                       <item.icon className="h-5 w-5" />
-                      <span>{item.title}</span>
+                      <span className="flex-1">{item.title}</span>
+                      {item.title === "Mensajes" && unreadCount > 0 && (
+                        <Badge
+                          variant="destructive"
+                          className="h-5 min-w-5 px-1 flex items-center justify-center text-[10px] shrink-0"
+                        >
+                          {unreadCount > 9 ? "9+" : unreadCount}
+                        </Badge>
+                      )}
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
