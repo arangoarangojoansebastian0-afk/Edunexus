@@ -12,6 +12,11 @@ import { pool } from "./db";
 const app = express();
 const httpServer = createServer(app);
 
+// Render corre la app detrás de un proxy inverso; sin esto, Express ve la IP
+// interna del proxy como si fuera la de todos los usuarios por igual, lo cual
+// rompe el rate limiting (y cualquier lógica futura basada en IP).
+app.set("trust proxy", 1);
+
 // Red de seguridad: en versiones recientes de Node, una promesa rechazada
 // sin manejar (unhandledRejection) o una excepción no atrapada por defecto
 // TUMBAN el proceso completo — con ~2900 líneas de rutas y websockets, un

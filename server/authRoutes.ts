@@ -3,8 +3,24 @@ import { registerUser, loginUser, hashPassword } from "./authSimple";
 import { z } from "zod";
 import { storage } from "./storage";
 import { db } from "./db";
-import { users } from "@shared/schema";
-import { eq, sql } from "drizzle-orm";
+import { users, authTokens } from "@shared/schema";
+import { eq, sql, and } from "drizzle-orm";
+import crypto from "crypto";
+import { loginLimiter, registerLimiter, passwordResetLimiter } from "./rateLimit";
+import { sendEmail, passwordResetEmailHtml, verificationEmailHtml } from "./email";
+import { logAudit } from "./audit";
+
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hora
+const VERIFY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 horas
+
+async function createAuthToken(userId: string, type: "password_reset" | "email_verification", ttlMs: number) {
+  const token = crypto.randomBytes(32).toString("hex");
+  await db.insert(authTokens).values({
+    userId, token, type,
+    expiresAt: new Date(Date.now() + ttlMs),
+  });
+  return token;
+}
 
 const registerSchema = z.object({
   email: z.string().email("Email inválido"),
@@ -28,7 +44,7 @@ const loginSchema = z.object({
 });
 
 export function setupAuthRoutes(app: Express) {
-  app.post("/api/auth/register", async (req: Request, res: Response) => {
+  app.post("/api/auth/register", registerLimiter, async (req: Request, res: Response) => {
     try {
       const data = registerSchema.parse(req.body);
       const user = await registerUser(
@@ -42,6 +58,17 @@ export function setupAuthRoutes(app: Express) {
       );
 
       req.session.userId = user.id;
+
+      // Nivel 3.8: enviar correo de verificación. No bloqueamos el registro
+      // si el envío falla (proveedor de correo caído, etc.) — el usuario
+      // puede reenviarlo después desde su perfil.
+      try {
+        const token = await createAuthToken(user.id, "email_verification", VERIFY_TOKEN_TTL_MS);
+        const verifyUrl = `${process.env.APP_URL || "http://localhost:5000"}/verify-email?token=${token}`;
+        await sendEmail(user.email, "Confirma tu correo", verificationEmailHtml(user.firstName || "", verifyUrl));
+      } catch (mailErr) {
+        console.warn("[auth] No se pudo enviar el correo de verificación:", mailErr);
+      }
 
       // Si se registró como padre/acudiente y dio el correo de su hijo/a,
       // creamos la solicitud de vínculo (queda pendiente de aprobación). Si
@@ -111,7 +138,7 @@ export function setupAuthRoutes(app: Express) {
     }
   });
 
-  app.post("/api/auth/login", async (req: Request, res: Response) => {
+  app.post("/api/auth/login", loginLimiter, async (req: Request, res: Response) => {
     try {
       const data = loginSchema.parse(req.body);
       const user = await loginUser(data.email, data.password, data.lastName);
@@ -140,6 +167,93 @@ export function setupAuthRoutes(app: Express) {
       if (err) return res.status(500).json({ error: "Logout failed" });
       res.json({ success: true });
     });
+  });
+
+  // ── Nivel 3.7: Recuperación de contraseña ───────────────────────────────
+  app.post("/api/auth/forgot-password", passwordResetLimiter, async (req: Request, res: Response) => {
+    // Siempre respondemos con el mismo mensaje genérico exista o no el
+    // correo — así no revelamos qué correos están registrados en el sistema.
+    const genericResponse = { message: "Si el correo existe, enviamos un enlace de recuperación." };
+    try {
+      const { email } = z.object({ email: z.string().email() }).parse(req.body);
+      const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+      if (user) {
+        const token = await createAuthToken(user.id, "password_reset", RESET_TOKEN_TTL_MS);
+        const resetUrl = `${process.env.APP_URL || "http://localhost:5000"}/reset-password?token=${token}`;
+        await sendEmail(user.email, "Recuperación de contraseña", passwordResetEmailHtml(user.firstName || "", resetUrl))
+          .catch((e) => console.warn("[auth] Error enviando correo de recuperación:", e));
+      }
+      res.json(genericResponse);
+    } catch {
+      res.json(genericResponse);
+    }
+  });
+
+  app.post("/api/auth/reset-password", async (req: Request, res: Response) => {
+    try {
+      const { token, password } = z.object({
+        token: z.string(),
+        password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
+      }).parse(req.body);
+
+      const [row] = await db.select().from(authTokens)
+        .where(and(eq(authTokens.token, token), eq(authTokens.type, "password_reset")))
+        .limit(1);
+
+      if (!row || row.usedAt || new Date(row.expiresAt) < new Date()) {
+        return res.status(400).json({ error: "El enlace de recuperación es inválido o ya expiró. Solicita uno nuevo." });
+      }
+
+      const passwordHash = await hashPassword(password);
+      await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, row.userId));
+      await db.update(authTokens).set({ usedAt: new Date() }).where(eq(authTokens.id, row.id));
+
+      res.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error al restablecer la contraseña";
+      res.status(400).json({ error: message });
+    }
+  });
+
+  // ── Nivel 3.8: Verificación de correo ────────────────────────────────────
+  app.post("/api/auth/resend-verification", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "No autenticado" });
+      const [user] = await db.select().from(users).where(eq(users.id, req.session.userId)).limit(1);
+      if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+      if (user.verified) return res.json({ message: "Tu correo ya está verificado." });
+
+      const token = await createAuthToken(user.id, "email_verification", VERIFY_TOKEN_TTL_MS);
+      const verifyUrl = `${process.env.APP_URL || "http://localhost:5000"}/verify-email?token=${token}`;
+      await sendEmail(user.email, "Confirma tu correo", verificationEmailHtml(user.firstName || "", verifyUrl));
+      res.json({ message: "Correo de verificación reenviado." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error al reenviar el correo";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/auth/verify-email", async (req: Request, res: Response) => {
+    try {
+      const token = req.query.token as string;
+      if (!token) return res.status(400).json({ error: "Token requerido" });
+
+      const [row] = await db.select().from(authTokens)
+        .where(and(eq(authTokens.token, token), eq(authTokens.type, "email_verification")))
+        .limit(1);
+
+      if (!row || row.usedAt || new Date(row.expiresAt) < new Date()) {
+        return res.status(400).json({ error: "El enlace de verificación es inválido o ya expiró." });
+      }
+
+      await db.update(users).set({ verified: true, updatedAt: new Date() }).where(eq(users.id, row.userId));
+      await db.update(authTokens).set({ usedAt: new Date() }).where(eq(authTokens.id, row.id));
+
+      res.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error al verificar el correo";
+      res.status(500).json({ error: message });
+    }
   });
 
   // ── Arranque del primer Super Admin ─────────────────────────────────────
@@ -186,6 +300,13 @@ export function setupAuthRoutes(app: Express) {
       });
 
       req.session.userId = user.id;
+      logAudit({
+        actorId: user.id,
+        actorName: `${user.firstName} ${user.lastName}`,
+        action: "create_super_admin",
+        entityType: "user",
+        entityId: user.id,
+      });
       res.status(201).json({ id: user.id, email: user.email, role: user.role });
     } catch (error: any) {
       const message = error instanceof Error ? error.message : "Error creando el super administrador";

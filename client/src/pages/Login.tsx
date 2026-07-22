@@ -145,6 +145,12 @@ export default function Login() {
                 {isLoading ? "Iniciando..." : "Iniciar Sesión"}
                 {!isLoading && <ArrowRight className="ml-2 h-4 w-4" />}
               </Button>
+
+              <div className="text-center text-sm">
+                <Link href="/forgot-password" className="text-muted-foreground hover:text-primary hover:underline">
+                  ¿Olvidaste tu contraseña?
+                </Link>
+              </div>
             </form>
 
             <div className="mt-4 text-center text-sm">

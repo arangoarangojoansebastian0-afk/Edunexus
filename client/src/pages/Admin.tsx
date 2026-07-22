@@ -3318,16 +3318,29 @@ function TabBoletines() {
         <Skeleton className="h-48 w-full" />
       ) : (
         <div className="space-y-4">
-          {/* Acciones de exportación */}
+          {/* Acciones de exportación del consolidado del grupo seleccionado */}
           <div className="flex gap-2">
-            <Button variant="outline" size="sm">
-              <FileText className="h-4 w-4 mr-1" /> Generar PDF individual
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const params = new URLSearchParams({ groupId: selectedGroup });
+                if (selectedPeriod) params.set("periodId", selectedPeriod);
+                window.open(`/api/admin/report-cards/export/excel?${params}`, "_blank");
+              }}
+            >
+              <Layers className="h-4 w-4 mr-1" /> Descargar Excel
             </Button>
-            <Button variant="outline" size="sm">
-              <Layers className="h-4 w-4 mr-1" /> Consolidado por grupo
-            </Button>
-            <Button variant="outline" size="sm">
-              <School className="h-4 w-4 mr-1" /> Consolidado institucional
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const params = new URLSearchParams({ groupId: selectedGroup });
+                if (selectedPeriod) params.set("periodId", selectedPeriod);
+                window.open(`/api/admin/report-cards/export/pdf?${params}`, "_blank");
+              }}
+            >
+              <FileText className="h-4 w-4 mr-1" /> Descargar PDF
             </Button>
           </div>
  
@@ -3757,6 +3770,71 @@ function TabBiblioteca() {
   );
 }
  
+function TabAuditoria() {
+  const { data: logs = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/admin/audit-logs"],
+  });
+
+  const actionLabels: Record<string, string> = {
+    expel_student: "Expulsó a un estudiante",
+    delete_user_permanent: "Eliminó un usuario permanentemente",
+    create_observation: "Creó una observación",
+    delete_observation: "Eliminó una observación",
+    create_super_admin: "Creó un super administrador",
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Shield className="h-4 w-4" /> Bitácora de auditoría
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground mb-4">
+            Registro de acciones administrativas sensibles: quién, qué y cuándo. Cubre expulsiones, borrados
+            permanentes, observaciones y creación de super administradores — se irá ampliando a más acciones.
+          </p>
+          {isLoading ? (
+            <Skeleton className="h-48 w-full" />
+          ) : logs.length === 0 ? (
+            <div className="text-center text-muted-foreground py-12">
+              <Shield className="h-8 w-8 mx-auto mb-2 opacity-40" />
+              <p>Todavía no hay acciones registradas.</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Quién</TableHead>
+                  <TableHead>Acción</TableHead>
+                  <TableHead>Detalles</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {logs.map((log: any) => (
+                  <TableRow key={log.id}>
+                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                      {new Date(log.createdAt).toLocaleString("es-CO")}
+                    </TableCell>
+                    <TableCell className="text-sm">{log.actorName || "—"}</TableCell>
+                    <TableCell className="text-sm">{actionLabels[log.action] || log.action}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {log.entityId ? `${log.entityType || "registro"}: ${log.entityId.slice(0, 8)}...` : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // ─── NAVEGACIÓN DE TABS ───────────────────────────────────────────────────────
  
 const TAB_SECTIONS = [
@@ -3849,6 +3927,12 @@ const TAB_SECTIONS = [
     label: "Códigos",
     icon: Key,
     component: TabCodigos,
+  },
+  {
+    id: "auditoria",
+    label: "Auditoría",
+    icon: Shield,
+    component: TabAuditoria,
   },
 ];
  

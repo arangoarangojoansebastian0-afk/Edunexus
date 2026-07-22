@@ -225,6 +225,38 @@ export async function runMigrations(): Promise<void> {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");`);
 
+    // ── Nivel 3: tokens de recuperación de contraseña y verificación de correo ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS auth_tokens (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token VARCHAR NOT NULL UNIQUE,
+        type VARCHAR(30) NOT NULL, -- 'password_reset' | 'email_verification'
+        expires_at TIMESTAMP NOT NULL,
+        used_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_auth_tokens_token ON auth_tokens(token);
+      CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id);
+    `);
+
+    // ── Nivel 4: bitácora de auditoría de acciones administrativas ─────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        institution_id UUID REFERENCES institution_settings(id) ON DELETE CASCADE,
+        actor_id VARCHAR REFERENCES users(id) ON DELETE SET NULL,
+        actor_name VARCHAR,
+        action VARCHAR(100) NOT NULL,
+        entity_type VARCHAR(100),
+        entity_id VARCHAR,
+        details JSONB,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_audit_institution ON audit_logs(institution_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
+    `);
+
     await client.query("COMMIT");
     console.log("[migrate] All migrations OK");
   } catch (err: any) {

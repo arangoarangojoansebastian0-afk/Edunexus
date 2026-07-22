@@ -712,6 +712,31 @@ export const gradebookEntries = pgTable(
 );
 
 // ====== GOOGLE CLASSROOM TOKENS (por docente) ======
+// Nivel 3: tokens de un solo uso para reseteo de contraseña y verificación
+// de correo. Un mismo mecanismo para ambos casos, diferenciado por "type".
+export const authTokens = pgTable("auth_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  token: varchar("token").notNull().unique(),
+  type: varchar("type", { length: 30 }).notNull(), // 'password_reset' | 'email_verification'
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Nivel 4: bitácora de auditoría — quién hizo qué, cuándo, sobre qué.
+export const auditLogs = pgTable("audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }),
+  actorId: varchar("actor_id").references(() => users.id, { onDelete: "set null" }),
+  actorName: varchar("actor_name"),
+  action: varchar("action", { length: 100 }).notNull(),
+  entityType: varchar("entity_type", { length: 100 }),
+  entityId: varchar("entity_id"),
+  details: jsonb("details"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const googleClassroomTokens = pgTable("google_classroom_tokens", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull().unique(),

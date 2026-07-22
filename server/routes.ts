@@ -28,6 +28,9 @@ import session from "express-session";
 import { supabase } from "./supabase";
 import { sendPushToUser, getVapidPublicKey, pushEnabled } from "./push";
 import { hashPassword } from "./authSimple";
+import { messagingLimiter } from "./rateLimit";
+import { getValidAccessToken, handleGcAuthError } from "./googleClassroomAuth";
+import { logAudit, getAuditLogs } from "./audit";
 import { AccessToken, RoomServiceClient, TrackType } from "livekit-server-sdk";
 import { insertMeetSessionSchema } from "@shared/schema";
 
@@ -536,7 +539,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/groups/:id/messages", requireAuth, upload.single("media"), async (req, res) => {
+  app.post("/api/groups/:id/messages", requireAuth, messagingLimiter, upload.single("media"), async (req, res) => {
     try {
       const userId = req.user!.id;
       const groupId = req.params.id;
@@ -837,12 +840,34 @@ export async function registerRoutes(
   });
 
   app.post("/api/admin/users/:id/expel", requireAuth, requireAdmin, async (req, res) => {
-    try { await storage.expelStudent(req.params.id); res.json({ success: true }); }
+    try {
+      await storage.expelStudent(req.params.id);
+      logAudit({
+        institutionId: req.user!.institutionId,
+        actorId: req.user!.id,
+        actorName: `${req.user!.firstName} ${req.user!.lastName}`,
+        action: "expel_student",
+        entityType: "user",
+        entityId: req.params.id,
+      });
+      res.json({ success: true });
+    }
     catch { res.status(500).json({ message: "Error" }); }
   });
 
   app.delete("/api/admin/users/:id/permanent", requireAuth, requireAdmin, async (req, res) => {
-    try { await storage.deleteUserPermanently(req.params.id); res.json({ success: true }); }
+    try {
+      await storage.deleteUserPermanently(req.params.id);
+      logAudit({
+        institutionId: req.user!.institutionId,
+        actorId: req.user!.id,
+        actorName: `${req.user!.firstName} ${req.user!.lastName}`,
+        action: "delete_user_permanent",
+        entityType: "user",
+        entityId: req.params.id,
+      });
+      res.json({ success: true });
+    }
     catch { res.status(500).json({ message: "Error" }); }
   });
 
@@ -1025,6 +1050,24 @@ export async function registerRoutes(
         title: type === "positive" ? "Observación positiva" : type === "negative" ? "Observación negativa" : "Observación",
         description: packObservation(description, commitment, followUp),
       });
+
+      // Nivel 4.10: avisar al estudiante de la nueva anotación en su observador.
+      sendPushToUser(studentId, {
+        title: type === "positive" ? "Nueva observación positiva" : "Nueva anotación en tu observador",
+        body: description.slice(0, 120),
+        url: "/profile",
+      }).catch(() => {});
+
+      logAudit({
+        institutionId: req.user.institutionId,
+        actorId: req.user.id,
+        actorName: `${req.user.firstName} ${req.user.lastName}`,
+        action: "create_observation",
+        entityType: "observation",
+        entityId: created.id,
+        details: { studentId, type },
+      });
+
       res.status(201).json(created);
     } catch (e) { res.status(500).json({ message: "Error al crear observación" }); }
   });
@@ -1033,6 +1076,14 @@ export async function registerRoutes(
     try {
       if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
       await storage.deleteObservation(req.params.id, req.user.institutionId);
+      logAudit({
+        institutionId: req.user.institutionId,
+        actorId: req.user.id,
+        actorName: `${req.user.firstName} ${req.user.lastName}`,
+        action: "delete_observation",
+        entityType: "observation",
+        entityId: req.params.id,
+      });
       res.json({ success: true });
     } catch (e) { res.status(500).json({ message: "Error al eliminar observación" }); }
   });
@@ -1056,6 +1107,14 @@ export async function registerRoutes(
         recordedBy: req.user.id,
       });
       const entry = await storage.upsertGradebookEntry(data);
+
+      // Nivel 4.10: avisar al estudiante de la nueva calificación.
+      sendPushToUser(data.studentId, {
+        title: "Nueva calificación registrada",
+        body: `Se registró una nota de ${data.grade} en tu boletín.`,
+        url: "/profile",
+      }).catch(() => {});
+
       res.status(201).json(entry);
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ errors: error.errors });
@@ -1080,6 +1139,98 @@ export async function registerRoutes(
       const result = await storage.getReportCardsByGroup(req.user.institutionId, groupId, periodId);
       res.json(result);
     } catch (e) { res.status(500).json({ message: "Error al generar boletines del grupo" }); }
+  });
+
+  // Nivel 2.5: exportar el boletín consolidado del grupo a Excel
+  app.get("/api/admin/report-cards/export/excel", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      const { groupId, periodId } = req.query as Record<string, string | undefined>;
+      if (!groupId) return res.status(400).json({ error: "groupId requerido" });
+
+      const { subjects, students } = await storage.getReportCardsByGroup(req.user.institutionId, groupId, periodId);
+      const XLSX = await import("xlsx");
+
+      const header = ["Estudiante", ...subjects.map(s => s.name), "Promedio"];
+      const rows = students.map(s => [
+        `${s.firstName} ${s.lastName}`.trim(),
+        ...subjects.map(subj => s.grades[subj.id] ?? ""),
+        s.average ?? "",
+      ]);
+
+      const worksheet = XLSX.utils.aoa_to_sheet([header, ...rows]);
+      worksheet["!cols"] = [{ wch: 28 }, ...subjects.map(() => ({ wch: 14 })), { wch: 10 }];
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Boletín");
+
+      const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="boletin-${groupId}.xlsx"`);
+      res.send(buffer);
+    } catch (e: any) {
+      res.status(500).json({ message: "Error al exportar a Excel: " + e.message });
+    }
+  });
+
+  // Nivel 2.6: exportar el boletín consolidado del grupo a PDF
+  app.get("/api/admin/report-cards/export/pdf", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      const { groupId, periodId } = req.query as Record<string, string | undefined>;
+      if (!groupId) return res.status(400).json({ error: "groupId requerido" });
+
+      const { subjects, students } = await storage.getReportCardsByGroup(req.user.institutionId, groupId, periodId);
+      const institution = await storage.getInstitutionSettings(req.user.institutionId);
+      const PDFDocument = (await import("pdfkit")).default;
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="boletin-${groupId}.pdf"`);
+
+      const doc = new PDFDocument({ margin: 36, size: "A4", layout: "landscape" });
+      doc.pipe(res);
+
+      doc.fontSize(16).text(institution?.institutionName || "Boletín de calificaciones", { align: "center" });
+      doc.moveDown(0.3);
+      doc.fontSize(10).fillColor("#555").text(`Generado el ${new Date().toLocaleDateString("es-CO")}`, { align: "center" });
+      doc.moveDown(1);
+      doc.fillColor("#000");
+
+      // Tabla simple: encabezados + filas. Con pocas materias/estudiantes
+      // por grupo, una tabla dibujada a mano alcanza sin traer una librería
+      // de tablas adicional.
+      const colWidths = [180, ...subjects.map(() => 90), 70];
+      const startX = doc.page.margins.left;
+      let y = doc.y;
+
+      const drawRow = (cells: string[], opts: { bold?: boolean } = {}) => {
+        let x = startX;
+        doc.font(opts.bold ? "Helvetica-Bold" : "Helvetica").fontSize(9);
+        cells.forEach((cell, i) => {
+          doc.text(cell, x, y, { width: colWidths[i], align: i === 0 ? "left" : "center" });
+          x += colWidths[i];
+        });
+        y += 20;
+      };
+
+      drawRow(["Estudiante", ...subjects.map(s => s.name), "Promedio"], { bold: true });
+      doc.moveTo(startX, y - 4).lineTo(startX + colWidths.reduce((a, b) => a + b, 0), y - 4).stroke();
+
+      for (const s of students) {
+        if (y > doc.page.height - doc.page.margins.bottom - 20) {
+          doc.addPage({ margin: 36, size: "A4", layout: "landscape" });
+          y = doc.page.margins.top;
+        }
+        drawRow([
+          `${s.firstName} ${s.lastName}`.trim(),
+          ...subjects.map(subj => String(s.grades[subj.id] ?? "-")),
+          s.average != null ? String(s.average) : "-",
+        ]);
+      }
+
+      doc.end();
+    } catch (e: any) {
+      res.status(500).json({ message: "Error al exportar a PDF: " + e.message });
+    }
   });
 
   app.post("/api/admin/subjects/:id/toggle", requireAuth, requireAdmin, async (req, res) => {
@@ -1835,6 +1986,14 @@ export async function registerRoutes(
         })
         .where(eq(submissions.id, req.params.id))
         .returning();
+
+      // Nivel 4.10: avisar al estudiante de que su entrega ya fue calificada.
+      sendPushToUser(sub.studentId, {
+        title: "Actividad calificada",
+        body: `"${activity.title}" fue calificada con ${req.body.grade}.`,
+        url: `/classroom/${activity.courseId}`,
+      }).catch(() => {});
+
       res.json(updated);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -1914,9 +2073,18 @@ export async function registerRoutes(
   // ──────────────────────────────────────────────────────────────────────────
 
   // Iniciar OAuth de Google Classroom para el docente
-  app.get("/api/classroom/google/auth-url", requireAuth, (req, res) => {
-    const { gcClientId, returnTo } = req.query as { gcClientId?: string; returnTo?: string };
-    const clientId = gcClientId || process.env.GOOGLE_CLIENT_ID;
+  app.get("/api/classroom/google/auth-url", requireAuth, async (req, res) => {
+    const { gcClientId: gcClientIdOverride, returnTo } = req.query as { gcClientId?: string; returnTo?: string };
+
+    // Antes esto solo miraba el query param (que el frontend nunca envía) o
+    // el env var global — nunca el gcClientId propio de la institución
+    // configurado en Admin, así que un colegio con su propio proyecto de
+    // Google Cloud terminaba usando credenciales equivocadas (o ninguna) al
+    // iniciar el login, aunque el callback sí las usara correctamente.
+    const institution = req.user!.institutionId
+      ? await storage.getInstitutionSettings(req.user!.institutionId)
+      : null;
+    const clientId = gcClientIdOverride || institution?.gcClientId || process.env.GOOGLE_CLIENT_ID;
     if (!clientId) return res.status(400).json({ error: "Google Client ID no configurado" });
 
     const redirectUri = `${process.env.APP_URL || "http://localhost:5000"}/api/classroom/google/callback`;
@@ -1926,6 +2094,10 @@ export async function registerRoutes(
       "https://www.googleapis.com/auth/classroom.coursework.students",
       "https://www.googleapis.com/auth/classroom.coursework.me",
       "https://www.googleapis.com/auth/classroom.announcements",
+      // Necesario para poder resolver el correo del estudiante en GC durante
+      // sync-grades — sin este scope, userProfiles.emailAddress viene vacío
+      // y la sincronización de notas termina "sincronizando" 0 registros.
+      "https://www.googleapis.com/auth/classroom.profile.emails",
       "openid", "email", "profile",
     ].join(" ");
 
@@ -2030,20 +2202,14 @@ export async function registerRoutes(
   // Listar cursos del docente en Google Classroom
   app.get("/api/classroom/google/courses", requireAuth, async (req, res) => {
     try {
-      const { db } = await import("./db");
-      const { googleClassroomTokens } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
-      const rows = await db.select().from(googleClassroomTokens)
-        .where(eq(googleClassroomTokens.userId, req.user!.id)).limit(1);
-      if (rows.length === 0) return res.status(401).json({ error: "No conectado a Google Classroom" });
-
+      const accessToken = await getValidAccessToken(req.user!.id);
       const gcRes = await fetch(
         "https://classroom.googleapis.com/v1/courses?teacherId=me&courseStates=ACTIVE&pageSize=50",
-        { headers: { Authorization: `Bearer ${rows[0].accessToken}` } }
+        { headers: { Authorization: `Bearer ${accessToken}` } }
       );
       const data = await gcRes.json() as any;
       res.json(data.courses || []);
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { handleGcAuthError(e, res); }
   });
 
   // Vincular curso local con curso de Google Classroom
@@ -2065,14 +2231,10 @@ export async function registerRoutes(
   app.post("/api/classroom/google/sync-students/:gcCourseId", requireAuth, async (req, res) => {
     try {
       const { db } = await import("./db");
-      const { googleClassroomTokens, googleClassroomCourseLinks, studentEnrollments, users } = await import("@shared/schema");
-      const { eq, and } = await import("drizzle-orm");
+      const { studentEnrollments, users } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
 
-      const tokenRows = await db.select().from(googleClassroomTokens)
-        .where(eq(googleClassroomTokens.userId, req.user!.id)).limit(1);
-      if (tokenRows.length === 0) return res.status(401).json({ error: "No conectado a GC" });
-
-      const accessToken = tokenRows[0].accessToken;
+      const accessToken = await getValidAccessToken(req.user!.id);
       const { gcCourseId } = req.params;
       const { groupId } = req.body;
 
@@ -2097,20 +2259,16 @@ export async function registerRoutes(
         if (inv.ok) results.invited++; else results.errors++;
       }
       res.json(results);
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { handleGcAuthError(e, res); }
   });
 
   // Sincronizar notas de GC → sistema local (respetando evaluationType)
   app.post("/api/classroom/google/sync-grades/:gcCourseId", requireAuth, async (req, res) => {
     try {
       const { db } = await import("./db");
-      const { googleClassroomTokens } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
 
-      const tokenRows = await db.select().from(googleClassroomTokens)
-        .where(eq(googleClassroomTokens.userId, req.user!.id)).limit(1);
-      if (tokenRows.length === 0) return res.status(401).json({ error: "No conectado a GC" });
-      const accessToken = tokenRows[0].accessToken;
+      const accessToken = await getValidAccessToken(req.user!.id);
       const { gcCourseId } = req.params;
       const { subjectId, groupId, academicPeriodId, evaluationType, qualitativeScale } = req.body;
 
@@ -2185,32 +2343,37 @@ export async function registerRoutes(
         }
       }
       res.json({ synced: totalSynced });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { handleGcAuthError(e, res); }
   });
 
   // Publicar comunicado en curso de GC
   app.post("/api/classroom/google/announce/:gcCourseId", requireAuth, async (req, res) => {
     try {
-      const { db } = await import("./db");
-      const { googleClassroomTokens } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
-      const tokenRows = await db.select().from(googleClassroomTokens)
-        .where(eq(googleClassroomTokens.userId, req.user!.id)).limit(1);
-      if (tokenRows.length === 0) return res.status(401).json({ error: "No conectado a GC" });
-
+      const accessToken = await getValidAccessToken(req.user!.id);
       const annRes = await fetch(
         `https://classroom.googleapis.com/v1/courses/${req.params.gcCourseId}/announcements`,
         {
           method: "POST",
-          headers: { Authorization: `Bearer ${tokenRows[0].accessToken}`, "Content-Type": "application/json" },
+          headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
           body: JSON.stringify({ text: req.body.text, state: "PUBLISHED" }),
         }
       );
       const ann = await annRes.json();
       res.json(ann);
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { handleGcAuthError(e, res); }
   });
 
+
+  // Nivel 4.11: bitácora de auditoría — quién hizo qué y cuándo
+  app.get("/api/admin/audit-logs", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      const logs = await getAuditLogs(req.user.institutionId, 200);
+      res.json(logs);
+    } catch (e: any) {
+      res.status(500).json({ message: "Error al obtener la bitácora: " + e.message });
+    }
+  });
 
   // ──────────────────────────────────────────────────────────────────────────
   // MENSAJES DIRECTOS (chat privado)
@@ -2235,7 +2398,7 @@ export async function registerRoutes(
   });
 
   // Enviar mensaje directo
-  app.post("/api/direct-messages/:receiverId", requireAuth, async (req, res) => {
+  app.post("/api/direct-messages/:receiverId", requireAuth, messagingLimiter, async (req, res) => {
     try {
       const senderId = req.user!.id;
       const receiverId = req.params.receiverId;
@@ -2335,7 +2498,7 @@ export async function registerRoutes(
   // ──────────────────────────────────────────────────────────────────────────
 
   // Enviar una solicitud de chat a un perfil privado
-  app.post("/api/message-requests/:receiverId", requireAuth, async (req, res) => {
+  app.post("/api/message-requests/:receiverId", requireAuth, messagingLimiter, async (req, res) => {
     try {
       const senderId = req.user!.id;
       const receiverId = req.params.receiverId;
@@ -2570,7 +2733,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/chat-groups/:id/messages", requireAuth, async (req, res) => {
+  app.post("/api/chat-groups/:id/messages", requireAuth, messagingLimiter, async (req, res) => {
     try {
       const isMember = await storage.isChatGroupMember(req.params.id, req.user!.id);
       if (!isMember) return res.status(403).json({ message: "No perteneces a este grupo" });
