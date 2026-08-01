@@ -1,924 +1,1561 @@
 import { Link } from "wouter";
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import {
-  GraduationCap, ArrowRight, Users, BookOpen, Calendar,
-  ClipboardList, BarChart2, Monitor, Bell, Shield,
-  FileText, Clock, CheckCircle, TrendingUp, Award,
-  ChevronRight, Star, CalendarDays, Eye, Layers,
-  ChevronDown,
+  GraduationCap,
+  ArrowRight,
+  Users,
+  BookOpen,
+  Calendar,
+  ClipboardList,
+  BarChart3,
+  Monitor,
+  Bell,
+  Shield,
+  FileText,
+  Clock,
+  MessageSquare,
+  Video,
+  UserCircle,
+  Settings,
+  Library,
+  Search,
+  CheckCircle2,
+  Sparkles,
+  Menu,
+  X,
+  ChevronRight,
+  School,
+  Award,
+  UserRoundCheck,
+  Presentation,
+  CalendarDays,
+  BookMarked,
+  MessagesSquare,
+  LayoutDashboard,
+  UserCog,
+  Database,
+  Building2,
+  LockKeyhole,
+  Send,
+  UsersRound,
+  GraduationCap as GraduationIcon,
 } from "lucide-react";
 
-// ── Colores de módulos ────────────────────────────────────────────────────────
-const MODULE_COLORS = {
-  dashboard: { bg: "#1e293b", accent: "#3b82f6" },
-  horarios:  { bg: "#0f172a", accent: "#6366f1" },
-  boletines: { bg: "#0c1a2e", accent: "#22c55e" },
-  biblioteca: { bg: "#1a0f2e", accent: "#a855f7" },
-  observador: { bg: "#1a1a0a", accent: "#f59e0b" },
-  matricula:  { bg: "#0f1a10", accent: "#10b981" },
+type Feature = {
+  icon: any;
+  title: string;
+  description: string;
+  route?: string;
+  category: string;
 };
 
-// ── Slides del hero animado ───────────────────────────────────────────────────
-const HERO_SLIDES = [
+const features: Feature[] = [
   {
-    id: "dashboard",
-    label: "Dashboard",
-    icon: BarChart2,
-    badge: "Indicadores en tiempo real",
-    badgeIcon: TrendingUp,
-    color: MODULE_COLORS.dashboard,
-    render: () => <SlidesDashboard />,
+    icon: LayoutDashboard,
+    title: "Panel principal",
+    description:
+      "Un centro de control para consultar rápidamente la información y actividad más importante de tu institución.",
+    route: "/",
+    category: "Gestión",
   },
   {
-    id: "horarios",
-    label: "Horarios",
-    icon: CalendarDays,
-    badge: "Vista por grupo o docente",
-    badgeIcon: CalendarDays,
-    color: MODULE_COLORS.horarios,
-    render: () => <SlidesHorarios />,
+    icon: UsersRound,
+    title: "Grupos",
+    description:
+      "Consulta y administra grupos académicos y accede a la información específica de cada grupo.",
+    route: "/groups",
+    category: "Gestión académica",
   },
   {
-    id: "boletines",
-    label: "Boletines",
-    icon: FileText,
-    badge: "Calificaciones por periodo",
-    badgeIcon: FileText,
-    color: MODULE_COLORS.boletines,
-    render: () => <SlidesBoletines />,
+    icon: UserCircle,
+    title: "Perfiles",
+    description:
+      "Consulta perfiles de usuarios y la información correspondiente a cada miembro de la comunidad educativa.",
+    route: "/profile",
+    category: "Comunidad",
   },
   {
-    id: "biblioteca",
-    label: "Biblioteca",
     icon: BookOpen,
-    badge: "Documentos institucionales",
-    badgeIcon: BookOpen,
-    color: MODULE_COLORS.biblioteca,
-    render: () => <SlidesBiblioteca />,
+    title: "Aula virtual",
+    description:
+      "Accede a cursos, espacios académicos y herramientas de aprendizaje desde un mismo entorno.",
+    route: "/classroom",
+    category: "Aprendizaje",
   },
   {
-    id: "observador",
-    label: "Observador",
-    icon: Eye,
-    badge: "Seguimiento del estudiante",
-    badgeIcon: Eye,
-    color: MODULE_COLORS.observador,
-    render: () => <SlidesObservador />,
+    icon: Presentation,
+    title: "Cursos",
+    description:
+      "Consulta el contenido y la información de cada curso y entra directamente a sus espacios de trabajo.",
+    route: "/classroom",
+    category: "Aprendizaje",
   },
   {
-    id: "matricula",
-    label: "Matrícula",
+    icon: Library,
+    title: "Biblioteca",
+    description:
+      "Encuentra y consulta documentos y recursos institucionales organizados en un espacio centralizado.",
+    route: "/library",
+    category: "Recursos",
+  },
+  {
+    icon: CalendarDays,
+    title: "Calendario",
+    description:
+      "Organiza y consulta eventos, actividades y fechas importantes de la comunidad educativa.",
+    route: "/calendar",
+    category: "Organización",
+  },
+  {
+    icon: Clock,
+    title: "Horarios",
+    description:
+      "Consulta los horarios académicos de forma organizada para facilitar la planificación de las actividades.",
+    route: "/schedules",
+    category: "Organización",
+  },
+  {
+    icon: MessageSquare,
+    title: "Mensajería directa",
+    description:
+      "Comunícate directamente con otros miembros de la comunidad educativa mediante conversaciones privadas.",
+    route: "/messages",
+    category: "Comunicación",
+  },
+  {
+    icon: MessagesSquare,
+    title: "Mensajes grupales",
+    description:
+      "Participa en conversaciones relacionadas con grupos y mantén la comunicación centralizada.",
+    route: "/messages",
+    category: "Comunicación",
+  },
+  {
+    icon: Video,
+    title: "EduNexus Meet",
+    description:
+      "Crea y participa en reuniones virtuales para conectar a estudiantes, docentes y miembros de la institución.",
+    route: "/meet",
+    category: "Comunicación",
+  },
+  {
+    icon: Bell,
+    title: "Notificaciones",
+    description:
+      "Mantente informado sobre novedades y actividades importantes mediante un centro de notificaciones.",
+    route: "/notifications",
+    category: "Comunicación",
+  },
+  {
+    icon: UserRoundCheck,
+    title: "Asesorías",
+    description:
+      "Gestiona espacios de acompañamiento académico y facilita la comunicación entre estudiantes y docentes.",
+    route: "/tutoring",
+    category: "Aprendizaje",
+  },
+  {
+    icon: School,
+    title: "Portal de padres",
+    description:
+      "Un espacio diseñado para que los acudientes puedan acceder a la información educativa correspondiente.",
+    route: "/parent",
+    category: "Familias",
+  },
+  {
+    icon: UserCog,
+    title: "Administración",
+    description:
+      "Herramientas para gestionar usuarios, información y procesos administrativos de la institución.",
+    route: "/admin",
+    category: "Administración",
+  },
+  {
+    icon: Database,
+    title: "Super administración",
+    description:
+      "Gestión avanzada de la plataforma y administración de instituciones dentro del ecosistema EduNexus.",
+    route: "/super-admin",
+    category: "Administración",
+  },
+  {
+    icon: Settings,
+    title: "Configuración",
+    description:
+      "Personaliza y administra las preferencias disponibles de tu experiencia dentro de la plataforma.",
+    route: "/settings",
+    category: "Personalización",
+  },
+  {
     icon: ClipboardList,
-    badge: "Formulario en 7 pasos",
-    badgeIcon: ClipboardList,
-    color: MODULE_COLORS.matricula,
-    render: () => <SlidesMatricula />,
+    title: "Gestión académica",
+    description:
+      "Centraliza los procesos relacionados con la organización académica y el seguimiento institucional.",
+    category: "Gestión académica",
+  },
+  {
+    icon: BarChart3,
+    title: "Indicadores",
+    description:
+      "Obtén una visión general de la actividad y el funcionamiento de los procesos educativos.",
+    category: "Gestión",
+  },
+  {
+    icon: Award,
+    title: "Reconocimientos",
+    description:
+      "Destaca los logros y aportes de los integrantes de la comunidad educativa.",
+    category: "Comunidad",
+  },
+  {
+    icon: FileText,
+    title: "Documentos institucionales",
+    description:
+      "Centraliza información y documentos relevantes para facilitar su consulta.",
+    category: "Recursos",
+  },
+  {
+    icon: Calendar,
+    title: "Eventos",
+    description:
+      "Mantén a la comunidad informada sobre actividades y acontecimientos importantes.",
+    category: "Organización",
+  },
+  {
+    icon: Shield,
+    title: "Gestión segura",
+    description:
+      "La plataforma organiza el acceso a las funcionalidades según el contexto y los permisos de cada usuario.",
+    category: "Seguridad",
   },
 ];
 
-// ────────────────────────────────────────────────────────────────────────────
-//  Ilustraciones SVG por módulo
-// ────────────────────────────────────────────────────────────────────────────
+const categories = [
+  {
+    name: "Todo",
+    icon: Sparkles,
+  },
+  {
+    name: "Aprendizaje",
+    icon: BookOpen,
+  },
+  {
+    name: "Comunicación",
+    icon: MessageSquare,
+  },
+  {
+    name: "Organización",
+    icon: CalendarDays,
+  },
+  {
+    name: "Gestión académica",
+    icon: GraduationIcon,
+  },
+  {
+    name: "Gestión",
+    icon: BarChart3,
+  },
+  {
+    name: "Administración",
+    icon: Building2,
+  },
+  {
+    name: "Comunidad",
+    icon: Users,
+  },
+];
 
-function SlidesDashboard() {
+const roles = [
+  {
+    icon: GraduationCap,
+    title: "Estudiantes",
+    description:
+      "Accede a tus espacios académicos, grupos, horarios, biblioteca, comunicaciones y reuniones virtuales.",
+    features: [
+      "Aula virtual",
+      "Cursos y grupos",
+      "Horarios",
+      "Biblioteca",
+      "Mensajería",
+      "Meet",
+    ],
+  },
+  {
+    icon: Presentation,
+    title: "Docentes",
+    description:
+      "Organiza tus actividades académicas, acompaña a tus estudiantes y mantén una comunicación directa.",
+    features: [
+      "Cursos",
+      "Aula virtual",
+      "Asesorías",
+      "Horarios",
+      "Mensajes",
+      "Reuniones",
+    ],
+  },
+  {
+    icon: UserRoundCheck,
+    title: "Padres y acudientes",
+    description:
+      "Consulta la información educativa disponible para acompañar el proceso académico de tus estudiantes.",
+    features: [
+      "Portal familiar",
+      "Información académica",
+      "Calendario",
+      "Notificaciones",
+      "Comunicación",
+    ],
+  },
+  {
+    icon: UserCog,
+    title: "Directivos y administradores",
+    description:
+      "Administra los procesos institucionales y consulta herramientas de gestión desde una plataforma centralizada.",
+    features: [
+      "Administración",
+      "Gestión académica",
+      "Indicadores",
+      "Usuarios",
+      "Configuración",
+      "Información institucional",
+    ],
+  },
+];
+
+function AnimatedBackground() {
   return (
-    <svg viewBox="0 0 460 300" className="w-full" xmlns="http://www.w3.org/2000/svg">
-      {/* Sidebar oscuro */}
-      <rect width="90" height="300" rx="0" fill="#0f1623"/>
-      <circle cx="45" cy="32" r="13" fill="#3b82f6" fillOpacity="0.9"/>
-      <text x="45" y="37" textAnchor="middle" fill="white" fontSize="9" fontWeight="bold">EN</text>
-      {[58,80,102,124,146,168,190].map((y,i) => (
-        <g key={i}>
-          <rect x="12" y={y} width={i===0?66:50} height="16" rx="5"
-            fill={i===0?"#3b82f620":"transparent"}/>
-          <rect x="17" y={y+4} width="8" height="8" rx="2"
-            fill={i===0?"#3b82f6":"#4b5563"}/>
-          <rect x="31" y={y+5} width={[34,28,36,22,30,26,20][i]} height="5" rx="2.5"
-            fill={i===0?"#3b82f6":"#374151"}/>
-        </g>
-      ))}
-      {/* Área principal */}
-      <rect x="90" y="0" width="370" height="300" fill="#111827"/>
-      {/* Header */}
-      <rect x="106" y="14" width="160" height="9" rx="4.5" fill="#f9fafb" fillOpacity="0.9"/>
-      <rect x="106" y="28" width="90" height="6" rx="3" fill="#6b7280"/>
-      {/* KPI cards fila */}
-      {[0,1,2,3].map(i => (
-        <g key={i}>
-          <rect x={106+i*86} y="48" width="78" height="52" rx="8" fill="#1f2937" stroke="#374151" strokeWidth="1"/>
-          <rect x={112+i*86} y="55" width="10" height="10" rx="3"
-            fill={["#3b82f630","#22c55e30","#f59e0b30","#a855f730"][i]}/>
-          <rect x={126+i*86} y="57" width={[28,24,26,22][i]} height="5" rx="2.5" fill="#9ca3af"/>
-          <rect x={112+i*86} y="70" width={[42,36,40,34][i]} height="14" rx="3" fill="#374151"/>
-          <rect x={112+i*86} y="88" width={[22,18,20,16][i]} height="5" rx="2.5" fill="#6b7280"/>
-        </g>
-      ))}
-      {/* Chart de barras */}
-      <rect x="106" y="112" width="200" height="110" rx="8" fill="#1f2937" stroke="#374151" strokeWidth="1"/>
-      <rect x="114" y="120" width="70" height="6" rx="3" fill="#f9fafb" fillOpacity="0.8"/>
-      {[0,1,2,3,4,5,6].map(i => {
-        const heights = [45,60,38,70,52,65,42];
-        const h = heights[i];
-        return (
-          <rect key={i} x={120+i*24} y={196-h} width="14" height={h} rx="3"
-            fill={i===3?"#3b82f6":"#3b82f640"}/>
-        );
-      })}
-      {["L","M","X","J","V","S","D"].map((d,i) => (
-        <text key={i} x={127+i*24} y="208" textAnchor="middle" fill="#6b7280" fontSize="7">{d}</text>
-      ))}
-      {/* Panel derecho */}
-      <rect x="318" y="112" width="136" height="50" rx="8" fill="#1f2937" stroke="#374151" strokeWidth="1"/>
-      <rect x="326" y="120" width="60" height="6" rx="3" fill="#f9fafb" fillOpacity="0.8"/>
-      {[0,1,2].map(i => (
-        <g key={i}>
-          <rect x="326" y={132+i*10} width={[80,60,70][i]} height="6" rx="3" fill="#374151"/>
-          <rect x={394} y={133+i*10} width="22" height="4" rx="2"
-            fill={["#22c55e60","#f59e0b60","#3b82f660"][i]}/>
-        </g>
-      ))}
-      <rect x="318" y="172" width="136" height="50" rx="8" fill="#1f2937" stroke="#374151" strokeWidth="1"/>
-      <rect x="326" y="180" width="70" height="6" rx="3" fill="#f9fafb" fillOpacity="0.8"/>
-      {[0,1,2,3].map(i => (
-        <rect key={i} x="326" y={192+i*8} width={[90,70,80,55][i]} height="5" rx="2.5" fill="#374151"/>
-      ))}
-      {/* KPI extra */}
-      <rect x="106" y="232" width="312" height="50" rx="8" fill="#1f2937" stroke="#374151" strokeWidth="1"/>
-      <rect x="114" y="240" width="80" height="6" rx="3" fill="#f9fafb" fillOpacity="0.8"/>
-      {[0,1,2,3].map(i => (
-        <g key={i}>
-          <circle cx={120+i*70} cy="261" r="8" fill={["#3b82f620","#22c55e20","#f59e0b20","#a855f720"][i]}/>
-          <rect x={132+i*70} y="257" width={[40,36,38,32][i]} height="5" rx="2.5" fill="#4b5563"/>
-          <rect x={132+i*70} y="264" width={[28,24,26,20][i]} height="4" rx="2" fill="#374151"/>
-        </g>
-      ))}
-    </svg>
-  );
-}
-
-function SlidesHorarios() {
-  return (
-    <svg viewBox="0 0 460 300" className="w-full" xmlns="http://www.w3.org/2000/svg">
-      <rect width="460" height="300" fill="#0f172a"/>
-      {/* Header */}
-      <rect x="16" y="14" width="120" height="9" rx="4.5" fill="#f8fafc" fillOpacity="0.9"/>
-      <rect x="16" y="28" width="80" height="6" rx="3" fill="#64748b"/>
-      {/* Controles */}
-      <rect x="16" y="46" width="70" height="20" rx="6" fill="#6366f1" fillOpacity="0.9"/>
-      <rect x="22" y="52" width="58" height="7" rx="3.5" fill="white"/>
-      <rect x="92" y="46" width="70" height="20" rx="6" fill="#1e293b" stroke="#334155" strokeWidth="1"/>
-      <rect x="98" y="52" width="58" height="7" rx="3.5" fill="#64748b"/>
-      {/* Grilla de horario */}
-      <rect x="16" y="76" width="428" height="210" rx="8" fill="#1e293b" stroke="#334155" strokeWidth="1"/>
-      {/* Header días */}
-      <rect x="16" y="76" width="428" height="24" rx="8" fill="#1e293b"/>
-      <rect x="16" y="88" width="428" height="12" rx="0" fill="#0f172a" fillOpacity="0.5"/>
-      {["", "Lunes","Martes","Miérc.","Jueves","Viernes"].map((d,i) => (
-        <text key={i} x={i===0?38:62+i*74} y="86" textAnchor="middle" fill="#94a3b8" fontSize="8" fontWeight="600">{d}</text>
-      ))}
-      {/* Filas de horas */}
-      {[0,1,2,3,4,5,6,7].map(row => (
-        <g key={row}>
-          <text x="34" y={108+row*22} textAnchor="middle" fill="#475569" fontSize="7" fontFamily="monospace">{`0${7+row}:00`}</text>
-          <rect x="46" y={97+row*22} width="398" height="20" rx="0" fill={row%2===0?"#1e293b":"#1a2744"} fillOpacity="0.4"/>
-          {[0,1,2,3,4].map(col => {
-            const patterns = [
-              [1,0,1,1,0],[0,1,1,0,1],[1,1,0,1,1],[0,1,0,1,0],
-              [1,0,1,0,1],[0,1,1,1,0],[1,1,0,0,1],[0,0,1,1,1],
-            ];
-            const colors = ["#6366f1","#22c55e","#f59e0b","#a855f7","#3b82f6"];
-            const labels = [
-              ["Matemáticas","Español","Inglés","Ciencias","Historia"],
-              ["Física","Arte","Química","Biología","Música"],
-            ];
-            const filled = patterns[row][col];
-            if (!filled) return null;
-            return (
-              <rect key={col} x={62+col*74} y={100+row*22} width="66" height="14" rx="4"
-                fill={colors[col]+"cc"}/>
-            );
-          })}
-        </g>
-      ))}
-    </svg>
-  );
-}
-
-function SlidesBoletines() {
-  const subjects = ["Matemáticas","Español","Inglés","Ciencias","Historia","Arte","Física"];
-  const grades = [
-    [4.5,3.8,4.2,4.8],[3.2,4.1,3.9,4.5],[4.8,4.6,4.7,4.9],
-    [3.5,3.8,4.0,4.2],[4.1,3.5,3.8,4.3],[4.6,4.8,4.5,4.7],[2.8,3.2,3.5,3.8],
-  ];
-  return (
-    <svg viewBox="0 0 460 300" className="w-full" xmlns="http://www.w3.org/2000/svg">
-      <rect width="460" height="300" fill="#0c1a2e"/>
-      <rect x="16" y="14" width="130" height="9" rx="4.5" fill="#f0fdf4" fillOpacity="0.9"/>
-      <rect x="16" y="28" width="90" height="6" rx="3" fill="#4b5563"/>
-      {/* Controles */}
-      <rect x="16" y="46" width="90" height="18" rx="6" fill="#1e3a5f" stroke="#2d5a87" strokeWidth="1"/>
-      <rect x="22" y="51" width="78" height="7" rx="3.5" fill="#6b7280"/>
-      <rect x="114" y="46" width="70" height="18" rx="6" fill="#22c55e" fillOpacity="0.9"/>
-      <rect x="120" y="51" width="58" height="7" rx="3.5" fill="white"/>
-      {/* Tabla boletín */}
-      <rect x="16" y="76" width="428" height="210" rx="8" fill="#112238" stroke="#1e3a5f" strokeWidth="1"/>
-      {/* Header tabla */}
-      {["Asignatura","P1","P2","P3","P4","Prom."].map((h,i) => (
-        <text key={i} x={i===0?60:[200,240,280,320,370][i-1]} y="92" textAnchor="middle"
-          fill="#9ca3af" fontSize="8" fontWeight="600">{h}</text>
-      ))}
-      <rect x="16" y="96" width="428" height="1" fill="#1e3a5f"/>
-      {/* Filas */}
-      {subjects.map((s,row) => {
-        const gs = grades[row];
-        const avg = (gs.reduce((a,b)=>a+b,0)/gs.length).toFixed(1);
-        const avgN = parseFloat(avg);
-        return (
-          <g key={row}>
-            <rect x="16" y={98+row*28} width="428" height="27" rx="0"
-              fill={row%2===0?"#0d1f33":"#112238"}/>
-            <text x="28" y={116+row*28} fill="#e5e7eb" fontSize="9">{s}</text>
-            {gs.map((g,ci) => {
-              const color = g>=4?"#22c55e":g>=3?"#f59e0b":"#ef4444";
-              return (
-                <g key={ci}>
-                  <rect x={185+ci*40} y={103+row*28} width="30" height="16" rx="4" fill={color+"20"}/>
-                  <text x={200+ci*40} y={115+row*28} textAnchor="middle" fill={color} fontSize="9" fontWeight="700">{g}</text>
-                </g>
-              );
-            })}
-            <rect x="352" y={103+row*28} width="36" height="16" rx="4"
-              fill={avgN>=4?"#22c55e30":avgN>=3?"#f59e0b30":"#ef444430"}/>
-            <text x="370" y={115+row*28} textAnchor="middle"
-              fill={avgN>=4?"#22c55e":avgN>=3?"#f59e0b":"#ef4444"} fontSize="9" fontWeight="700">{avg}</text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
-function SlidesBiblioteca() {
-  const files = [
-    { name:"Manual de convivencia", type:"PDF", color:"#a855f7", size:"2.4 MB"},
-    { name:"PEI Institucional", type:"PDF", color:"#6366f1", size:"1.8 MB"},
-    { name:"Calendario académico", type:"PDF", color:"#3b82f6", size:"840 KB"},
-    { name:"Reglamento interno", type:"PDF", color:"#a855f7", size:"1.2 MB"},
-    { name:"Guía de matemáticas", type:"PDF", color:"#22c55e", size:"3.1 MB"},
-    { name:"Atlas ciencias naturales", type:"PDF", color:"#f59e0b", size:"5.6 MB"},
-  ];
-  return (
-    <svg viewBox="0 0 460 300" className="w-full" xmlns="http://www.w3.org/2000/svg">
-      <rect width="460" height="300" fill="#1a0f2e"/>
-      <rect x="16" y="14" width="110" height="9" rx="4.5" fill="#fdf4ff" fillOpacity="0.9"/>
-      <rect x="16" y="28" width="75" height="6" rx="3" fill="#6b7280"/>
-      {/* Search */}
-      <rect x="16" y="46" width="260" height="20" rx="6" fill="#2d1a4e" stroke="#4c1d95" strokeWidth="1"/>
-      <rect x="24" y="52" width="12" height="8" rx="2" fill="#7c3aed" fillOpacity="0.6"/>
-      <rect x="42" y="54" width="100" height="5" rx="2.5" fill="#4c1d95"/>
-      <rect x="284" y="46" width="60" height="20" rx="6" fill="#7c3aed" fillOpacity="0.8"/>
-      <rect x="290" y="52" width="48" height="8" rx="4" fill="white" fillOpacity="0.8"/>
-      {/* Grid de archivos */}
-      {files.map((f, i) => {
-        const col = i % 3;
-        const row = Math.floor(i / 3);
-        const x = 16 + col * 148;
-        const y = 80 + row * 100;
-        return (
-          <g key={i}>
-            <rect x={x} y={y} width="136" height="88" rx="8" fill="#2d1a4e" stroke="#4c1d9540" strokeWidth="1"/>
-            {/* Icono archivo */}
-            <rect x={x+12} y={y+12} width="36" height="44" rx="4" fill={f.color+"30"} stroke={f.color+"60"} strokeWidth="1"/>
-            <rect x={x+18} y={y+20} width="24" height="4" rx="2" fill={f.color+"80"}/>
-            <rect x={x+18} y={y+28} width="18" height="3" rx="1.5" fill={f.color+"60"}/>
-            <rect x={x+18} y={y+34} width="22" height="3" rx="1.5" fill={f.color+"60"}/>
-            <rect x={x+18} y={y+40} width="16" height="3" rx="1.5" fill={f.color+"60"}/>
-            <rect x={x+12} y={y+60} width="20" height="9" rx="3" fill={f.color+"40"}/>
-            <text x={x+22} y={y+68} textAnchor="middle" fill={f.color} fontSize="6" fontWeight="700">{f.type}</text>
-            {/* Info */}
-            <text x={x+56} y={y+24} fill="#e5e7eb" fontSize="7.5" fontWeight="600">{f.name.substring(0,18)}</text>
-            <text x={x+56} y={y+35} fill="#9ca3af" fontSize="7">{f.name.length>18?f.name.substring(18):""}</text>
-            <text x={x+56} y={y+50} fill="#6b7280" fontSize="6.5">{f.size}</text>
-            <rect x={x+56} y={y+60} width="70" height="9" rx="3" fill={f.color+"20"}/>
-            <text x={x+91} y={y+68} textAnchor="middle" fill={f.color} fontSize="6.5">Ver documento</text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
-function SlidesObservador() {
-  const obs = [
-    { type:"Positiva", text:"Excelente participación en clase", color:"#22c55e", student:"García, Ana"},
-    { type:"Compromiso", text:"Entrega de tareas pendientes", color:"#f59e0b", student:"López, Juan"},
-    { type:"Seguimiento", text:"Asistencia irregular detectada", color:"#3b82f6", student:"Martínez, Luis"},
-    { type:"Negativa", text:"Comportamiento disruptivo en patio", color:"#ef4444", student:"Pérez, Sara"},
-    { type:"Positiva", text:"Liderazgo en proyecto de ciencias", color:"#22c55e", student:"Torres, María"},
-  ];
-  return (
-    <svg viewBox="0 0 460 300" className="w-full" xmlns="http://www.w3.org/2000/svg">
-      <rect width="460" height="300" fill="#1a1a0a"/>
-      <rect x="16" y="14" width="120" height="9" rx="4.5" fill="#fefce8" fillOpacity="0.9"/>
-      <rect x="16" y="28" width="85" height="6" rx="3" fill="#6b7280"/>
-      {/* Filtros */}
-      {["Todos","Positivas","Compromisos","Negativas"].map((f,i) => (
-        <rect key={i} x={16+i*96} y="44" width="88" height="16" rx="5"
-          fill={i===0?"#f59e0b":"#292000"} stroke={i===0?"transparent":"#3d3000"} strokeWidth="1"/>
-      ))}
-      {["Todos","Positivas","Compromisos","Negativas"].map((f,i) => (
-        <text key={i} x={60+i*96} y="55" textAnchor="middle"
-          fill={i===0?"white":"#78716c"} fontSize="7.5" fontWeight={i===0?"600":"400"}>{f}</text>
-      ))}
-      {/* Lista observaciones */}
-      {obs.map((o,i) => (
-        <g key={i}>
-          <rect x="16" y={72+i*44} width="428" height="38" rx="8"
-            fill="#1f1f0a" stroke="#2d2d10" strokeWidth="1"/>
-          {/* Dot tipo */}
-          <circle cx="32" cy={91+i*44} r="6" fill={o.color+"30"}/>
-          <circle cx="32" cy={91+i*44} r="3" fill={o.color}/>
-          {/* Badge tipo */}
-          <rect x="42" y={80+i*44} width="58" height="12" rx="4" fill={o.color+"20"}/>
-          <text x="71" y={89+i*44} textAnchor="middle" fill={o.color} fontSize="6.5" fontWeight="600">{o.type}</text>
-          {/* Texto */}
-          <text x="108" y={88+i*44} fill="#e5e7eb" fontSize="8">{o.text}</text>
-          {/* Estudiante */}
-          <text x="108" y={99+i*44} fill="#78716c" fontSize="7">{o.student}</text>
-          {/* Fecha */}
-          <text x="424" y={89+i*44} textAnchor="end" fill="#57534e" fontSize="7">Hoy, 10:30</text>
-        </g>
-      ))}
-    </svg>
-  );
-}
-
-function SlidesMatricula() {
-  const steps = [
-    "Datos de matrícula","Ubicación escolar","Año anterior",
-    "Situación académica","Director de grupo","Asignaturas","Convivencia",
-  ];
-  return (
-    <svg viewBox="0 0 460 300" className="w-full" xmlns="http://www.w3.org/2000/svg">
-      <rect width="460" height="300" fill="#0f1a10"/>
-      <rect x="16" y="14" width="130" height="9" rx="4.5" fill="#f0fdf4" fillOpacity="0.9"/>
-      <rect x="16" y="28" width="90" height="6" rx="3" fill="#4b5563"/>
-      {/* Stepper */}
-      {steps.map((s,i) => (
-        <g key={i}>
-          <circle cx={26+i*60} cy="60" r="10"
-            fill={i<3?"#10b981":i===3?"#10b98130":"#1f2937"}
-            stroke={i===3?"#10b981":"transparent"} strokeWidth="1.5"/>
-          {i<3 ? (
-            <text x={26+i*60} y="64" textAnchor="middle" fill="white" fontSize="7" fontWeight="700">✓</text>
-          ) : (
-            <text x={26+i*60} y="64" textAnchor="middle" fill={i===3?"#10b981":"#6b7280"} fontSize="7" fontWeight="700">{i+1}</text>
-          )}
-          {i<6 && <rect x={36+i*60} y="58" width="40" height="3" rx="1.5" fill={i<2?"#10b981":"#1f2937"}/>}
-        </g>
-      ))}
-      <text x="26" y="80" textAnchor="middle" fill="#10b981" fontSize="6.5" fontWeight="600">Paso 4</text>
-      {/* Formulario */}
-      <rect x="16" y="90" width="428" height="196" rx="10" fill="#112211" stroke="#1a3320" strokeWidth="1"/>
-      <rect x="28" y="102" width="150" height="7" rx="3.5" fill="#f0fdf4" fillOpacity="0.8"/>
-      <rect x="28" y="113" width="100" height="6" rx="3" fill="#374151"/>
-      {[
-        ["Sede educativa","Jornada"],
-        ["Grado actual","Director de grupo"],
-        ["Repitencia","Situación especial"],
-        ["Modalidad","Año lectivo"],
-      ].map((row, ri) => (
-        <g key={ri}>
-          {row.map((label, ci) => (
-            <g key={ci}>
-              <text x={28+ci*210} y={138+ri*38} fill="#9ca3af" fontSize="7">{label}</text>
-              <rect x={28+ci*210} y={142+ri*38} width="196" height="20" rx="6"
-                fill="#1a3320" stroke="#2d5a3d" strokeWidth="1"/>
-              <rect x={36+ci*210} y={149+ri*38} width={[80,60,90,55,70,65,75,58][ri*2+ci]} height="6" rx="3" fill="#374151"/>
-              <rect x={210+ci*200} y={149+ri*38} width="8" height="6" rx="1" fill="#4b5563"/>
-            </g>
-          ))}
-        </g>
-      ))}
-      {/* Botones */}
-      <rect x="304" y="264" width="68" height="18" rx="6" fill="#10b981"/>
-      <text x="338" y="276" textAnchor="middle" fill="white" fontSize="8" fontWeight="600">Continuar</text>
-      <rect x="228" y="264" width="68" height="18" rx="6" fill="#1a3320" stroke="#2d5a3d" strokeWidth="1"/>
-      <text x="262" y="276" textAnchor="middle" fill="#9ca3af" fontSize="8">Anterior</text>
-    </svg>
-  );
-}
-
-// ── Componente animado del hero ───────────────────────────────────────────────
-function AnimatedHeroMockup() {
-  const [active, setActive] = useState(0);
-  const [animating, setAnimating] = useState(false);
-  const [visible, setVisible] = useState(true);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
-
-  const goTo = (idx: number) => {
-    if (idx === active || animating) return;
-    setAnimating(true);
-    setVisible(false);
-    setTimeout(() => {
-      setActive(idx);
-      setVisible(true);
-      setAnimating(false);
-    }, 280);
-  };
-
-  useEffect(() => {
-    timerRef.current = setTimeout(() => {
-      const next = (active + 1) % HERO_SLIDES.length;
-      goTo(next);
-    }, 3200);
-    return () => clearTimeout(timerRef.current);
-  }, [active, animating]);
-
-  const slide = HERO_SLIDES[active];
-  const BadgeIcon = slide.badgeIcon;
-
-  return (
-    <div className="relative">
-      {/* Glow de fondo */}
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      <div className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-primary/20 blur-3xl animate-pulse" />
       <div
-        className="absolute -inset-6 rounded-3xl blur-3xl opacity-30 transition-colors duration-700"
-        style={{ background: `radial-gradient(circle, ${slide.color.accent}60, transparent 70%)` }}
+        className="absolute -right-32 top-20 h-[28rem] w-[28rem] rounded-full bg-blue-500/10 blur-3xl animate-pulse"
+        style={{ animationDelay: "1s" }}
+      />
+      <div
+        className="absolute left-1/2 top-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-violet-500/10 blur-3xl animate-pulse"
+        style={{ animationDelay: "2s" }}
       />
 
-      {/* Ventana del mockup */}
-      <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-white/10">
-        {/* Barra de chrome */}
-        <div className="flex items-center gap-1.5 px-4 py-2.5" style={{ background: slide.color.bg }}>
-          <span className="h-2.5 w-2.5 rounded-full bg-red-500/70"/>
-          <span className="h-2.5 w-2.5 rounded-full bg-yellow-500/70"/>
-          <span className="h-2.5 w-2.5 rounded-full bg-green-500/70"/>
-          <div className="ml-3 flex-1 h-4 rounded-full bg-white/5 flex items-center px-3">
-            <span className="text-white/30 text-[9px]">edunexus.app/{slide.id}</span>
+      <div className="absolute inset-0 opacity-[0.035] [background-image:linear-gradient(to_right,currentColor_1px,transparent_1px),linear-gradient(to_bottom,currentColor_1px,transparent_1px)] [background-size:48px_48px]" />
+    </div>
+  );
+}
+
+function FeatureCard({ feature, index }: { feature: Feature; index: number }) {
+  const Icon = feature.icon;
+
+  const content = (
+    <div
+      className="group relative h-full overflow-hidden rounded-2xl border bg-card/80 p-6 backdrop-blur-sm transition-all duration-500 hover:-translate-y-2 hover:border-primary/40 hover:shadow-2xl hover:shadow-primary/10"
+      style={{
+        animationDelay: `${index * 50}ms`,
+      }}
+    >
+      <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-primary/5 blur-2xl transition-all duration-500 group-hover:scale-150 group-hover:bg-primary/10" />
+
+      <div className="relative">
+        <div className="mb-5 flex items-center justify-between">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary transition-all duration-500 group-hover:scale-110 group-hover:rotate-3 group-hover:bg-primary group-hover:text-primary-foreground">
+            <Icon className="h-6 w-6" />
           </div>
+
+          {feature.route && (
+            <ChevronRight className="h-5 w-5 text-muted-foreground transition-transform duration-300 group-hover:translate-x-1 group-hover:text-primary" />
+          )}
         </div>
 
-        {/* Contenido que anima */}
-        <div
-          className="transition-all duration-280"
-          style={{
-            background: slide.color.bg,
-            opacity: visible ? 1 : 0,
-            transform: visible ? "translateY(0)" : "translateY(6px)",
-          }}
-        >
-          {slide.render()}
-        </div>
-      </div>
+        <span className="mb-3 inline-block rounded-full bg-muted px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          {feature.category}
+        </span>
 
-      {/* Badge flotante inferior izquierda */}
-      <div className="absolute -bottom-3 -left-4 bg-card border rounded-xl px-3 py-2 shadow-lg flex items-center gap-2 transition-all duration-500">
-        <CheckCircle className="h-4 w-4 text-green-500" />
-        <span className="text-xs font-medium">Matrícula activa</span>
-      </div>
+        <h3 className="mb-2 text-lg font-bold">{feature.title}</h3>
 
-      {/* Badge flotante superior derecha */}
-      <div
-        className="absolute -top-3 -right-4 border rounded-xl px-3 py-2 shadow-lg flex items-center gap-2 transition-all duration-500"
-        style={{ background: slide.color.accent + "20", borderColor: slide.color.accent + "40" }}
-      >
-        <BadgeIcon className="h-4 w-4" style={{ color: slide.color.accent }} />
-        <span className="text-xs font-medium" style={{ color: slide.color.accent }}>{slide.badge}</span>
-      </div>
+        <p className="text-sm leading-6 text-muted-foreground">
+          {feature.description}
+        </p>
 
-      {/* Tabs de navegación de secciones */}
-      <div className="absolute -bottom-14 left-0 right-0 flex justify-center gap-2.5">
-        {HERO_SLIDES.map((s, i) => {
-          const Icon = s.icon;
-          const isActive = i === active;
-          return (
-            <button
-              key={s.id}
-              onClick={() => goTo(i)}
-              title={s.label}
-              className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 border ${
-                isActive
-                  ? "text-white shadow-md scale-105 border-transparent"
-                  : "bg-background/80 text-muted-foreground hover:text-foreground border-border hover:border-border/80 hover:scale-102"
-              }`}
-              style={isActive ? { background: s.color.accent, boxShadow: `0 0 12px ${s.color.accent}60` } : {}}
-            >
-              <Icon className="h-3 w-3 shrink-0" />
-              <span>{s.label}</span>
-            </button>
-          );
-        })}
+        {feature.route && (
+          <div className="mt-5 flex items-center gap-1 text-xs font-semibold text-primary opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+            Explorar función
+            <ArrowRight className="h-3.5 w-3.5" />
+          </div>
+        )}
       </div>
     </div>
   );
+
+  if (feature.route && feature.route !== "/") {
+    return (
+      <Link href={feature.route} className="block h-full">
+        {content}
+      </Link>
+    );
+  }
+
+  return content;
 }
 
-// ── Feature card ──────────────────────────────────────────────────────────────
-function FeatureCard({
-  icon: Icon, title, description, color, accent,
-}: { icon: any; title: string; description: string; color: string; accent?: string }) {
-  return (
-    <Card className="group hover:shadow-md hover:-translate-y-1 transition-all duration-200 border-border/60 overflow-hidden relative">
-      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-        style={{ background: `linear-gradient(135deg, ${accent||"hsl(var(--primary))"}08, transparent)` }}/>
-      <CardContent className="p-5 relative">
-        <div className={`rounded-xl w-11 h-11 flex items-center justify-center mb-4 ${color}`}>
-          <Icon className="h-5 w-5" />
-        </div>
-        <h3 className="font-semibold text-base mb-1.5">{title}</h3>
-        <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
-      </CardContent>
-    </Card>
-  );
-}
+function RoleCard({
+  role,
+  index,
+}: {
+  role: (typeof roles)[number];
+  index: number;
+}) {
+  const Icon = role.icon;
 
-// ── Stat pill ─────────────────────────────────────────────────────────────────
-function StatPill({ value, label }: { value: string; label: string }) {
   return (
-    <div className="text-center px-6 py-4">
-      <p className="text-3xl font-bold text-primary tabular-nums">{value}</p>
-      <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
-    </div>
-  );
-}
+    <div
+      className="group relative overflow-hidden rounded-3xl border bg-card p-7 transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl"
+      style={{ animationDelay: `${index * 100}ms` }}
+    >
+      <div className="absolute -right-20 -top-20 h-48 w-48 rounded-full bg-primary/5 blur-3xl transition-transform duration-700 group-hover:scale-150" />
 
-// ── Role card ─────────────────────────────────────────────────────────────────
-function RoleCard({ icon: Icon, title, description, features, color, borderColor }:
-  { icon: any; title: string; description: string; features: string[]; color: string; borderColor: string }) {
-  return (
-    <Card className={`border-2 ${borderColor} transition-all duration-200 hover:shadow-lg`}
-      style={{ background: `linear-gradient(160deg, ${color}06, transparent)` }}>
-      <CardContent className="p-6 space-y-4">
-        <div className={`h-12 w-12 rounded-xl flex items-center justify-center`} style={{ background: color+"20" }}>
-          <Icon className="h-6 w-6" style={{ color }} />
+      <div className="relative">
+        <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary transition-all duration-500 group-hover:scale-110 group-hover:rotate-3">
+          <Icon className="h-7 w-7" />
         </div>
-        <div>
-          <h3 className="font-bold text-lg">{title}</h3>
-          <p className="text-sm text-muted-foreground mt-2 leading-relaxed">{description}</p>
-        </div>
-        <ul className="space-y-1.5">
-          {features.map(f => (
-            <li key={f} className="flex items-start gap-2 text-xs text-muted-foreground">
-              <ChevronRight className="h-3.5 w-3.5 mt-0.5 shrink-0" style={{ color }} />
-              {f}
-            </li>
+
+        <h3 className="mb-3 text-xl font-bold">{role.title}</h3>
+
+        <p className="mb-6 text-sm leading-6 text-muted-foreground">
+          {role.description}
+        </p>
+
+        <div className="space-y-3">
+          {role.features.map((item) => (
+            <div key={item} className="flex items-center gap-2 text-sm">
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" />
+              <span>{item}</span>
+            </div>
           ))}
-        </ul>
-      </CardContent>
-    </Card>
+        </div>
+      </div>
+    </div>
   );
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────────
-export default function Landing() {
+function AppPreview() {
+  const [active, setActive] = useState(0);
+
+  const previews = [
+    {
+      title: "Inicio",
+      subtitle: "Tu centro de control educativo",
+      icon: LayoutDashboard,
+      color: "text-blue-500",
+      bg: "bg-blue-500/10",
+      stats: [
+        ["Publicaciones", "24"],
+        ["Eventos", "8"],
+        ["Grupos", "12"],
+        ["Mensajes", "16"],
+      ],
+      items: [
+        "Actividad reciente",
+        "Próximos eventos",
+        "Nuevas publicaciones",
+      ],
+    },
+    {
+      title: "Aula Virtual",
+      subtitle: "Todos tus espacios de aprendizaje",
+      icon: BookOpen,
+      color: "text-violet-500",
+      bg: "bg-violet-500/10",
+      stats: [
+        ["Cursos", "24"],
+        ["Materias", "12"],
+        ["Tareas", "18"],
+        ["Progreso", "87%"],
+      ],
+      items: [
+        "Matemáticas",
+        "Ciencias Naturales",
+        "Tecnología e Informática",
+      ],
+    },
+    {
+      title: "Cursos",
+      subtitle: "Gestiona tus cursos académicos",
+      icon: GraduationCap,
+      color: "text-indigo-500",
+      bg: "bg-indigo-500/10",
+      stats: [
+        ["Mis cursos", "24"],
+        ["Activos", "18"],
+        ["Finalizados", "6"],
+        ["Estudiantes", "482"],
+      ],
+      items: [
+        "Curso de Matemáticas",
+        "Curso de Ciencias",
+        "Curso de Tecnología",
+      ],
+    },
+    {
+      title: "Grupos",
+      subtitle: "Organiza tu comunidad académica",
+      icon: UsersRound,
+      color: "text-emerald-500",
+      bg: "bg-emerald-500/10",
+      stats: [
+        ["Mis grupos", "12"],
+        ["Miembros", "384"],
+        ["Activos", "10"],
+        ["Nuevos", "4"],
+      ],
+      items: [
+        "Grupo 8°A",
+        "Grupo 8°B",
+        "Comunidad tecnológica",
+      ],
+    },
+    {
+      title: "Calendario",
+      subtitle: "Organiza todas tus actividades",
+      icon: CalendarDays,
+      color: "text-amber-500",
+      bg: "bg-amber-500/10",
+      stats: [
+        ["Eventos", "8"],
+        ["Hoy", "3"],
+        ["Esta semana", "12"],
+        ["Pendientes", "5"],
+      ],
+      items: [
+        "Reunión académica",
+        "Entrega de proyecto",
+        "Evento institucional",
+      ],
+    },
+    {
+      title: "Horarios",
+      subtitle: "Consulta tu agenda académica",
+      icon: Clock,
+      color: "text-orange-500",
+      bg: "bg-orange-500/10",
+      stats: [
+        ["Clases", "32"],
+        ["Hoy", "6"],
+        ["Esta semana", "28"],
+        ["Libres", "4"],
+      ],
+      items: [
+        "Matemáticas — 7:00 AM",
+        "Ciencias — 9:00 AM",
+        "Tecnología — 11:00 AM",
+      ],
+    },
+    {
+      title: "Mensajes",
+      subtitle: "Comunícate con tu comunidad",
+      icon: MessagesSquare,
+      color: "text-pink-500",
+      bg: "bg-pink-500/10",
+      stats: [
+        ["Mensajes", "16"],
+        ["Conversaciones", "8"],
+        ["Sin leer", "4"],
+        ["Grupos", "12"],
+      ],
+      items: [
+        "Docente de Matemáticas",
+        "Grupo 8°A",
+        "Coordinación académica",
+      ],
+    },
+    {
+      title: "Notificaciones",
+      subtitle: "No te pierdas ninguna novedad",
+      icon: Bell,
+      color: "text-red-500",
+      bg: "bg-red-500/10",
+      stats: [
+        ["Total", "24"],
+        ["Sin leer", "7"],
+        ["Importantes", "3"],
+        ["Hoy", "5"],
+      ],
+      items: [
+        "Nueva tarea asignada",
+        "Nuevo evento institucional",
+        "Nuevo mensaje recibido",
+      ],
+    },
+    {
+      title: "Biblioteca",
+      subtitle: "Todos tus recursos educativos",
+      icon: Library,
+      color: "text-cyan-500",
+      bg: "bg-cyan-500/10",
+      stats: [
+        ["Recursos", "248"],
+        ["Documentos", "124"],
+        ["Libros", "86"],
+        ["Nuevos", "18"],
+      ],
+      items: [
+        "Material académico",
+        "Documentos institucionales",
+        "Recursos digitales",
+      ],
+    },
+    {
+      title: "Asesorías",
+      subtitle: "Acompañamiento académico personalizado",
+      icon: UserRoundCheck,
+      color: "text-green-500",
+      bg: "bg-green-500/10",
+      stats: [
+        ["Asesorías", "12"],
+        ["Próximas", "4"],
+        ["Completadas", "8"],
+        ["Solicitudes", "3"],
+      ],
+      items: [
+        "Asesoría de Matemáticas",
+        "Tutoría de Ciencias",
+        "Acompañamiento académico",
+      ],
+    },
+    {
+      title: "EduNexus Meet",
+      subtitle: "Conecta mediante reuniones virtuales",
+      icon: Video,
+      color: "text-red-500",
+      bg: "bg-red-500/10",
+      stats: [
+        ["Reuniones", "6"],
+        ["En vivo", "2"],
+        ["Próximas", "4"],
+        ["Salas", "8"],
+      ],
+      items: [
+        "Clase virtual",
+        "Reunión de grupo",
+        "Asesoría académica",
+      ],
+    },
+    {
+      title: "Salas Meet",
+      subtitle: "Administra tus espacios virtuales",
+      icon: Monitor,
+      color: "text-purple-500",
+      bg: "bg-purple-500/10",
+      stats: [
+        ["Salas", "8"],
+        ["Activas", "2"],
+        ["Programadas", "6"],
+        ["Participantes", "84"],
+      ],
+      items: [
+        "Sala de clase",
+        "Sala de reuniones",
+        "Sala de asesorías",
+      ],
+    },
+    {
+      title: "Portal de Padres",
+      subtitle: "Acompaña el proceso educativo",
+      icon: UserCircle,
+      color: "text-teal-500",
+      bg: "bg-teal-500/10",
+      stats: [
+        ["Estudiantes", "2"],
+        ["Cursos", "8"],
+        ["Eventos", "4"],
+        ["Notificaciones", "6"],
+      ],
+      items: [
+        "Progreso académico",
+        "Actividades escolares",
+        "Información institucional",
+      ],
+    },
+    {
+      title: "Perfil",
+      subtitle: "Administra tu información personal",
+      icon: UserCircle,
+      color: "text-sky-500",
+      bg: "bg-sky-500/10",
+      stats: [
+        ["Perfil", "100%"],
+        ["Cursos", "8"],
+        ["Grupos", "4"],
+        ["Actividad", "24"],
+      ],
+      items: [
+        "Información personal",
+        "Información académica",
+        "Actividad reciente",
+      ],
+    },
+    {
+      title: "Reconocimientos",
+      subtitle: "Celebra los logros de la comunidad",
+      icon: Award,
+      color: "text-yellow-500",
+      bg: "bg-yellow-500/10",
+      stats: [
+        ["Reconocimientos", "32"],
+        ["Este mes", "8"],
+        ["Destacados", "12"],
+        ["Participantes", "64"],
+      ],
+      items: [
+        "Logro académico",
+        "Participación destacada",
+        "Reconocimiento institucional",
+      ],
+    },
+    {
+      title: "Administración",
+      subtitle: "Gestiona tu institución",
+      icon: UserCog,
+      color: "text-slate-500",
+      bg: "bg-slate-500/10",
+      stats: [
+        ["Usuarios", "1.248"],
+        ["Grupos", "48"],
+        ["Cursos", "96"],
+        ["Procesos", "18"],
+      ],
+      items: [
+        "Gestión de usuarios",
+        "Gestión académica",
+        "Configuración institucional",
+      ],
+    },
+    {
+      title: "Gestión Académica",
+      subtitle: "Controla los procesos educativos",
+      icon: ClipboardList,
+      color: "text-blue-600",
+      bg: "bg-blue-600/10",
+      stats: [
+        ["Estudiantes", "1.248"],
+        ["Docentes", "86"],
+        ["Cursos", "96"],
+        ["Grupos", "48"],
+      ],
+      items: [
+        "Matrículas",
+        "Cursos y materias",
+        "Grupos académicos",
+      ],
+    },
+    {
+      title: "Super Administración",
+      subtitle: "Control avanzado de EduNexus",
+      icon: Database,
+      color: "text-gray-600",
+      bg: "bg-gray-600/10",
+      stats: [
+        ["Instituciones", "12"],
+        ["Usuarios", "8.492"],
+        ["Administradores", "48"],
+        ["Activas", "12"],
+      ],
+      items: [
+        "Instituciones",
+        "Administradores",
+        "Configuración global",
+      ],
+    },
+    {
+      title: "Configuración",
+      subtitle: "Personaliza tu experiencia",
+      icon: Settings,
+      color: "text-zinc-500",
+      bg: "bg-zinc-500/10",
+      stats: [
+        ["Preferencias", "8"],
+        ["Seguridad", "100%"],
+        ["Notificaciones", "6"],
+        ["Perfil", "Completo"],
+      ],
+      items: [
+        "Preferencias personales",
+        "Seguridad de la cuenta",
+        "Configuración de notificaciones",
+      ],
+    },
+  ];
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setActive((current) => (current + 1) % previews.length);
+    }, 3200);
+
+    return () => clearInterval(timer);
+  }, [previews.length]);
+
+  const current = previews[active];
+  const ActiveIcon = current.icon;
+
   return (
-    <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
+    <div className="relative mx-auto w-full max-w-2xl">
+      <div className="absolute -inset-8 rounded-[3rem] bg-primary/10 blur-3xl" />
 
-      {/* ── NAV ── */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-              <GraduationCap className="h-5 w-5 text-primary-foreground" />
+      <div className="relative overflow-hidden rounded-3xl border bg-card/95 p-3 shadow-2xl backdrop-blur-xl">
+
+        {/* VENTANA */}
+        <div className="rounded-2xl border bg-background/80 p-4">
+
+          {/* BARRA DEL NAVEGADOR */}
+          <div className="mb-4 flex items-center gap-2">
+            <div className="flex gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-red-400/70" />
+              <span className="h-2.5 w-2.5 rounded-full bg-yellow-400/70" />
+              <span className="h-2.5 w-2.5 rounded-full bg-green-400/70" />
             </div>
-            <span className="font-bold text-lg tracking-tight">EduNexus</span>
-          </div>
-          <nav className="hidden md:flex items-center gap-6 text-sm text-muted-foreground">
-            <a href="#modulos" className="hover:text-foreground transition-colors">Módulos</a>
-            <a href="#roles" className="hover:text-foreground transition-colors">Para quién</a>
-            <a href="#indicadores" className="hover:text-foreground transition-colors">Indicadores</a>
-          </nav>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-            <Link href="/login">
-              <Button variant="ghost" size="sm">Iniciar sesión</Button>
-            </Link>
-            <Link href="/register">
-              <Button size="sm">Registrarse <ArrowRight className="ml-1.5 h-3.5 w-3.5" /></Button>
-            </Link>
-          </div>
-        </div>
-      </nav>
 
-      {/* ── HERO ── */}
-      <section className="pt-28 pb-28 md:pt-36 md:pb-36">
-        <div className="max-w-7xl mx-auto px-4 md:px-6">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
-            {/* Texto */}
-            <div className="space-y-7">
-              <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3.5 py-1.5 text-xs font-medium text-primary border border-primary/20">
-                <Star className="h-3.5 w-3.5" />
-                Plataforma de gestión educativa integral
+            <div className="mx-auto flex h-6 w-64 items-center justify-center rounded-md bg-muted text-[9px] text-muted-foreground">
+              app.edunexus.com
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-[155px_1fr]">
+
+            {/* SIDEBAR COMPLETA */}
+            <div className="hidden rounded-xl border bg-muted/30 p-3 md:block">
+
+              <div className="mb-5 flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                  <GraduationCap className="h-4 w-4" />
+                </div>
+
+                <span className="text-xs font-bold">
+                  EduNexus
+                </span>
               </div>
-              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1]">
-                Todo tu colegio,{" "}
-                <span className="text-primary">en un solo lugar</span>
-              </h1>
-              <p className="text-lg text-muted-foreground max-w-lg leading-relaxed">
-                EduNexus centraliza la gestión académica, las comunicaciones y la vida institucional.
-                Matrículas, horarios, boletines, observador y comunidad — conectados para estudiantes, docentes y directivos.
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <Link href="/register">
-                  <Button size="lg" className="h-11 px-6">
-                    Comenzar ahora
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </Link>
-                <Link href="/login">
-                  <Button size="lg" variant="outline" className="h-11 px-6">
-                    Ya tengo cuenta
-                  </Button>
-                </Link>
-              </div>
-              <div className="flex flex-wrap gap-2 pt-1">
-                {["Estudiantes","Docentes","Directivos","Coordinadores","Secretaría"].map((r) => (
-                  <span key={r} className="text-xs bg-muted px-2.5 py-1 rounded-full text-muted-foreground">{r}</span>
-                ))}
+
+              <div className="space-y-1">
+
+                {previews.map((preview, index) => {
+                  const Icon = preview.icon;
+
+                  return (
+                    <button
+                      key={preview.title}
+                      type="button"
+                      onClick={() => setActive(index)}
+                      className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[9px] transition-all duration-300 ${
+                        active === index
+                          ? "bg-primary/10 font-semibold text-primary"
+                          : "text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      <Icon className="h-3.5 w-3.5 shrink-0" />
+
+                      <span className="truncate">
+                        {preview.title}
+                      </span>
+                    </button>
+                  );
+                })}
+
               </div>
             </div>
 
-            {/* Mockup animado */}
-            <div className="relative mt-6 mb-16 lg:mb-0">
-              <AnimatedHeroMockup />
-            </div>
-          </div>
-        </div>
-      </section>
+            {/* PANEL PRINCIPAL DINÁMICO */}
+            <div
+              key={active}
+              className="min-h-[340px] rounded-xl border bg-muted/20 p-4 animate-in fade-in slide-in-from-right-4 duration-500"
+            >
 
-      {/* ── STATS ── */}
-      <section className="py-8 border-y bg-muted/30">
-        <div className="max-w-4xl mx-auto px-4 md:px-6">
-          <div className="flex flex-wrap justify-center divide-x">
-            <StatPill value="7" label="Módulos integrados" />
-            <StatPill value="5" label="Roles de usuario" />
-            <StatPill value="360°" label="Vista institucional" />
-            <StatPill value="100%" label="Datos por institución" />
-          </div>
-        </div>
-      </section>
+              {/* HEADER */}
+              <div className="mb-5 flex items-center justify-between">
 
-      {/* ── PARA QUIÉN ── */}
-      <section id="roles" className="py-20 md:py-28">
-        <div className="max-w-7xl mx-auto px-4 md:px-6">
-          <div className="text-center mb-14">
-            <div className="inline-flex items-center gap-2 rounded-full bg-muted px-3.5 py-1.5 text-xs font-medium text-muted-foreground mb-4">
-              <Users className="h-3.5 w-3.5" />
-              Para toda la institución
-            </div>
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">Una plataforma para cada rol</h2>
-            <p className="text-muted-foreground max-w-2xl mx-auto">
-              Cada miembro de la comunidad educativa tiene su propio espacio con herramientas adaptadas a su rol.
-            </p>
-          </div>
-          <div className="grid md:grid-cols-3 gap-6">
-            <RoleCard
-              icon={BarChart2}
-              title="Directivos y Admin"
-              description="Panel completo con indicadores institucionales en tiempo real. Gestión total de la institución."
-              features={["Dashboard con KPIs reales","Matrícula completa (7 secciones)","Horarios tipo ASC","Boletines por grupo y periodo","Observador del estudiante"]}
-              color="#3b82f6"
-              borderColor="border-blue-500/30"
-            />
-            <RoleCard
-              icon={Monitor}
-              title="Docentes"
-              description="Aula virtual propia, registro de asistencia, calificaciones y comunicación directa con estudiantes."
-              features={["Cursos y aula virtual","Registro de asistencia","Calificaciones por periodo","Actividades y entregas","Asesorías y calendario"]}
-              color="#22c55e"
-              borderColor="border-green-500/30"
-            />
-            <RoleCard
-              icon={GraduationCap}
-              title="Estudiantes"
-              description="Acceso a horario, cursos, biblioteca, muro social, grupos, logros y documentos importantes."
-              features={["Horario del grupo","Cursos y actividades","Biblioteca académica","Muro y grupos sociales","Manual de convivencia"]}
-              color="#a855f7"
-              borderColor="border-purple-500/30"
-            />
-          </div>
-        </div>
-      </section>
+                <div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Plataforma educativa
+                  </p>
 
-      {/* ── MÓDULOS ── */}
-      <section id="modulos" className="py-20 md:py-28 bg-muted/20">
-        <div className="max-w-7xl mx-auto px-4 md:px-6">
-          <div className="text-center mb-14">
-            <div className="inline-flex items-center gap-2 rounded-full bg-muted px-3.5 py-1.5 text-xs font-medium text-muted-foreground mb-4">
-              <Layers className="h-3.5 w-3.5" />
-              Módulos integrados
-            </div>
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">Todo conectado</h2>
-            <p className="text-muted-foreground max-w-2xl mx-auto">
-              Cada módulo está diseñado para una necesidad real y conectado con los demás.
-            </p>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <FeatureCard icon={ClipboardList} title="Matrícula"
-              description="Formulario completo con 7 secciones: datos del estudiante, ubicación escolar, situación académica, director de grupo, asignaturas y convivencia."
-              color="bg-blue-500/10 text-blue-600" accent="#3b82f6"/>
-            <FeatureCard icon={Clock} title="Horarios"
-              description="Vista tipo ASC en grilla días × horas. Filtrable por grupo o por docente. Sección pública accesible para toda la institución."
-              color="bg-indigo-500/10 text-indigo-600" accent="#6366f1"/>
-            <FeatureCard icon={FileText} title="Boletines"
-              description="Calificaciones consolidadas por estudiante, materia y periodo académico. Vista de tabla por grupo completa."
-              color="bg-green-500/10 text-green-600" accent="#22c55e"/>
-            <FeatureCard icon={Bell} title="Observador"
-              description="Registro de observaciones por tipo (positiva, negativa, compromiso, seguimiento) con historial completo por estudiante."
-              color="bg-amber-500/10 text-amber-600" accent="#f59e0b"/>
-            <FeatureCard icon={BarChart2} title="Indicadores"
-              description="Asistencia promedio, rendimiento por materia y grupo, estudiantes en riesgo y actividad reciente — todos calculados sobre datos reales."
-              color="bg-purple-500/10 text-purple-600" accent="#a855f7"/>
-            <FeatureCard icon={Monitor} title="Aula Virtual"
-              description="Cursos, actividades, entregas y seguimiento de estudiantes integrado al resto del sistema de gestión."
-              color="bg-cyan-500/10 text-cyan-600" accent="#06b6d4"/>
-            <FeatureCard icon={BookOpen} title="Biblioteca"
-              description="Archivos aprobados por el administrador con visor integrado. PDFs, imágenes y documentos se abren sin descargar."
-              color="bg-rose-500/10 text-rose-600" accent="#f43f5e"/>
-            <FeatureCard icon={Shield} title="Multi-institución"
-              description="Cada colegio ve solo sus datos. Todos los registros están aislados por institución con validación en backend."
-              color="bg-teal-500/10 text-teal-600" accent="#14b8a6"/>
-          </div>
-        </div>
-      </section>
+                  <h3 className="mt-1 text-base font-bold">
+                    {current.title}
+                  </h3>
 
-      {/* ── MATRÍCULA SHOWCASE ── */}
-      <section className="py-20 md:py-28">
-        <div className="max-w-7xl mx-auto px-4 md:px-6">
-          <div className="grid lg:grid-cols-2 gap-14 items-center">
-            <div className="space-y-6">
-              <div className="inline-flex items-center gap-2 rounded-full bg-green-500/10 px-3.5 py-1.5 text-xs font-medium text-green-700 dark:text-green-400 border border-green-500/20">
-                <ClipboardList className="h-3.5 w-3.5" />
-                Sistema de matrículas
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    {current.subtitle}
+                  </p>
+                </div>
+
+                <div
+                  className={`flex h-11 w-11 items-center justify-center rounded-xl ${current.bg} ${current.color}`}
+                >
+                  <ActiveIcon className="h-5 w-5" />
+                </div>
+
               </div>
-              <h2 className="text-3xl md:text-4xl font-bold">Matrícula completa en un solo formulario</h2>
-              <p className="text-muted-foreground leading-relaxed">
-                El módulo de matrículas recoge toda la información necesaria: desde el número de matrícula generado automáticamente hasta los compromisos de convivencia, pasando por la sede, jornada, director de grupo y asignaturas del grado.
-              </p>
+
+              {/* ESTADÍSTICAS */}
               <div className="grid grid-cols-2 gap-3">
-                {[
-                  { n:"1", t:"Información de matrícula" },
-                  { n:"2", t:"Ubicación escolar" },
-                  { n:"3", t:"Año anterior" },
-                  { n:"4", t:"Situación académica" },
-                  { n:"5", t:"Director de grupo" },
-                  { n:"6", t:"Asignaturas del grado" },
-                  { n:"7", t:"Convivencia" },
-                ].map(({ n, t }) => (
-                  <div key={n} className="flex items-center gap-2.5 text-sm">
-                    <span className="h-6 w-6 rounded-full bg-green-500/10 text-green-600 text-xs font-bold flex items-center justify-center shrink-0">{n}</span>
-                    <span className="text-muted-foreground">{t}</span>
+
+                {current.stats.map(([label, value], index) => (
+                  <div
+                    key={label}
+                    className="rounded-xl border bg-card p-3 animate-in fade-in zoom-in-95 duration-500"
+                    style={{
+                      animationDelay: `${index * 100}ms`,
+                      animationFillMode: "both",
+                    }}
+                  >
+                    <p className="text-[10px] text-muted-foreground">
+                      {label}
+                    </p>
+
+                    <p className="mt-1 text-xl font-bold">
+                      {value}
+                    </p>
                   </div>
                 ))}
-              </div>
-            </div>
-            <div className="relative">
-              <div className="absolute -inset-3 bg-gradient-to-br from-green-500/10 to-transparent rounded-3xl blur-xl" />
-              <div className="relative rounded-2xl overflow-hidden border shadow-xl">
-                <SlidesMatricula />
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
 
-      {/* ── INDICADORES SHOWCASE ── */}
-      <section id="indicadores" className="py-20 md:py-28 bg-muted/20">
-        <div className="max-w-7xl mx-auto px-4 md:px-6">
-          <div className="grid lg:grid-cols-2 gap-14 items-center">
-            <div className="order-2 lg:order-1">
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { icon: CheckCircle, label: "Asistencia promedio", value: "94.2%", color: "text-green-600", bg: "bg-green-500/10", desc: "Por semana o por periodo" },
-                  { icon: TrendingUp, label: "Rendimiento académico", value: "4.1", color: "text-blue-600", bg: "bg-blue-500/10", desc: "Por materia y por grupo" },
-                  { icon: Award, label: "Estudiantes en riesgo", value: "3", color: "text-amber-600", bg: "bg-amber-500/10", desc: "Con motivo detallado" },
-                  { icon: BarChart2, label: "Actividad reciente (7d)", value: "24", color: "text-purple-600", bg: "bg-purple-500/10", desc: "Filtrable por grado/grupo" },
-                ].map((item) => (
-                  <Card key={item.label} className="hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 cursor-pointer group">
-                    <CardContent className="p-4 space-y-2">
-                      <div className={`h-8 w-8 rounded-lg ${item.bg} flex items-center justify-center`}>
-                        <item.icon className={`h-4 w-4 ${item.color}`} />
+              </div>
+
+              {/* ACTIVIDAD */}
+              <div className="mt-3 rounded-xl border bg-card p-4">
+
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="text-xs font-semibold">
+                    {current.title}
+                  </span>
+
+                  <span className={`text-[10px] ${current.color}`}>
+                    Activo
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+
+                  {current.items.map((item, index) => (
+                    <div
+                      key={item}
+                      className="flex items-center gap-3 rounded-lg bg-muted/50 p-2.5 animate-in fade-in slide-in-from-bottom-2 duration-500"
+                      style={{
+                        animationDelay: `${300 + index * 120}ms`,
+                        animationFillMode: "both",
+                      }}
+                    >
+                      <div
+                        className={`flex h-7 w-7 items-center justify-center rounded-lg ${current.bg} ${current.color}`}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
                       </div>
-                      <p className="text-2xl font-bold tabular-nums">{item.value}</p>
-                      <p className="text-xs font-medium leading-tight">{item.label}</p>
-                      <p className="text-xs text-muted-foreground">{item.desc}</p>
-                    </CardContent>
-                  </Card>
-                ))}
+
+                      <span className="text-[10px] font-medium">
+                        {item}
+                      </span>
+
+                      <ChevronRight className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
+                    </div>
+                  ))}
+
+                </div>
               </div>
-              <p className="text-xs text-muted-foreground text-center mt-3">
-                Haz clic en cualquier indicador para ver el detalle completo
-              </p>
+
             </div>
-            <div className="order-1 lg:order-2 space-y-6">
-              <div className="inline-flex items-center gap-2 rounded-full bg-purple-500/10 px-3.5 py-1.5 text-xs font-medium text-purple-700 dark:text-purple-400 border border-purple-500/20">
-                <BarChart2 className="h-3.5 w-3.5" />
-                Indicadores de gestión
+          </div>
+        </div>
+
+        {/* INDICADORES */}
+        <div className="flex items-center justify-center gap-1.5 overflow-hidden p-3">
+
+          {previews.map((preview, index) => (
+            <button
+              key={preview.title}
+              type="button"
+              onClick={() => setActive(index)}
+              aria-label={`Mostrar ${preview.title}`}
+              className={`h-1.5 rounded-full transition-all duration-500 ${
+                active === index
+                  ? "w-7 bg-primary"
+                  : "w-1.5 bg-muted-foreground/30 hover:bg-muted-foreground/60"
+              }`}
+            />
+          ))}
+
+        </div>
+      </div>
+
+      {/* TARJETA INFERIOR */}
+      <div className="absolute -bottom-5 -left-5 hidden items-center gap-3 rounded-2xl border bg-card p-3 shadow-xl sm:flex">
+
+        <div
+          className={`flex h-9 w-9 items-center justify-center rounded-xl ${current.bg} ${current.color}`}
+        >
+          <ActiveIcon className="h-5 w-5" />
+        </div>
+
+        <div>
+          <p className="text-xs font-bold">
+            {current.title}
+          </p>
+
+          <p className="text-[10px] text-muted-foreground">
+            Función integrada en EduNexus
+          </p>
+        </div>
+
+      </div>
+
+      {/* TARJETA SUPERIOR */}
+      <div className="absolute -right-5 -top-5 hidden items-center gap-3 rounded-2xl border bg-card p-3 shadow-xl sm:flex">
+
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <Sparkles className="h-5 w-5" />
+        </div>
+
+        <div>
+          <p className="text-xs font-bold">
+            EduNexus
+          </p>
+
+          <p className="text-[10px] text-muted-foreground">
+            {active + 1} de {previews.length} funciones
+          </p>
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
+
+export default function Landing() {
+  const [mobileMenu, setMobileMenu] = useState(false);
+  const [activeCategory, setActiveCategory] = useState("Todo");
+  const [showAll, setShowAll] = useState(false);
+
+  const filteredFeatures =
+    activeCategory === "Todo"
+      ? features
+      : features.filter((feature) => feature.category === activeCategory);
+
+  const displayedFeatures = showAll
+    ? filteredFeatures
+    : filteredFeatures.slice(0, 12);
+
+  return (
+    <div className="min-h-screen overflow-x-hidden bg-background text-foreground">
+      {/* NAVBAR */}
+      <header className="fixed inset-x-0 top-0 z-50 border-b bg-background/75 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 md:px-6">
+          <Link href="/" className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+              <GraduationCap className="h-5 w-5" />
+            </div>
+            <span className="text-lg font-bold tracking-tight">EduNexus</span>
+          </Link>
+
+          <nav className="hidden items-center gap-7 text-sm text-muted-foreground md:flex">
+            <a
+              href="#funciones"
+              className="transition-colors hover:text-foreground"
+            >
+              Funciones
+            </a>
+            <a
+              href="#roles"
+              className="transition-colors hover:text-foreground"
+            >
+              Para quién
+            </a>
+            <a
+              href="#ecosistema"
+              className="transition-colors hover:text-foreground"
+            >
+              Ecosistema
+            </a>
+          </nav>
+
+          <div className="hidden items-center gap-2 md:flex">
+            <ThemeToggle />
+
+            <Link href="/login">
+              <Button variant="ghost" size="sm">
+                Iniciar sesión
+              </Button>
+            </Link>
+
+            <Link href="/register">
+              <Button size="sm">
+                Crear cuenta
+                <ArrowRight className="ml-1.5 h-4 w-4" />
+              </Button>
+            </Link>
+          </div>
+
+          <button
+            type="button"
+            className="rounded-lg p-2 md:hidden"
+            onClick={() => setMobileMenu((value) => !value)}
+            aria-label="Abrir menú"
+          >
+            {mobileMenu ? (
+              <X className="h-5 w-5" />
+            ) : (
+              <Menu className="h-5 w-5" />
+            )}
+          </button>
+        </div>
+
+        {mobileMenu && (
+          <div className="border-t bg-background p-4 md:hidden">
+            <div className="flex flex-col gap-2">
+              <a
+                href="#funciones"
+                onClick={() => setMobileMenu(false)}
+                className="rounded-lg px-3 py-2 text-sm hover:bg-muted"
+              >
+                Funciones
+              </a>
+
+              <a
+                href="#roles"
+                onClick={() => setMobileMenu(false)}
+                className="rounded-lg px-3 py-2 text-sm hover:bg-muted"
+              >
+                Para quién
+              </a>
+
+              <a
+                href="#ecosistema"
+                onClick={() => setMobileMenu(false)}
+                className="rounded-lg px-3 py-2 text-sm hover:bg-muted"
+              >
+                Ecosistema
+              </a>
+
+              <div className="mt-2 flex gap-2 border-t pt-3">
+                <Link href="/login" className="flex-1">
+                  <Button variant="outline" className="w-full">
+                    Iniciar sesión
+                  </Button>
+                </Link>
+
+                <Link href="/register" className="flex-1">
+                  <Button className="w-full">Crear cuenta</Button>
+                </Link>
               </div>
-              <h2 className="text-3xl md:text-4xl font-bold">Decisiones basadas en datos reales</h2>
-              <p className="text-muted-foreground leading-relaxed">
-                Los 4 indicadores del panel de admin se calculan sobre los datos reales de tu institución — no son números de ejemplo. Cada uno es clicable y abre un panel de detalle con la información completa.
-              </p>
-              <ul className="space-y-3">
-                {[
-                  "Asistencia promedio por semana o por periodo académico",
-                  "Rendimiento por materia Y por grupo en la misma pantalla",
-                  "Estudiantes en riesgo: promedio bajo, ausentismo u observaciones graves",
-                  "Actividad reciente filtrable por grado y por grupo",
-                ].map((item) => (
-                  <li key={item} className="flex items-start gap-2.5 text-sm text-muted-foreground">
-                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-                    {item}
-                  </li>
-                ))}
-              </ul>
             </div>
+          </div>
+        )}
+      </header>
+
+      {/* HERO */}
+      <section className="relative flex min-h-screen items-center overflow-hidden pt-16">
+        <AnimatedBackground />
+
+        <div className="relative mx-auto grid w-full max-w-7xl items-center gap-16 px-4 py-20 md:px-6 lg:grid-cols-2 lg:py-28">
+          <div className="relative z-10">
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border bg-primary/5 px-4 py-2 text-xs font-semibold text-primary shadow-sm">
+              <Sparkles className="h-4 w-4" />
+              La plataforma que conecta tu institución
+            </div>
+
+            <h1 className="max-w-3xl text-5xl font-black leading-[1.02] tracking-[-0.04em] md:text-6xl lg:text-7xl">
+              Todo tu colegio.
+              <span className="block bg-gradient-to-r from-primary via-blue-500 to-violet-500 bg-clip-text text-transparent">
+                Un solo ecosistema.
+              </span>
+            </h1>
+
+            <p className="mt-7 max-w-xl text-lg leading-8 text-muted-foreground md:text-xl">
+              EduNexus reúne en una sola plataforma las herramientas que tu
+              comunidad educativa necesita para aprender, comunicarse,
+              organizarse y gestionar la institución.
+            </p>
+
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link href="/register">
+                <Button size="lg" className="h-12 rounded-xl px-7 shadow-lg">
+                  Comenzar ahora
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </Link>
+
+              <Link href="/login">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="h-12 rounded-xl px-7"
+                >
+                  Ya tengo una cuenta
+                </Button>
+              </Link>
+            </div>
+
+            <div className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-xs text-muted-foreground">
+              {[
+                "Estudiantes",
+                "Docentes",
+                "Padres",
+                "Directivos",
+                "Administradores",
+              ].map((item) => (
+                <span key={item} className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-primary" />
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="relative z-10 lg:pl-4">
+            <AppPreview />
           </div>
         </div>
       </section>
 
-      {/* ── INFO INSTITUCIONAL ── */}
-      <section className="py-20 md:py-28">
-        <div className="max-w-7xl mx-auto px-4 md:px-6">
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 rounded-full bg-muted px-3.5 py-1.5 text-xs font-medium text-muted-foreground mb-4">
-              <FileText className="h-3.5 w-3.5" />
-              Información institucional
+      {/* ECOSISTEMA */}
+      <section id="ecosistema" className="border-y bg-muted/20 py-12">
+        <div className="mx-auto grid max-w-7xl grid-cols-2 gap-6 px-4 md:grid-cols-4 md:px-6">
+          {[
+            {
+              icon: School,
+              value: "Integral",
+              label: "Un ecosistema educativo conectado",
+            },
+            {
+              icon: Users,
+              value: "Multirol",
+              label: "Experiencia adaptada a cada usuario",
+            },
+            {
+              icon: Shield,
+              value: "Seguro",
+              label: "Acceso controlado según permisos",
+            },
+            {
+              icon: Sparkles,
+              value: "Centralizado",
+              label: "Todo en un mismo lugar",
+            },
+          ].map((item) => {
+            const Icon = item.icon;
+
+            return (
+              <div
+                key={item.value}
+                className="group flex flex-col items-center text-center"
+              >
+                <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary transition-transform duration-300 group-hover:scale-110">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <p className="font-bold">{item.value}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {item.label}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* TODAS LAS FUNCIONES */}
+      <section id="funciones" className="py-24 md:py-32">
+        <div className="mx-auto max-w-7xl px-4 md:px-6">
+          <div className="mx-auto mb-14 max-w-3xl text-center">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 text-xs font-semibold text-primary">
+              <Sparkles className="h-4 w-4" />
+              Explora EduNexus
             </div>
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">Centralizada y siempre disponible</h2>
-            <p className="text-muted-foreground max-w-2xl mx-auto">
-              Todos los documentos y la información importante del colegio en un solo lugar, siempre actualizado.
+
+            <h2 className="text-4xl font-black tracking-tight md:text-5xl">
+              Todas las herramientas.
+              <span className="block text-primary">
+                Una experiencia conectada.
+              </span>
+            </h2>
+
+            <p className="mt-5 text-muted-foreground md:text-lg">
+              Descubre las funciones disponibles en el ecosistema EduNexus y
+              conoce cómo cada una ayuda a conectar la comunidad educativa.
             </p>
           </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 max-w-5xl mx-auto">
-            {[
-              { icon: FileText, label: "Manual de convivencia", desc: "PDF embebido visible desde la página principal", color: "#6366f1" },
-              { icon: BookOpen, label: "PEI", desc: "Proyecto Educativo Institucional siempre disponible", color: "#3b82f6" },
-              { icon: Calendar, label: "Calendario académico", desc: "Fechas importantes del año escolar", color: "#22c55e" },
-              { icon: Users, label: "Misión y visión", desc: "Identidad institucional accesible para todos", color: "#a855f7" },
-            ].map(({ icon: Icon, label, desc, color }) => (
-              <div key={label} className="group text-center p-5 rounded-xl border bg-card hover:border-primary/40 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-                <div className="h-10 w-10 rounded-lg flex items-center justify-center mx-auto mb-3 transition-colors"
-                  style={{ background: color+"15" }}>
-                  <Icon className="h-5 w-5" style={{ color }} />
-                </div>
-                <p className="font-semibold text-sm mb-1">{label}</p>
-                <p className="text-xs text-muted-foreground">{desc}</p>
-              </div>
+
+          {/* FILTROS */}
+          <div className="mb-10 flex gap-2 overflow-x-auto pb-3">
+            {categories.map((category) => {
+              const Icon = category.icon;
+              const active = activeCategory === category.name;
+
+              return (
+                <button
+                  key={category.name}
+                  type="button"
+                  onClick={() => {
+                    setActiveCategory(category.name);
+                    setShowAll(false);
+                  }}
+                  className={`flex shrink-0 items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-medium transition-all duration-300 ${
+                    active
+                      ? "border-primary bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+                      : "bg-card text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {category.name}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {displayedFeatures.map((feature, index) => (
+              <FeatureCard
+                key={`${feature.title}-${feature.category}`}
+                feature={feature}
+                index={index}
+              />
+            ))}
+          </div>
+
+          {filteredFeatures.length > 12 && (
+            <div className="mt-10 flex justify-center">
+              <Button
+                variant="outline"
+                size="lg"
+                className="rounded-xl"
+                onClick={() => setShowAll((value) => !value)}
+              >
+                {showAll ? "Mostrar menos" : "Ver todas las funciones"}
+                <ChevronRight
+                  className={`ml-2 h-4 w-4 transition-transform ${
+                    showAll ? "-rotate-90" : "rotate-90"
+                  }`}
+                />
+              </Button>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ROLES */}
+      <section id="roles" className="relative overflow-hidden bg-muted/20 py-24 md:py-32">
+        <AnimatedBackground />
+
+        <div className="relative mx-auto max-w-7xl px-4 md:px-6">
+          <div className="mx-auto mb-14 max-w-3xl text-center">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-background px-4 py-2 text-xs font-semibold shadow-sm">
+              <Users className="h-4 w-4 text-primary" />
+              Una plataforma para todos
+            </div>
+
+            <h2 className="text-4xl font-black tracking-tight md:text-5xl">
+              Cada rol tiene su propio espacio
+            </h2>
+
+            <p className="mt-5 text-muted-foreground md:text-lg">
+              EduNexus conecta a cada integrante de la institución mediante
+              herramientas adaptadas a sus necesidades.
+            </p>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+            {roles.map((role, index) => (
+              <RoleCard key={role.title} role={role} index={index} />
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── CTA ── */}
-      <section className="py-20 md:py-28 bg-primary text-primary-foreground">
-        <div className="max-w-4xl mx-auto px-4 md:px-6 text-center space-y-6">
-          <div className="h-16 w-16 rounded-2xl bg-white/10 flex items-center justify-center mx-auto">
+      {/* EXPERIENCIA */}
+      <section className="py-24 md:py-32">
+        <div className="mx-auto grid max-w-7xl items-center gap-16 px-4 md:px-6 lg:grid-cols-2">
+          <div>
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 text-xs font-semibold text-primary">
+              <LockKeyhole className="h-4 w-4" />
+              Una experiencia centralizada
+            </div>
+
+            <h2 className="text-4xl font-black tracking-tight md:text-5xl">
+              Menos herramientas separadas.
+              <span className="block text-primary">
+                Más conexión.
+              </span>
+            </h2>
+
+            <p className="mt-6 leading-8 text-muted-foreground">
+              EduNexus está pensado para reducir la fragmentación de los
+              procesos educativos. La comunidad puede acceder a diferentes
+              herramientas desde una experiencia coherente y centralizada.
+            </p>
+
+            <div className="mt-8 space-y-4">
+              {[
+                {
+                  icon: Send,
+                  title: "Comunicación",
+                  text: "Mensajería, grupos y reuniones virtuales.",
+                },
+                {
+                  icon: BookMarked,
+                  title: "Aprendizaje",
+                  text: "Cursos, aula virtual, asesorías y biblioteca.",
+                },
+                {
+                  icon: Calendar,
+                  title: "Organización",
+                  text: "Calendarios, horarios y eventos institucionales.",
+                },
+                {
+                  icon: Settings,
+                  title: "Gestión",
+                  text: "Herramientas administrativas y configuración.",
+                },
+              ].map((item) => {
+                const Icon = item.icon;
+
+                return (
+                  <div
+                    key={item.title}
+                    className="group flex gap-4 rounded-2xl border bg-card p-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
+                  >
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                      <Icon className="h-5 w-5" />
+                    </div>
+
+                    <div>
+                      <h3 className="font-bold">{item.title}</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {item.text}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="relative">
+            <div className="absolute -inset-8 rounded-full bg-primary/10 blur-3xl" />
+
+            <div className="relative grid grid-cols-2 gap-4">
+              {[
+                {
+                  icon: BookOpen,
+                  title: "Aprender",
+                  value: "Aula virtual",
+                },
+                {
+                  icon: MessageSquare,
+                  title: "Comunicar",
+                  value: "Mensajería",
+                },
+                {
+                  icon: CalendarDays,
+                  title: "Organizar",
+                  value: "Calendario",
+                },
+                {
+                  icon: BarChart3,
+                  title: "Gestionar",
+                  value: "Indicadores",
+                },
+              ].map((item, index) => {
+                const Icon = item.icon;
+
+                return (
+                  <div
+                    key={item.title}
+                    className={`rounded-3xl border bg-card p-6 shadow-xl transition-all duration-500 hover:-translate-y-2 ${
+                      index % 2 === 1 ? "mt-8" : ""
+                    }`}
+                  >
+                    <div className="mb-10 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                      <Icon className="h-6 w-6" />
+                    </div>
+
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      {item.title}
+                    </p>
+
+                    <p className="mt-2 font-bold">{item.value}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* CTA */}
+      <section className="relative overflow-hidden bg-primary py-24 text-primary-foreground md:py-32">
+        <div className="absolute inset-0 opacity-10 [background-image:radial-gradient(circle_at_20%_20%,white_0,transparent_30%),radial-gradient(circle_at_80%_80%,white_0,transparent_30%)]" />
+
+        <div className="relative mx-auto max-w-4xl px-4 text-center md:px-6">
+          <div className="mx-auto mb-7 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10">
             <GraduationCap className="h-8 w-8" />
           </div>
-          <h2 className="text-3xl md:text-4xl font-bold">¿Tu colegio listo para EduNexus?</h2>
-          <p className="text-primary-foreground/80 max-w-2xl mx-auto leading-relaxed">
-            Regístrate con el código de tu institución y accede a la plataforma completa. Estudiantes, docentes y directivos en un mismo sistema.
+
+          <h2 className="text-4xl font-black tracking-tight md:text-5xl">
+            Todo empieza en EduNexus
+          </h2>
+
+          <p className="mx-auto mt-5 max-w-2xl leading-8 text-primary-foreground/80">
+            Conecta aprendizaje, comunicación, organización y gestión en una
+            experiencia diseñada para toda la comunidad educativa.
           </p>
-          <div className="flex flex-wrap gap-3 justify-center">
+
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
             <Link href="/register">
-              <Button size="lg" variant="secondary" className="h-11 px-7">
-                Registrarse ahora
+              <Button
+                size="lg"
+                variant="secondary"
+                className="h-12 rounded-xl px-7"
+              >
+                Crear mi cuenta
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
+
             <Link href="/login">
-              <Button size="lg" variant="outline" className="h-11 px-7 border-white/30 text-white hover:bg-white/10">
+              <Button
+                size="lg"
+                variant="outline"
+                className="h-12 rounded-xl border-white/30 bg-transparent px-7 text-white hover:bg-white/10 hover:text-white"
+              >
                 Iniciar sesión
               </Button>
             </Link>
           </div>
-          <p className="text-xs text-primary-foreground/60">
-            Necesitas el código de tu institución para registrarte
-          </p>
         </div>
       </section>
 
-      {/* ── FOOTER ── */}
-      <footer className="py-10 border-t">
-        <div className="max-w-7xl mx-auto px-4 md:px-6">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2.5">
-              <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
-                <GraduationCap className="h-4 w-4 text-primary-foreground" />
-              </div>
-              <span className="font-bold">EduNexus</span>
+      {/* FOOTER */}
+      <footer className="border-t py-10">
+        <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 md:flex-row md:items-center md:justify-between md:px-6">
+          <Link href="/" className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <GraduationCap className="h-4 w-4" />
             </div>
-            <p className="text-sm text-muted-foreground text-center">
-              © {new Date().getFullYear()} EduNexus — Plataforma de gestión educativa institucional
-            </p>
-            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-              <Link href="/login" className="hover:text-foreground transition-colors">Iniciar sesión</Link>
-              <Link href="/register" className="hover:text-foreground transition-colors">Registrarse</Link>
-            </div>
+            <span className="font-bold">EduNexus</span>
+          </Link>
+
+          <p className="text-center text-xs text-muted-foreground">
+            © {new Date().getFullYear()} EduNexus. Plataforma de gestión
+            educativa.
+          </p>
+
+          <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
+            <Link
+              href="/login"
+              className="transition-colors hover:text-foreground"
+            >
+              Iniciar sesión
+            </Link>
+
+            <Link
+              href="/register"
+              className="transition-colors hover:text-foreground"
+            >
+              Registrarse
+            </Link>
           </div>
         </div>
       </footer>
