@@ -34,6 +34,8 @@ import {
   courseEnrollments,
   activities,
   submissions,
+  courseAnnouncements,
+  announcementComments,
   attendance,
   gradebookEntries,
   classSchedules,
@@ -83,6 +85,12 @@ import {
   type CourseEnrollment,
   type Activity,
   type InsertActivity,
+  type CourseAnnouncement,
+  type InsertCourseAnnouncement,
+  type CourseAnnouncementWithAuthor,
+  type AnnouncementComment,
+  type InsertAnnouncementComment,
+  type AnnouncementCommentWithAuthor,
   type Submission,
   type InsertSubmission,
   type Attendance,
@@ -200,11 +208,20 @@ export interface IStorage {
   unenrollStudent(courseId: string, studentId: string): Promise<void>;
   getEnrollments(courseId: string): Promise<(CourseEnrollment & { student: User })[]>;
   isEnrolled(courseId: string, studentId: string): Promise<boolean>;
+  getOrCreateCourseGroup(courseId: string): Promise<string>;
   getActivity(id: string): Promise<Activity | undefined>;
   getActivities(courseId: string, publishedOnly?: boolean): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
   updateActivity(id: string, data: Partial<InsertActivity>): Promise<Activity | undefined>;
   deleteActivity(id: string): Promise<void>;
+  getCourseAnnouncements(courseId: string): Promise<CourseAnnouncementWithAuthor[]>;
+  getCourseAnnouncement(id: string): Promise<CourseAnnouncement | undefined>;
+  createCourseAnnouncement(data: InsertCourseAnnouncement): Promise<CourseAnnouncement>;
+  deleteCourseAnnouncement(id: string): Promise<void>;
+  getAnnouncementComments(announcementId: string): Promise<AnnouncementCommentWithAuthor[]>;
+  getAnnouncementComment(id: string): Promise<AnnouncementComment | undefined>;
+  createAnnouncementComment(data: InsertAnnouncementComment): Promise<AnnouncementComment>;
+  deleteAnnouncementComment(id: string): Promise<void>;
   getSubmission(activityId: string, studentId: string): Promise<Submission | undefined>;
   getSubmissions(activityId: string): Promise<SubmissionWithStudent[]>;
   getMySubmissions(studentId: string): Promise<Submission[]>;
@@ -1374,6 +1391,38 @@ async getInstitutionByCode(code: string) {
     return !!enrollment;
   }
 
+  // ─── TABLÓN DE PUBLICACIONES DEL CURSO ─────────────────────────────────
+  // Cada aula reutiliza el sistema de "posts" (el mismo que usan los Grupos
+  // de comunidad) en vez de tener uno propio desde cero. Para eso, cada
+  // curso necesita un "group" (tabla `groups`) al que colgar sus posts —
+  // se crea de forma perezosa (la primera vez que alguien abre el tablón),
+  // así los cursos ya existentes (creados antes de esta función) no quedan
+  // huérfanos ni requieren una migración manual de datos.
+  async getOrCreateCourseGroup(courseId: string): Promise<string> {
+    const course = await db.select().from(courses).where(eq(courses.id, courseId)).then((r) => r[0]);
+    if (!course) throw new Error("Curso no encontrado");
+    if (course.groupId) return course.groupId;
+
+    const [group] = await db.insert(groups).values({
+      institutionId: course.institutionId,
+      name: course.name,
+      description: `Tablón interno del curso ${course.name}`,
+      type: "course",
+      createdBy: course.teacherId,
+    }).returning();
+
+    await db.update(courses).set({ groupId: group.id }).where(eq(courses.id, courseId));
+
+    // El docente queda como owner del tablón desde el primer momento
+    await db.insert(groupMembers).values({
+      groupId: group.id,
+      userId: course.teacherId,
+      role: "owner",
+    });
+
+    return group.id;
+  }
+
   async getActivity(id: string): Promise<Activity | undefined> {
     const [activity] = await db.select().from(activities).where(eq(activities.id, id));
     return activity;
@@ -1410,6 +1459,88 @@ async getInstitutionByCode(code: string) {
 
   async deleteActivity(id: string): Promise<void> {
     await db.delete(activities).where(eq(activities.id, id));
+  }
+
+  // ─── TABLÓN DE PUBLICACIONES DEL AULA (anuncios + comentarios) ─────────
+  async getCourseAnnouncements(courseId: string): Promise<CourseAnnouncementWithAuthor[]> {
+    const rows = await db
+      .select({
+        announcement: courseAnnouncements,
+        author: {
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          profileImageUrl: users.profileImageUrl,
+          role: users.role,
+        },
+        commentCount: sql<number>`count(${announcementComments.id})`,
+      })
+      .from(courseAnnouncements)
+      .innerJoin(users, eq(courseAnnouncements.authorId, users.id))
+      .leftJoin(announcementComments, eq(announcementComments.announcementId, courseAnnouncements.id))
+      .where(eq(courseAnnouncements.courseId, courseId))
+      .groupBy(courseAnnouncements.id, users.id)
+      .orderBy(desc(courseAnnouncements.pinned), desc(courseAnnouncements.createdAt));
+
+    return rows.map((r) => ({
+      ...r.announcement,
+      author: r.author,
+      commentCount: Number(r.commentCount),
+    }));
+  }
+
+  async getCourseAnnouncement(id: string): Promise<CourseAnnouncement | undefined> {
+    const [row] = await db.select().from(courseAnnouncements).where(eq(courseAnnouncements.id, id));
+    return row;
+  }
+
+  async createCourseAnnouncement(data: InsertCourseAnnouncement): Promise<CourseAnnouncement> {
+    const [created] = await db
+      .insert(courseAnnouncements)
+      .values({ id: randomUUID(), ...data })
+      .returning();
+    return created;
+  }
+
+  async deleteCourseAnnouncement(id: string): Promise<void> {
+    await db.delete(courseAnnouncements).where(eq(courseAnnouncements.id, id));
+  }
+
+  async getAnnouncementComments(announcementId: string): Promise<AnnouncementCommentWithAuthor[]> {
+    const rows = await db
+      .select({
+        comment: announcementComments,
+        author: {
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          profileImageUrl: users.profileImageUrl,
+          role: users.role,
+        },
+      })
+      .from(announcementComments)
+      .innerJoin(users, eq(announcementComments.authorId, users.id))
+      .where(eq(announcementComments.announcementId, announcementId))
+      .orderBy(announcementComments.createdAt);
+
+    return rows.map((r) => ({ ...r.comment, author: r.author }));
+  }
+
+  async getAnnouncementComment(id: string): Promise<AnnouncementComment | undefined> {
+    const [row] = await db.select().from(announcementComments).where(eq(announcementComments.id, id));
+    return row;
+  }
+
+  async createAnnouncementComment(data: InsertAnnouncementComment): Promise<AnnouncementComment> {
+    const [created] = await db
+      .insert(announcementComments)
+      .values({ id: randomUUID(), ...data })
+      .returning();
+    return created;
+  }
+
+  async deleteAnnouncementComment(id: string): Promise<void> {
+    await db.delete(announcementComments).where(eq(announcementComments.id, id));
   }
 
   async getSubmission(activityId: string, studentId: string): Promise<Submission | undefined> {
@@ -1540,23 +1671,20 @@ async getInstitutionByCode(code: string) {
   async getInstitutionSettings(institutionId: string): Promise<any> {
     const [row] = await db.select().from(institutionSettings).where(eq(institutionSettings.id, institutionId)).limit(1);
     if (!row) return null;
-    return {
-      id: row.id,
-      institutionName: row.institutionName,
-      logoUrl: row.logoUrl,
-      evaluationType: row.evaluationType,
-      passingGrade: row.passingGrade,
-      academicYear: row.academicYear,
-      bannerUrl: row.bannerUrl,
-      primaryColor: row.primaryColor,
-      secondaryColor: row.secondaryColor,
-      description: row.description,
-      institutionCode: row.institutionCode,
-      gradeScale: row.gradeScale,
-    };
+    // BUG CORREGIDO: antes esta función solo devolvía un subconjunto de
+    // columnas (faltaban qualitativeScale, emailAllowedDomain, gcClientId,
+    // gcClientSecret). El admin cambiaba, por ejemplo, la escala cualitativa
+    // en el panel, pero /api/admin/institution nunca la devolvía — así que
+    // las aulas (Classroom/CourseDetail) siempre veían el valor por defecto,
+    // sin importar lo que el admin hubiera configurado.
+    return { ...row };
   }
 
   async upsertInstitutionSettings(institutionId: string, data: any): Promise<any> {
+    // BUG CORREGIDO: antes este payload también omitía qualitativeScale,
+    // emailAllowedDomain, gcClientId y gcClientSecret — el PATCH del admin
+    // los recibía en el body pero los descartaba antes de guardar, así que
+    // ni siquiera llegaban a la base de datos.
     const payload = {
       institutionName: data.institutionName,
       logoUrl: data.logoUrl,
@@ -1569,6 +1697,10 @@ async getInstitutionByCode(code: string) {
       description: data.description,
       institutionCode: data.institutionCode,
       gradeScale: data.gradeScale,
+      qualitativeScale: data.qualitativeScale,
+      emailAllowedDomain: data.emailAllowedDomain,
+      gcClientId: data.gcClientId,
+      gcClientSecret: data.gcClientSecret,
     };
 
     const existing = await db.select().from(institutionSettings).where(eq(institutionSettings.id, institutionId)).limit(1);

@@ -1810,6 +1810,75 @@ export async function registerRoutes(
     }
   });
 
+  // ─── TABLÓN DE PUBLICACIONES DEL CURSO ───────────────────────────────
+  // Reutiliza el sistema de posts/comentarios/reacciones existente (el
+  // mismo de los Grupos de comunidad), colgado del grupo interno del
+  // curso (ver storage.getOrCreateCourseGroup). Los permisos NO se basan
+  // en membresía de grupo genérica, sino directamente en la inscripción
+  // al curso — así no hay que mantener sincronizados dos sistemas.
+  async function canAccessCourseBoard(course: any, user: Express.User): Promise<boolean> {
+    if (!course || course.institutionId !== user.institutionId) return false;
+    const staffRoles = ["admin", "super_admin", "director", "coordinator", "secretary"];
+    if (staffRoles.includes(user.role)) return true;
+    if (user.role === "teacher" && course.teacherId === user.id) return true;
+    if (user.role === "student") return storage.isEnrolled(course.id, user.id);
+    return false;
+  }
+
+  app.get("/api/classroom/courses/:id/board", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      const course = await storage.getCourse(req.params.id);
+      if (!(await canAccessCourseBoard(course, user))) {
+        return res.status(403).json({ message: "No tienes acceso al tablón de este curso" });
+      }
+      const groupId = await storage.getOrCreateCourseGroup(req.params.id);
+      const posts = await storage.getPostsByGroup(groupId);
+      res.json(posts);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Error al obtener el tablón" });
+    }
+  });
+
+  app.post("/api/classroom/courses/:id/board", requireAuth, requireVerified, async (req, res) => {
+    try {
+      const user = req.user!;
+      const course = await storage.getCourse(req.params.id);
+      if (!(await canAccessCourseBoard(course, user))) {
+        return res.status(403).json({ message: "No tienes acceso al tablón de este curso" });
+      }
+      const groupId = await storage.getOrCreateCourseGroup(req.params.id);
+      const data = insertPostSchema.parse({
+        ...req.body,
+        authorId: user.id,
+        groupId,
+      });
+      const post = await storage.createPost(data);
+
+      // Notificar a los estudiantes inscritos (no al autor) de la nueva publicación
+      const enrollments = await storage.getEnrollments(req.params.id);
+      for (const e of enrollments) {
+        if (e.studentId !== user.id) {
+          await storage.createNotification({
+            userId: e.studentId,
+            type: "post",
+            title: `Nueva publicación en ${course!.name}`,
+            message: `${user.firstName} publicó algo nuevo en el tablón del curso`,
+            relatedId: post.id,
+            read: false,
+          });
+        }
+      }
+
+      res.status(201).json(post);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Datos inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: error.message || "Error al publicar en el tablón" });
+    }
+  });
+
   app.get("/api/classroom/courses/:id/activities", requireAuth, async (req, res) => {
     try {
       const user = req.user!;

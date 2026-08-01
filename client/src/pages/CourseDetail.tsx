@@ -20,12 +20,18 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { useInstitutionSettings } from "@/hooks/useInstitutionSettings";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getFullName, getInitials } from "@/lib/authUtils";
+import { EmptyState } from "@/components/EmptyState";
+import { CreatePostCard } from "@/components/posts/CreatePostCard";
+import { PostCard } from "@/components/posts/PostCard";
+import type { PostWithAuthor } from "@shared/schema";
 import {
   ArrowLeft, Plus, ClipboardList, Users, BarChart3, CalendarCheck,
   Loader2, Send, BookOpen, GraduationCap, Clock, CheckCircle2,
   AlertCircle, FileText, Award, UserCheck, Paperclip, X, Download, Monitor,
+  MessageSquare,
 } from "lucide-react";
 import { format, isPast } from "date-fns";
 import { es } from "date-fns/locale";
@@ -402,7 +408,7 @@ function GradeDialog({
   const [feedback, setFeedback] = useState("");
 
   // Leer sistema evaluativo de la institución
-  const { data: institution } = useQuery<any>({ queryKey: ["/api/admin/institution"] });
+  const { data: institution } = useInstitutionSettings();
   const evaluationType = institution?.evaluationType || "quantitative";
   const qualitativeScale = (institution?.qualitativeScale || "Bajo,Básico,Alto,Superior")
     .split(",").map((l: string) => l.trim()).filter(Boolean);
@@ -888,7 +894,7 @@ function GoogleClassroomTab({ courseId, course }: { courseId: string; course: an
     enabled: gcStatus?.connected === true,
   });
 
-  const { data: institution } = useQuery<any>({ queryKey: ["/api/admin/institution"] });
+  const { data: institution } = useInstitutionSettings();
   const { data: academicGroups = [] } = useQuery<any[]>({ queryKey: ["/api/admin/academic-groups"] });
   const { data: subjects = [] } = useQuery<any[]>({ queryKey: ["/api/admin/subjects"] });
   const { data: periods = [] } = useQuery<any[]>({ queryKey: ["/api/admin/periods"] });
@@ -1201,6 +1207,39 @@ export default function CourseDetail() {
     enabled: !!id && (user?.role === "teacher" || user?.role === "admin"),
   });
 
+  // ─── Tablón de publicaciones del curso ───────────────────────────────
+  const { data: boardPosts, isLoading: boardLoading } = useQuery<PostWithAuthor[]>({
+    queryKey: ["/api/classroom/courses", id, "board"],
+    queryFn: () =>
+      fetch(`/api/classroom/courses/${id}/board`, { credentials: "include" }).then((r) => r.json()),
+    enabled: !!id,
+  });
+
+  const createBoardPostMutation = useMutation({
+    mutationFn: async (content: string) => {
+      await apiRequest("POST", `/api/classroom/courses/${id}/board`, { content });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/classroom/courses", id, "board"] });
+      toast({ title: "Publicado", description: "Tu publicación ya está en el tablón del curso." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "No se pudo publicar en el tablón.", variant: "destructive" });
+    },
+  });
+
+  const deleteBoardPostMutation = useMutation({
+    mutationFn: async (postId: string) => {
+      await apiRequest("DELETE", `/api/posts/${postId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/classroom/courses", id, "board"] });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "No se pudo eliminar la publicación.", variant: "destructive" });
+    },
+  });
+
   const isTeacher = user?.role === "teacher" || user?.role === "admin";
   const isOwner = course?.teacherId === user?.id;
   const canManage = isTeacher && isOwner;
@@ -1271,8 +1310,12 @@ export default function CourseDetail() {
         <Separator />
 
         {/* Tabs */}
-        <Tabs defaultValue="activities">
+        <Tabs defaultValue="board">
           <TabsList className="flex-wrap h-auto gap-1">
+            <TabsTrigger value="board">
+              <MessageSquare className="h-4 w-4 mr-1.5" />
+              Tablón
+            </TabsTrigger>
             <TabsTrigger value="activities">
               <ClipboardList className="h-4 w-4 mr-1.5" />
               Actividades
@@ -1298,6 +1341,47 @@ export default function CourseDetail() {
               Asistencia
             </TabsTrigger>
           </TabsList>
+
+          {/* Tablón de publicaciones */}
+          <TabsContent value="board" className="space-y-4 mt-4">
+            <CreatePostCard
+              onSubmit={(content) => createBoardPostMutation.mutate(content)}
+              isSubmitting={createBoardPostMutation.isPending}
+              placeholder={isTeacher ? "Publica un anuncio para tu clase..." : "Comparte algo con tu curso..."}
+            />
+
+            {boardLoading ? (
+              Array.from({ length: 2 }).map((_, i) => (
+                <Card key={i}>
+                  <CardContent className="p-4">
+                    <Skeleton className="h-4 w-full mb-2" />
+                    <Skeleton className="h-4 w-3/4" />
+                  </CardContent>
+                </Card>
+              ))
+            ) : boardPosts && boardPosts.length > 0 ? (
+              boardPosts.map((post) => (
+                <PostCard
+                  key={post.id}
+                  post={post}
+                  currentUserId={user?.id}
+                  likesCount={(post as any)._count?.reactions || 0}
+                  commentsCount={(post as any)._count?.comments || 0}
+                  onDelete={
+                    post.authorId === user?.id || isTeacher
+                      ? (postId) => deleteBoardPostMutation.mutate(postId)
+                      : undefined
+                  }
+                />
+              ))
+            ) : (
+              <EmptyState
+                icon={MessageSquare}
+                title="Sin publicaciones todavía"
+                description="Aquí aparecerán los anuncios y publicaciones de este curso."
+              />
+            )}
+          </TabsContent>
 
           {/* Activities Tab */}
           <TabsContent value="activities" className="space-y-4 mt-4">

@@ -16,6 +16,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { useInstitutionSettings } from "@/hooks/useInstitutionSettings";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   BookOpen, Plus, Users, ChevronRight, GraduationCap,
@@ -44,9 +45,7 @@ function CreateCourseDialog({ open, onClose }: { open: boolean; onClose: () => v
   });
 
   // Consulta para obtener el sistema evaluativo actual de la institución
-  const { data: institution } = useQuery<any>({
-    queryKey: ["/api/admin/institution"],
-  });
+  const { data: institution } = useInstitutionSettings();
 
   const form = useForm<CreateCourseForm>({
     resolver: zodResolver(createCourseSchema),
@@ -77,7 +76,21 @@ function CreateCourseDialog({ open, onClose }: { open: boolean; onClose: () => v
 
   // Filtrar solo las materias que estén activadas por el administrador
   const activeSubjects = subjects?.filter((s) => s.active) || [];
-  const maxGradeAllowed = institution?.maxGrade || 100;
+
+  // BUG CORREGIDO: esto leía `institution?.maxGrade`, un campo que NUNCA
+  // existió en el esquema (el campo real es `gradeScale`, un texto libre
+  // como "1.0 - 5.0"). Por eso el banner siempre caía al valor por
+  // defecto (100) sin importar lo que el admin configurara: no es que no
+  // se estuviera leyendo el sistema evaluativo, es que se estaba leyendo
+  // una propiedad que no existe.
+  const evaluationType = institution?.evaluationType || "quantitative";
+  const evaluationLabel =
+    evaluationType === "qualitative" ? "cualitativo" :
+    evaluationType === "mixed" ? "mixto" : "cuantitativo";
+  const scaleLabel =
+    evaluationType === "qualitative"
+      ? (institution?.qualitativeScale || "Bajo, Básico, Alto, Superior")
+      : (institution?.gradeScale || "1.0 - 5.0");
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -200,11 +213,11 @@ function CreateCourseDialog({ open, onClose }: { open: boolean; onClose: () => v
                 Modelo evaluativo activo:
               </span>
               Este curso y sus tareas se regirán bajo el sistema{" "}
-              <span className="font-medium text-foreground capitalize">
-                {institution?.evaluationType || "cuantitativo"}
+              <span className="font-medium text-foreground">
+                {evaluationLabel}
               </span>{" "}
-              con un rango de calificación automático de{" "}
-              <span className="font-semibold text-primary">0 a {maxGradeAllowed}</span>.
+              con la escala{" "}
+              <span className="font-semibold text-primary">{scaleLabel}</span>.
             </div>
 
             <DialogFooter>

@@ -7,6 +7,7 @@ import { Bell, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ReactNode, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useInstitutionSettings } from "@/hooks/useInstitutionSettings";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -39,9 +40,7 @@ function hexToHSL(hex: string): string | null {
 
 // ── Hook que aplica los colores del colegio como CSS custom properties
 function useInstitutionColors() {
-  const { data: institution } = useQuery<any>({
-    queryKey: ["/api/admin/institution"],
-  });
+  const { data: institution } = useInstitutionSettings();
 
   useEffect(() => {
     const root = document.documentElement;

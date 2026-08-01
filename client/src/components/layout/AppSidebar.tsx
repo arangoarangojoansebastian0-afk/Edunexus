@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { useInstitutionSettings } from "@/hooks/useInstitutionSettings";
 import {
   Sidebar,
   SidebarContent,
@@ -71,9 +72,7 @@ export function AppSidebar() {
   const { user } = useAuth();
 
   
-  const { data: institution } = useQuery<{ institutionName: string }>({
-    queryKey: ["/api/admin/institution"],
-  });
+  const { data: institution } = useInstitutionSettings();
 
   const { data: unread } = useQuery<{ count: number }>({
     queryKey: ["/api/direct-messages/unread/count"],

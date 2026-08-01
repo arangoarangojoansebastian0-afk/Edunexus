@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/hooks/useAuth";
+import { useInstitutionSettings } from "@/hooks/useInstitutionSettings";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getFullName, getInitials } from "@/lib/authUtils";
@@ -434,9 +435,7 @@ function RecentActivityPanel({ open, onOpenChange }: { open: boolean; onOpenChan
 
 function TabConfigColegio() {
   const { toast } = useToast();
-  const { data: config, isLoading } = useQuery<any>({
-    queryKey: ["/api/admin/institution"],
-  });
+  const { data: config, isLoading } = useInstitutionSettings();
   const [form, setForm] = useState({
     institutionName: "",
     institutionCode: "",
@@ -591,9 +590,7 @@ function TabConfigColegio() {
  
 function TabConfigAcademica() {
   const { toast } = useToast();
-  const { data: config, isLoading } = useQuery<any>({
-    queryKey: ["/api/admin/institution"],
-  });
+  const { data: config, isLoading } = useInstitutionSettings();
   const [form, setForm] = useState({
     evaluationType: "quantitative",
     passingGrade: "3.0",
@@ -3410,7 +3407,7 @@ function TabClassroom() {
   const { data: gradesList = [] } = useQuery<any[]>({ queryKey: ["/api/admin/grades"] });
   const { data: subjects = [] } = useQuery<any[]>({ queryKey: ["/api/admin/subjects"] });
   const { data: years = [] } = useQuery<any[]>({ queryKey: ["/api/admin/academic-years"] });
-  const { data: institution } = useQuery<any>({ queryKey: ["/api/admin/institution"] });
+  const { data: institution } = useInstitutionSettings();
   const [showForm, setShowForm] = useState(false);
   const [selectedYearId, setSelectedYearId] = useState("");
   const { data: periods = [] } = useQuery<any[]>({
@@ -3957,9 +3954,7 @@ export default function InstitutionalAdmin() {
     }
   }, [user, setLocation, toast]);
  
-  const { data: institutionConfig } = useQuery<any>({
-    queryKey: ["/api/admin/institution"],
-  });
+  const { data: institutionConfig } = useInstitutionSettings();
  
   const ActiveComponent =
     TAB_SECTIONS.find((t) => t.id === activeTab)?.component || TabDashboard;
