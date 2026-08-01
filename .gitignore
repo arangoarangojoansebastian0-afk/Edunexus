@@ -5,3 +5,6 @@ server/public
 vite.config.ts.*
 *.tar.gz
 .env
+commit.bat
+sync-downloads.bat
+sync-downloads-v2.cjs
