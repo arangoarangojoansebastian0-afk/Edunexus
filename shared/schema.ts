@@ -92,6 +92,22 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+//classroom announcements table
+export const courseAnnouncements = pgTable("course_announcements", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Agrega aquí las columnas que necesites para los anuncios, por ejemplo:
+  title: varchar("title", { length: 255 }).notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const announcementComments = pgTable("announcement_comments", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Agrega aquí las columnas que necesites para los comentarios, por ejemplo:
+  announcementId: uuid("announcement_id").notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 // Groups table (courses and clubs)
 export const groups = pgTable("groups", {
