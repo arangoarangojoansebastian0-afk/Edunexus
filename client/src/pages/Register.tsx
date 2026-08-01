@@ -6,7 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/AuthContext";
-import { GraduationCap, ArrowRight, Loader2, ChevronDown } from "lucide-react";
+import { PasswordInput } from "@/components/PasswordInput";
+import { PasswordStrengthMeter, getPasswordStrength } from "@/components/PasswordStrength";
+import { GraduationCap, ArrowRight, Loader2, ChevronDown, CheckCircle2, XCircle } from "lucide-react";
 
 type Role = "student" | "teacher" | "director" | "coordinator" | "secretary" | "admin" | "parent";
 
@@ -25,6 +27,7 @@ export default function Register() {
   const { toast } = useToast();
   const { refetchUser } = useAuthContext();
   const [isLoading, setIsLoading] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   const [schoolCode, setSchoolCode] = useState("");
   const [schoolData, setSchoolData] = useState<{ institution: { id: string; name: string; code: string }; grades: any[]; groups: any[] } | null>(null);
@@ -115,6 +118,25 @@ export default function Register() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (formData.password !== confirmPassword) {
+      toast({
+        variant: "destructive",
+        title: "Las contraseñas no coinciden",
+        description: "Verifica que ambos campos de contraseña sean iguales.",
+      });
+      return;
+    }
+
+    if (getPasswordStrength(formData.password) <= 1) {
+      toast({
+        variant: "destructive",
+        title: "Contraseña muy débil",
+        description: "Usa al menos 6 caracteres, combinando letras y números.",
+      });
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -252,14 +274,46 @@ export default function Register() {
 
               <div className="space-y-2">
                 <Label htmlFor="password">Contraseña</Label>
-                <Input
+                <PasswordInput
                   id="password"
                   name="password"
-                  type="password"
                   value={formData.password}
                   onChange={handleChange}
                   required
+                  minLength={6}
+                  data-testid="input-password"
                 />
+                <PasswordStrengthMeter password={formData.password} />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
+                <PasswordInput
+                  id="confirmPassword"
+                  name="confirmPassword"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  data-testid="input-confirm-password"
+                />
+                {confirmPassword.length > 0 && (
+                  <p
+                    className={`text-xs flex items-center gap-1 ${
+                      confirmPassword === formData.password ? "text-green-600" : "text-destructive"
+                    }`}
+                  >
+                    {confirmPassword === formData.password ? (
+                      <>
+                        <CheckCircle2 className="h-3 w-3" /> Las contraseñas coinciden
+                      </>
+                    ) : (
+                      <>
+                        <XCircle className="h-3 w-3" /> Las contraseñas no coinciden
+                      </>
+                    )}
+                  </p>
+                )}
               </div>
 
               {/* INPUT DEL CÓDIGO DEL COLEGIO */}
@@ -393,10 +447,9 @@ export default function Register() {
               {selectedRole.needsCode && (
                 <div className="space-y-2 animate-in slide-in-from-top-1 duration-200">
                   <Label htmlFor="accessCode">{codeLabel(formData.role)}</Label>
-                  <Input
+                  <PasswordInput
                     id="accessCode"
                     name="accessCode"
-                    type="password"
                     placeholder={codePlaceholder(formData.role)}
                     value={formData.accessCode}
                     onChange={handleChange}
@@ -408,7 +461,14 @@ export default function Register() {
                 </div>
               )}
 
-              <Button type="submit" className="w-full mt-4" disabled={isLoading}>
+              <Button
+                type="submit"
+                className="w-full mt-4"
+                disabled={
+                  isLoading ||
+                  (confirmPassword.length > 0 && confirmPassword !== formData.password)
+                }
+              >
                 {isLoading ? "Creando cuenta..." : "Registrarse"}
                 {!isLoading && <ArrowRight className="ml-2 h-4 w-4" />}
               </Button>

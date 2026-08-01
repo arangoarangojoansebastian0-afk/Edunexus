@@ -175,7 +175,8 @@ export function setupAuthRoutes(app: Express) {
     // correo — así no revelamos qué correos están registrados en el sistema.
     const genericResponse = { message: "Si el correo existe, enviamos un enlace de recuperación." };
     try {
-      const { email } = z.object({ email: z.string().email() }).parse(req.body);
+      const { email: rawEmail } = z.object({ email: z.string().email() }).parse(req.body);
+      const email = rawEmail.trim().toLowerCase();
       const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
       if (user) {
         const token = await createAuthToken(user.id, "password_reset", RESET_TOKEN_TTL_MS);
@@ -216,7 +217,7 @@ export function setupAuthRoutes(app: Express) {
   });
 
   // ── Nivel 3.8: Verificación de correo ────────────────────────────────────
-  app.post("/api/auth/resend-verification", async (req: Request, res: Response) => {
+  app.post("/api/auth/resend-verification", passwordResetLimiter, async (req: Request, res: Response) => {
     try {
       if (!req.session.userId) return res.status(401).json({ error: "No autenticado" });
       const [user] = await db.select().from(users).where(eq(users.id, req.session.userId)).limit(1);

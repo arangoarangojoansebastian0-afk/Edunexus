@@ -2,8 +2,9 @@ import { useState } from "react";
 import { useLocation, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/PasswordInput";
+import { PasswordStrengthMeter, getPasswordStrength } from "@/components/PasswordStrength";
 import { useToast } from "@/hooks/use-toast";
 import { GraduationCap, ArrowRight, CheckCircle2 } from "lucide-react";
 
@@ -21,6 +22,10 @@ export default function ResetPassword() {
     e.preventDefault();
     if (password !== confirmPassword) {
       toast({ title: "Error", description: "Las contraseñas no coinciden.", variant: "destructive" });
+      return;
+    }
+    if (getPasswordStrength(password) <= 1) {
+      toast({ title: "Contraseña muy débil", description: "Usa al menos 6 caracteres, combinando letras y números.", variant: "destructive" });
       return;
     }
     setIsLoading(true);
@@ -81,9 +86,8 @@ export default function ResetPassword() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="password">Nueva contraseña</Label>
-                  <Input
+                  <PasswordInput
                     id="password"
-                    type="password"
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -91,12 +95,12 @@ export default function ResetPassword() {
                     minLength={6}
                     data-testid="input-new-password"
                   />
+                  <PasswordStrengthMeter password={password} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
-                  <Input
+                  <PasswordInput
                     id="confirmPassword"
-                    type="password"
                     placeholder="••••••••"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}

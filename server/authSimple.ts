@@ -31,6 +31,13 @@ export async function registerUser(
   accessCode?: string,
   institutionId?: string  // <-- FIX: nuevo parámetro
 ) {
+  // Normalizamos el correo (sin espacios, en minúsculas) para que login,
+  // registro y recuperación de contraseña siempre comparen lo mismo — si no,
+  // "Juan@Gmail.com" al registrarse y "juan@gmail.com" al recuperar la
+  // contraseña se tratan como cuentas distintas y la búsqueda falla en
+  // silencio (el usuario nunca recibe el correo y no sabe por qué).
+  email = email.trim().toLowerCase();
+
   const staffRoles: RegisterRole[] = ["teacher", "director", "coordinator", "secretary", "admin"];
 
   if (staffRoles.includes(role)) {
@@ -89,12 +96,17 @@ export async function registerUser(
   const passwordHash = await hashPassword(password);
 
   // FIX: ahora se guarda institutionId en el usuario
+  // BUG CORREGIDO: antes decía `verified: true` aquí, así que TODO usuario
+  // nuevo quedaba "verificado" desde el registro sin importar si tocaba el
+  // enlace del correo — el flujo de verificación de correo no tenía ningún
+  // efecto real. Ahora arranca en false y solo cambia a true cuando el
+  // usuario confirma su correo desde /verify-email.
   const user = await storage.upsertUser({
     email,
     passwordHash,
     firstName,
     lastName,
-    verified: true,
+    verified: false,
     role,
     institutionId: institutionId || undefined,
   });
@@ -109,7 +121,7 @@ export async function loginUser(
 ) {
   let user;
   if (emailOrFirstName.includes("@")) {
-    user = await storage.getUserByEmail(emailOrFirstName);
+    user = await storage.getUserByEmail(emailOrFirstName.trim().toLowerCase());
   } else if (lastName) {
     user = await storage.getUserByName(emailOrFirstName, lastName);
   } else {

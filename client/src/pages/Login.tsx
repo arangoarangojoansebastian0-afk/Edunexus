@@ -1,12 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/PasswordInput";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/AuthContext";
 import { GraduationCap, ArrowRight } from "lucide-react";
+
+const REMEMBER_KEY = "edunexus_remembered_email";
 
 export default function Login() {
   const [identifier, setIdentifier] = useState("");
@@ -14,9 +17,20 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isNameMode, setIsNameMode] = useState(false);
+  const [rememberEmail, setRememberEmail] = useState(false);
   const { toast } = useToast();
   const { refetchUser } = useAuthContext();
   const [, navigate] = useLocation();
+
+  // Si el usuario marcó "recordarme" antes, precargamos su email guardado
+  // localmente (nunca guardamos la contraseña, solo el identificador).
+  useEffect(() => {
+    const saved = localStorage.getItem(REMEMBER_KEY);
+    if (saved) {
+      setIdentifier(saved);
+      setRememberEmail(true);
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,6 +48,13 @@ export default function Login() {
       });
 
       if (res.ok) {
+        if (!isNameMode) {
+          if (rememberEmail) {
+            localStorage.setItem(REMEMBER_KEY, identifier);
+          } else {
+            localStorage.removeItem(REMEMBER_KEY);
+          }
+        }
         await refetchUser();
         toast({
           title: "Sesión iniciada",
@@ -125,9 +146,8 @@ export default function Login() {
 
               <div className="space-y-2">
                 <Label htmlFor="password">Contraseña</Label>
-                <Input
+                <PasswordInput
                   id="password"
-                  type="password"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -135,6 +155,22 @@ export default function Login() {
                   data-testid="input-password"
                 />
               </div>
+
+              {!isNameMode && (
+                <div className="flex items-center gap-2">
+                  <input
+                    id="remember-email"
+                    type="checkbox"
+                    checked={rememberEmail}
+                    onChange={(e) => setRememberEmail(e.target.checked)}
+                    className="h-4 w-4 rounded border-input accent-primary"
+                    data-testid="checkbox-remember-email"
+                  />
+                  <Label htmlFor="remember-email" className="text-sm font-normal text-muted-foreground cursor-pointer">
+                    Recordar mi correo en este dispositivo
+                  </Label>
+                </div>
+              )}
 
               <Button
                 type="submit"

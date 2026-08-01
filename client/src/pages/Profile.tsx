@@ -163,6 +163,29 @@ export default function Profile() {
   const [isAssignBadgeOpen, setIsAssignBadgeOpen] = useState(false);
   const [selectedBadgeId, setSelectedBadgeId] = useState("");
 
+  // El backend ya tenía /api/auth/resend-verification, pero ninguna pantalla
+  // lo llamaba — el usuario no tenía forma de reenviar el correo si se le
+  // pasaba, caducaba (24h), o simplemente nunca llegó.
+  const resendVerificationMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/auth/resend-verification", {});
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Listo",
+        description: data.message || "Correo de verificación reenviado. Revisa tu bandeja (y spam).",
+      });
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "No se pudo reenviar el correo.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const assignBadgeMutation = useMutation({
     mutationFn: async (badgeId: string) => {
       await apiRequest("POST", `/api/users/${profileUserId}/badges/${badgeId}`, {});
@@ -268,10 +291,25 @@ export default function Profile() {
                             Verificado
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="gap-1">
-                            <Clock className="h-3 w-3" />
-                            Pendiente
-                          </Badge>
+                          <>
+                            <Badge variant="outline" className="gap-1">
+                              <Clock className="h-3 w-3" />
+                              Pendiente
+                            </Badge>
+                            {isOwnProfile && (
+                              <Button
+                                type="button"
+                                variant="link"
+                                size="sm"
+                                className="h-auto p-0 text-xs"
+                                disabled={resendVerificationMutation.isPending}
+                                onClick={() => resendVerificationMutation.mutate()}
+                                data-testid="button-resend-verification"
+                              >
+                                {resendVerificationMutation.isPending ? "Enviando..." : "Reenviar correo de verificación"}
+                              </Button>
+                            )}
+                          </>
                         )}
                       </div>
                       <p className="text-muted-foreground">{formatRole(user.role)}</p>
