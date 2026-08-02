@@ -810,7 +810,9 @@ function TabConfigAcademica() {
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Configura las credenciales de tu proyecto en Google Cloud Console para que los docentes puedan conectar su Google Classroom.
-            El <strong>Authorized Redirect URI</strong> debe ser: <code className="bg-muted px-1 py-0.5 rounded text-xs">/api/classroom/google/callback</code>
+            El <strong>Authorized Redirect URI</strong> debe ser la URL <strong>completa</strong> de tu aplicación
+            (no solo la ruta) — por ejemplo: <code className="bg-muted px-1 py-0.5 rounded text-xs">https://tu-dominio.com/api/classroom/google/callback</code>.
+            Poner solo <code className="bg-muted px-1 py-0.5 rounded text-xs">/api/classroom/google/callback</code> sin el dominio es inválido para Google.
           </p>
           <div className="space-y-1">
             <Label>Google Client ID</Label>

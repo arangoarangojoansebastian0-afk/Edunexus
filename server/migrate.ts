@@ -252,8 +252,25 @@ export async function runMigrations(): Promise<void> {
       DO $$
       BEGIN
         ALTER TABLE "session" ADD CONSTRAINT "session_pkey" PRIMARY KEY ("sid") NOT DEFERRABLE INITIALLY IMMEDIATE;
-      EXCEPTION WHEN duplicate_object THEN
-        NULL; -- la restricción ya existe, no hacer nada
+      EXCEPTION WHEN OTHERS THEN
+        -- BUG CRÍTICO CORREGIDO: antes solo atrapaba 'duplicate_object', pero
+        -- el error real que da Postgres cuando la tabla "session" ya tiene
+        -- una primary key (con otro nombre de restricción) es
+        -- "multiple primary keys for table X are not allowed" — un código
+        -- de error DISTINTO que esa cláusula no capturaba. Como todo esto
+        -- corre dentro de UNA sola transacción (BEGIN...COMMIT) para todas
+        -- las migraciones del arranque, este error sin atrapar dejaba la
+        -- transacción "abortada" y provocaba un ROLLBACK de TODO lo demás
+        -- — incluyendo columnas nuevas de otras migraciones que sí se
+        -- habían ejecutado bien segundos antes. Por fuera se veía como
+        -- "Migration error (non-fatal)" y el servidor seguía arrancando
+        -- normal, dando la falsa impresión de que todo había ido bien,
+        -- cuando en realidad NINGUNA migración de ese arranque quedó
+        -- guardada. Con "WHEN OTHERS" se ignora cualquier motivo por el
+        -- que no se pudo poner la primary key (ya existe, con otro nombre,
+        -- lo que sea) y se sigue con el resto de migraciones sin abortar
+        -- la transacción completa.
+        NULL;
       END $$;
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");`);
