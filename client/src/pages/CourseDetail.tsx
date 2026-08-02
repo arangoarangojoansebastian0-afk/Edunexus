@@ -1189,6 +1189,11 @@ export default function CourseDetail() {
   const [gradingActivity, setGradingActivity] = useState<Activity | null>(null);
   const [selectedSubmissions, setSelectedSubmissions] = useState<string | null>(null);
 
+  // Necesario para que la tabla de Calificaciones muestre el sistema
+  // evaluativo real (cuantitativo/cualitativo/mixto) en vez de asumir
+  // siempre "/100" sin importar cómo esté configurado el colegio.
+  const { data: institution } = useInstitutionSettings();
+
   const { data: course, isLoading } = useQuery<CourseWithTeacher>({
     queryKey: ["/api/classroom/courses", id],
     queryFn: () =>
@@ -1466,7 +1471,9 @@ export default function CourseDetail() {
                             <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
                               <span className="flex items-center gap-1">
                                 <Award className="h-3.5 w-3.5" />
-                                {activity.maxScore} pts
+                                {institution?.evaluationType === "qualitative"
+                                  ? (institution?.qualitativeScale || "Cualitativo")
+                                  : `${activity.maxScore} pts`}
                               </span>
                               {activity.dueDate && (
                                 <span
@@ -1565,7 +1572,9 @@ export default function CourseDetail() {
                                       <div className="flex items-center gap-2">
                                         {sub.grade != null ? (
                                           <Badge variant="secondary" className="no-default-active-elevate">
-                                            {sub.grade}/{activity.maxScore}
+                                            {institution?.evaluationType === "qualitative"
+                                              ? sub.grade
+                                              : `${sub.grade}/${activity.maxScore}`}
                                           </Badge>
                                         ) : (
                                           <Badge variant="outline" className="no-default-active-elevate">
@@ -1627,7 +1636,9 @@ export default function CourseDetail() {
                               {a.title}
                             </div>
                             <div className="text-xs text-muted-foreground font-normal">
-                              /{a.maxScore}
+                              {institution?.evaluationType === "qualitative"
+                                ? (institution?.qualitativeScale || "Cualitativo")
+                                : `/${a.maxScore}`}
                             </div>
                           </th>
                         ))}
