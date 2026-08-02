@@ -375,7 +375,13 @@ export async function registerRoutes(
       if (!post) {
         return res.status(404).json({ message: "Post not found" });
       }
-      if (post.authorId !== userId && req.user!.role !== "admin") {
+      // BUG CORREGIDO: antes solo dejaba editar al autor o a role==="admin"
+      // literal — ni rector, ni el docente dueño del tablón del curso (que
+      // es "owner" del grupo interno), podían editar publicaciones de sus
+      // propios estudiantes/aula.
+      const fullAccess = ["admin", "director", "super_admin"];
+      const isOwner = post.groupId ? await storage.isGroupOwner(post.groupId, userId) : false;
+      if (post.authorId !== userId && !fullAccess.includes(req.user!.role) && !isOwner) {
         return res.status(403).json({ message: "Not authorized" });
       }
       const updated = await storage.updatePost(req.params.id, req.body);
@@ -392,7 +398,9 @@ export async function registerRoutes(
       if (!post) {
         return res.status(404).json({ message: "Post not found" });
       }
-      if (post.authorId !== userId && req.user!.role !== "admin") {
+      const fullAccess = ["admin", "director", "super_admin"];
+      const isOwner = post.groupId ? await storage.isGroupOwner(post.groupId, userId) : false;
+      if (post.authorId !== userId && !fullAccess.includes(req.user!.role) && !isOwner) {
         return res.status(403).json({ message: "Not authorized" });
       }
       await storage.deletePost(req.params.id);
@@ -838,11 +846,63 @@ export async function registerRoutes(
     try {
       const groups = await storage.getHomeroomGroupsForTeacher(req.user!.id);
       const withRoster = await Promise.all(
-        groups.map(async (g: any) => ({ ...g, roster: await storage.getGroupRoster(g.id) }))
+        groups.map(async (g: any) => ({ ...g, roster: await storage.getHomeroomRosterDetails(g.id) }))
       );
       res.json(withRoster);
     } catch {
       res.status(500).json({ message: "Error al obtener tus grupos a cargo" });
+    }
+  });
+
+  // El director de grupo puede anotar observaciones directamente sobre los
+  // estudiantes de SU grupo a cargo (aunque no sea coordinador). Se valida
+  // que el grupo realmente sea suyo y que el estudiante pertenezca a ese
+  // grupo, para que no pueda anotar sobre estudiantes ajenos.
+  app.post("/api/teacher/homeroom-groups/:groupId/observations", requireAuth, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      const myGroups = await storage.getHomeroomGroupsForTeacher(req.user.id);
+      const group = myGroups.find((g: any) => g.id === req.params.groupId);
+      if (!group) return res.status(403).json({ message: "No eres el director de este grupo" });
+
+      const { studentId, type, description, commitment, followUp } = req.body;
+      if (!studentId || !description) {
+        return res.status(400).json({ error: "Estudiante y descripción son obligatorios" });
+      }
+      const roster = await storage.getGroupRoster(req.params.groupId);
+      if (!roster.some((r: any) => r.student.id === studentId)) {
+        return res.status(403).json({ message: "Ese estudiante no pertenece a tu grupo" });
+      }
+
+      const created = await storage.createObservation({
+        institutionId: req.user.institutionId,
+        studentId,
+        teacherId: req.user.id,
+        type: type || "positive",
+        severity: type === "negative" ? "high" : "light",
+        title: type === "positive" ? "Observación positiva" : type === "negative" ? "Observación negativa" : "Observación",
+        description: packObservation(description, commitment, followUp),
+      });
+
+      sendPushToUser(studentId, {
+        title: type === "positive" ? "Nueva observación positiva" : "Nueva anotación en tu observador",
+        body: description.slice(0, 120),
+        url: "/profile",
+      }).catch(() => {});
+
+      logAudit({
+        institutionId: req.user.institutionId,
+        actorId: req.user.id,
+        actorName: `${req.user.firstName} ${req.user.lastName}`,
+        action: "create_observation",
+        entityType: "observation",
+        entityId: created.id,
+        details: { studentId, type, groupId: req.params.groupId },
+      });
+
+      res.status(201).json(created);
+    } catch (e) {
+      res.status(500).json({ message: "Error al crear observación" });
     }
   });
 
@@ -1855,6 +1915,48 @@ export async function registerRoutes(
     }
   });
 
+  // BUG CORREGIDO: el frontend (StudentsTab en CourseDetail.tsx) ya tenía
+  // toda la UI lista para "Añadir grupo completo al aula" — selector de
+  // grupo, botón, toasts de éxito/error — pero apuntaba a un endpoint que
+  // nunca se implementó en el backend. Cada intento fallaba en silencio
+  // (404 interpretado como "Error" genérico).
+  app.post("/api/classroom/courses/:id/enroll-group", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      const course = await storage.getCourse(req.params.id);
+      if (!course) return res.status(404).json({ message: "Curso no encontrado" });
+      if (course.institutionId !== user.institutionId) {
+        return res.status(403).json({ message: "No autorizado" });
+      }
+      const staffRoles = ["admin", "super_admin", "director", "coordinator", "secretary"];
+      if (user.role === "teacher" && course.teacherId !== user.id) {
+        return res.status(403).json({ message: "No eres el docente de este curso" });
+      }
+      if (user.role !== "teacher" && !staffRoles.includes(user.role)) {
+        return res.status(403).json({ message: "No autorizado" });
+      }
+
+      const { groupId } = req.body as { groupId: string };
+      if (!groupId) return res.status(400).json({ message: "groupId requerido" });
+
+      const roster = await storage.getGroupRoster(groupId);
+      let enrolled = 0;
+      let skipped = 0;
+      for (const entry of roster) {
+        const already = await storage.isEnrolled(req.params.id, entry.student.id);
+        if (already) {
+          skipped++;
+          continue;
+        }
+        await storage.enrollStudent(req.params.id, entry.student.id);
+        enrolled++;
+      }
+      res.json({ enrolled, skipped });
+    } catch (err) {
+      res.status(500).json({ message: "Error al añadir el grupo" });
+    }
+  });
+
   app.get("/api/classroom/courses/:id/students", requireAuth, async (req, res) => {
     try {
       const enrollments = await storage.getEnrollments(req.params.id);
@@ -2147,6 +2249,104 @@ export async function registerRoutes(
     }
   });
 
+  // ─── COMENTARIOS DE TAREA (públicos de la clase / privados por estudiante) ──
+  // Al estilo Google Classroom: al abrir una tarea hay dos hilos separados.
+  // "Comentarios de la clase" (públicos): los ve todo el que tenga acceso al
+  // curso. "Comentarios privados": un hilo 1 a 1 entre CADA estudiante y el
+  // docente — ningún otro estudiante lo ve, ni siquiera otros docentes del
+  // curso a menos que sean el mismo docente o directivos.
+  async function canAccessActivity(activityId: string, user: Express.User): Promise<{ ok: boolean; course?: any }> {
+    const activity = await storage.getActivity(activityId);
+    if (!activity) return { ok: false };
+    const course = await storage.getCourse(activity.courseId);
+    if (!course || course.institutionId !== user.institutionId) return { ok: false };
+    const staffRoles = ["admin", "super_admin", "director", "coordinator", "secretary"];
+    if (staffRoles.includes(user.role)) return { ok: true, course };
+    if (user.role === "teacher" && course.teacherId === user.id) return { ok: true, course };
+    if (user.role === "student" && (await storage.isEnrolled(course.id, user.id))) return { ok: true, course };
+    return { ok: false };
+  }
+
+  app.get("/api/classroom/activities/:id/comments", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { ok, course } = await canAccessActivity(req.params.id, user);
+      if (!ok) return res.status(403).json({ message: "No tienes acceso a esta tarea" });
+
+      const scope = (req.query.scope as string) === "private" ? "private" : "public";
+      if (scope === "public") {
+        return res.json(await storage.getActivityComments(req.params.id, { visibility: "public" }));
+      }
+
+      // Privados: un estudiante solo ve SU propio hilo; un docente/staff
+      // necesita indicar de qué estudiante quiere ver el hilo.
+      let studentId = req.query.studentId as string | undefined;
+      if (user.role === "student") {
+        studentId = user.id;
+      } else if (!studentId) {
+        return res.status(400).json({ message: "studentId requerido" });
+      }
+      res.json(await storage.getActivityComments(req.params.id, { visibility: "private", studentId }));
+    } catch (err) {
+      res.status(500).json({ message: "Error al obtener comentarios" });
+    }
+  });
+
+  app.post("/api/classroom/activities/:id/comments", requireAuth, requireVerified, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { ok, course } = await canAccessActivity(req.params.id, user);
+      if (!ok) return res.status(403).json({ message: "No tienes acceso a esta tarea" });
+
+      const { content, visibility, studentId: bodyStudentId } = req.body as {
+        content: string; visibility: "public" | "private"; studentId?: string;
+      };
+      if (!content?.trim()) return res.status(400).json({ message: "El comentario no puede estar vacío" });
+
+      let studentId: string | null = null;
+      if (visibility === "private") {
+        // Un estudiante solo puede comentar en SU propio hilo privado;
+        // un docente/staff debe indicar a qué estudiante le está
+        // respondiendo.
+        studentId = user.role === "student" ? user.id : (bodyStudentId || null);
+        if (!studentId) return res.status(400).json({ message: "studentId requerido para comentario privado" });
+      }
+
+      const comment = await storage.createActivityComment({
+        activityId: req.params.id,
+        authorId: user.id,
+        studentId,
+        visibility: visibility === "private" ? "private" : "public",
+        content: content.trim(),
+      });
+
+      // Notificar al destinatario relevante
+      if (visibility === "private" && studentId && studentId !== user.id) {
+        await storage.createNotification({
+          userId: studentId,
+          type: "comment",
+          title: "Nuevo comentario privado",
+          message: `${user.firstName} te dejó un comentario privado en una tarea`,
+          relatedId: comment.id,
+          read: false,
+        });
+      } else if (visibility === "public" && course) {
+        await storage.createNotification({
+          userId: course.teacherId,
+          type: "comment",
+          title: "Nuevo comentario en tarea",
+          message: `${user.firstName} comentó en el tablón de la tarea`,
+          relatedId: comment.id,
+          read: false,
+        }).catch(() => {}); // si el autor es el propio docente, no pasa nada grave si falla
+      }
+
+      res.status(201).json(comment);
+    } catch (err) {
+      res.status(500).json({ message: "Error al publicar el comentario" });
+    }
+  });
+
   // BUG CORREGIDO: el frontend ya llamaba a este endpoint para precargar la
   // asistencia del día seleccionado, pero la ruta nunca existió en el
   // backend — cada carga de la pestaña de asistencia fallaba (404/500) antes
@@ -2165,7 +2365,8 @@ export async function registerRoutes(
   app.post("/api/classroom/courses/:id/attendance", requireAuth, async (req, res) => {
     try {
       const user = req.user!;
-      if (user.role !== "teacher" && user.role !== "admin") {
+      const staffRoles = ["admin", "director", "super_admin", "coordinator"];
+      if (user.role !== "teacher" && !staffRoles.includes(user.role)) {
         return res.status(403).json({ message: "Only teachers can record attendance" });
       }
       const { records } = req.body;

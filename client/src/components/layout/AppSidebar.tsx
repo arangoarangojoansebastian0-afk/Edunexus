@@ -40,6 +40,7 @@ import {
   School,
   MessageCircle,
   Video,
+  UserCheck,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { getFullName, getInitials, formatRole } from "@/lib/authUtils";
@@ -90,8 +91,18 @@ export function AppSidebar() {
     }
   };
 
-  const isAdmin = user?.role === "admin";
+  // BUG CORREGIDO: antes solo mostraba el link del panel a role==="admin"
+  // exacto — rector, coordinador y secretaría ya tenían permisos reales en
+  // el backend para partes del panel, pero ni siquiera veían el enlace acá
+  // para llegar a él.
+  const isAdmin = ["admin", "director", "super_admin", "coordinator", "secretary"].includes(user?.role || "");
   const navItems = user?.role === "parent" ? parentNavItems : mainNavItems;
+
+  const { data: homeroomGroups } = useQuery<any[]>({
+    queryKey: ["/api/teacher/homeroom-groups"],
+    enabled: user?.role === "teacher",
+  });
+  const isHomeroomTeacher = (homeroomGroups?.length || 0) > 0;
 
   return (
     <Sidebar>
@@ -132,6 +143,20 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+              {isHomeroomTeacher && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location === "/my-group"}
+                    data-testid="nav-mi-grupo"
+                  >
+                    <Link href="/my-group" className="flex items-center gap-2 w-full">
+                      <UserCheck className="h-5 w-5" />
+                      <span className="flex-1">Mi Grupo</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

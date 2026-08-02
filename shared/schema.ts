@@ -709,6 +709,33 @@ export const submissions = pgTable(
   ]
 );
 
+// Comentarios dentro de una tarea/actividad, al estilo Google Classroom:
+// - "public": comentarios de la clase, visibles para todos los que tienen
+//   acceso al curso (docente + todos los estudiantes inscritos).
+// - "private": hilo privado entre UN estudiante puntual y el docente —
+//   nadie más lo ve. `studentId` identifica de quién es ese hilo (para los
+//   públicos, studentId queda null).
+export const activityComments = pgTable(
+  "activity_comments",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    activityId: varchar("activity_id").references(() => activities.id, { onDelete: "cascade" }).notNull(),
+    authorId: varchar("author_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    studentId: varchar("student_id").references(() => users.id, { onDelete: "cascade" }),
+    visibility: varchar("visibility", { length: 10 }).default("public").notNull(), // "public" | "private"
+    content: text("content").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_activity_comments_activity").on(table.activityId),
+    index("idx_activity_comments_student").on(table.studentId),
+  ]
+);
+
+export const insertActivityCommentSchema = createInsertSchema(activityComments).omit({ id: true, createdAt: true });
+export type ActivityComment = typeof activityComments.$inferSelect;
+export type InsertActivityComment = z.infer<typeof insertActivityCommentSchema>;
+
 export const attendance = pgTable(
   "attendance",
   {

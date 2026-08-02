@@ -184,6 +184,21 @@ export async function runMigrations(): Promise<void> {
         ADD COLUMN IF NOT EXISTS homeroom_teacher_id VARCHAR REFERENCES users(id) ON DELETE SET NULL;
     `);
 
+    // Comentarios de tarea (públicos de la clase / privados por estudiante)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS activity_comments (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        activity_id VARCHAR NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+        author_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        student_id VARCHAR REFERENCES users(id) ON DELETE CASCADE,
+        visibility VARCHAR(10) NOT NULL DEFAULT 'public',
+        content TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS idx_activity_comments_activity ON activity_comments(activity_id);
+      CREATE INDEX IF NOT EXISTS idx_activity_comments_student ON activity_comments(student_id);
+    `);
+
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_enrollments_course ON course_enrollments(course_id);
       CREATE INDEX IF NOT EXISTS idx_enrollments_student ON course_enrollments(student_id);

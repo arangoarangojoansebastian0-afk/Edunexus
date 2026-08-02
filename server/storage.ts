@@ -34,6 +34,7 @@ import {
   courseEnrollments,
   activities,
   submissions,
+  activityComments,
   courseAnnouncements,
   announcementComments,
   attendance,
@@ -93,6 +94,7 @@ import {
   type AnnouncementCommentWithAuthor,
   type Submission,
   type InsertSubmission,
+  type InsertActivityComment,
   type Attendance,
   type InsertAttendance,
   type CourseWithTeacher,
@@ -142,6 +144,7 @@ export interface IStorage {
   removeGroupMember(groupId: string, userId: string): Promise<void>;
   getGroupMembers(groupId: string): Promise<(GroupMember & { user: User })[]>;
   isGroupMember(groupId: string, userId: string): Promise<boolean>;
+  isGroupOwner(groupId: string, userId: string): Promise<boolean>;
   getPost(id: string): Promise<PostWithAuthor | undefined>;
   getAllPosts(limit?: number): Promise<PostWithAuthor[]>;
   getPostsByGroup(groupId: string): Promise<PostWithAuthor[]>;
@@ -283,6 +286,9 @@ export interface IStorage {
   assignHomeroomTeacher(groupId: string, teacherId: string | null): Promise<any>;
   getHomeroomGroupsForTeacher(teacherId: string): Promise<any[]>;
   getGroupRoster(groupId: string): Promise<any[]>;
+  getHomeroomRosterDetails(groupId: string): Promise<any[]>;
+  getActivityComments(activityId: string, opts: { visibility: "public" | "private"; studentId?: string }): Promise<any[]>;
+  createActivityComment(data: InsertActivityComment): Promise<any>;
   createAcademicGroup(data: any, institutionId: string): Promise<any>;
   deleteAcademicGroup(id: string): Promise<void>;
   getStudentEnrollments(institutionId: string, academicYearId?: string): Promise<any[]>;
@@ -567,6 +573,18 @@ async getInstitutionByCode(code: string) {
       .select()
       .from(groupMembers)
       .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId)));
+    return !!member;
+  }
+
+  async isGroupOwner(groupId: string, userId: string): Promise<boolean> {
+    const [member] = await db
+      .select()
+      .from(groupMembers)
+      .where(and(
+        eq(groupMembers.groupId, groupId),
+        eq(groupMembers.userId, userId),
+        eq(groupMembers.role, "owner")
+      ));
     return !!member;
   }
 
@@ -3142,6 +3160,75 @@ async getInstitutionByCode(code: string) {
       .innerJoin(users, eq(studentEnrollments.studentId, users.id))
       .where(and(eq(studentEnrollments.groupId, groupId), eq(studentEnrollments.status, "enrolled")));
     return rows.map((r) => ({ ...r.enrollment, student: r.student }));
+  }
+
+  // Vista completa que necesita un director de grupo: por cada estudiante,
+  // su acudiente vinculado (si ya aceptó el vínculo), cuántas
+  // observaciones disciplinarias tiene, y su asistencia de los últimos 30
+  // registros (para calcular el % de asistencia).
+  async getHomeroomRosterDetails(groupId: string) {
+    const roster = await this.getGroupRoster(groupId);
+
+    return Promise.all(
+      roster.map(async (entry: any) => {
+        const student = entry.student;
+
+        const [parentRow] = await db
+          .select({ parent: users })
+          .from(parentStudentLinks)
+          .innerJoin(users, eq(parentStudentLinks.parentId, users.id))
+          .where(and(
+            eq(parentStudentLinks.studentId, student.id),
+            eq(parentStudentLinks.status, "approved")
+          ))
+          .limit(1);
+
+        const [obsCount] = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(studentObservations)
+          .where(eq(studentObservations.studentId, student.id));
+
+        const attendanceRecords = await this.getAttendanceForStudent(student.id, 30);
+        const presentCount = attendanceRecords.filter((r) => r.status === "present").length;
+        const attendanceRate = attendanceRecords.length > 0
+          ? Math.round((presentCount / attendanceRecords.length) * 100)
+          : null;
+
+        return {
+          ...entry,
+          student,
+          parent: parentRow?.parent || null,
+          observationsCount: Number(obsCount?.count || 0),
+          attendanceRate,
+        };
+      })
+    );
+  }
+
+  // ─── COMENTARIOS DE TAREA (públicos y privados por estudiante) ─────────
+  async getActivityComments(
+    activityId: string,
+    opts: { visibility: "public" | "private"; studentId?: string }
+  ) {
+    const conditions = [
+      eq(activityComments.activityId, activityId),
+      eq(activityComments.visibility, opts.visibility),
+    ];
+    if (opts.visibility === "private" && opts.studentId) {
+      conditions.push(eq(activityComments.studentId, opts.studentId));
+    }
+    const rows = await db
+      .select({ comment: activityComments, author: users })
+      .from(activityComments)
+      .innerJoin(users, eq(activityComments.authorId, users.id))
+      .where(and(...conditions))
+      .orderBy(activityComments.createdAt);
+    return rows.map((r) => ({ ...r.comment, author: r.author }));
+  }
+
+  async createActivityComment(data: InsertActivityComment) {
+    const [created] = await db.insert(activityComments).values(data).returning();
+    return created;
   }
 
   async createAcademicGroup(data: { gradeId: string; name: string }, institutionId: string) {

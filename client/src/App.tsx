@@ -30,6 +30,7 @@ import Notifications from "@/pages/Notifications";
 import Settings from "@/pages/Settings";
 import Classroom from "@/pages/Classroom";
 import CourseDetail from "@/pages/CourseDetail";
+import MyGroup from "@/pages/MyGroup";
 import Schedules from "@/pages/Schedules";
 import DirectMessages from "@/pages/DirectMessages";
 import { CallProvider } from "@/context/CallContext";
@@ -76,6 +77,7 @@ function Router() {
           <Route path="/settings" component={Settings} />
           <Route path="/classroom" component={Classroom} />
           <Route path="/classroom/:id" component={CourseDetail} />
+          <Route path="/my-group" component={MyGroup} />
           <Route path="/schedules" component={Schedules} />
           <Route path="/messages" component={DirectMessages} />
           <Route path="/messages/group/:groupId" component={DirectMessages} />

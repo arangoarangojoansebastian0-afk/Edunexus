@@ -24,6 +24,7 @@ import { useInstitutionSettings } from "@/hooks/useInstitutionSettings";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getFullName, getInitials } from "@/lib/authUtils";
 import { EmptyState } from "@/components/EmptyState";
+import { ActivityComments } from "@/components/ActivityComments";
 import { CreatePostCard } from "@/components/posts/CreatePostCard";
 import { PostCard } from "@/components/posts/PostCard";
 import type { PostWithAuthor } from "@shared/schema";
@@ -267,6 +268,7 @@ function SubmitDialog({
   onClose: () => void;
 }) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [content, setContent] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -302,7 +304,7 @@ function SubmitDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Entregar: {activity?.title}</DialogTitle>
         </DialogHeader>
@@ -369,6 +371,13 @@ function SubmitDialog({
             />
           </div>
         </div>
+
+        {activity?.id && user?.id && (
+          <div className="border-t pt-3">
+            <ActivityComments activityId={activity.id} studentId={user.id} currentUserId={user.id} />
+          </div>
+        )}
+
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
           <Button
@@ -404,6 +413,7 @@ function GradeDialog({
   onClose: () => void;
 }) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [grade, setGrade] = useState("");
   const [feedback, setFeedback] = useState("");
 
@@ -435,7 +445,7 @@ function GradeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             Calificar a {submission ? getFullName(submission.student.firstName, submission.student.lastName) : ""}
@@ -516,6 +526,16 @@ function GradeDialog({
               onChange={(e) => setFeedback(e.target.value)}
               placeholder="Comentarios para el estudiante..." />
           </div>
+
+          {submission?.activityId && submission?.studentId && (
+            <div className="border-t pt-3">
+              <ActivityComments
+                activityId={submission.activityId}
+                studentId={submission.studentId}
+                currentUserId={user?.id}
+              />
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
