@@ -63,7 +63,19 @@ export default function Home() {
   });
 
   const createPostMutation = useMutation({
-    mutationFn: async (content: string) => {
+    mutationFn: async ({ content, files }: { content: string; files?: File[] }) => {
+      if (files && files.length > 0) {
+        const formData = new FormData();
+        formData.append("content", content);
+        files.forEach((f) => formData.append("attachments", f));
+        const res = await fetch("/api/posts", {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+        });
+        if (!res.ok) throw new Error("Error al publicar");
+        return await res.json();
+      }
       const response = await apiRequest("POST", "/api/posts", { content });
       return await response.json();
     },
@@ -119,7 +131,7 @@ export default function Home() {
           <div className="lg:col-span-2 space-y-6">
             {/* Create Post */}
             <CreatePostCard
-              onSubmit={(content) => createPostMutation.mutate(content)}
+              onSubmit={(content, files) => createPostMutation.mutate({ content, files })}
               isSubmitting={createPostMutation.isPending}
             />
 

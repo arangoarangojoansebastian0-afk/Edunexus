@@ -279,6 +279,10 @@ export interface IStorage {
   createGrade(data: any, institutionId: string): Promise<any>;
   deleteGrade(id: string): Promise<void>;
   getAcademicGroups(institutionId: string): Promise<any[]>;
+  getAcademicGroupsWithHomeroom(institutionId: string): Promise<any[]>;
+  assignHomeroomTeacher(groupId: string, teacherId: string | null): Promise<any>;
+  getHomeroomGroupsForTeacher(teacherId: string): Promise<any[]>;
+  getGroupRoster(groupId: string): Promise<any[]>;
   createAcademicGroup(data: any, institutionId: string): Promise<any>;
   deleteAcademicGroup(id: string): Promise<void>;
   getStudentEnrollments(institutionId: string, academicYearId?: string): Promise<any[]>;
@@ -3100,6 +3104,44 @@ async getInstitutionByCode(code: string) {
 
   async getAcademicGroups(institutionId: string) {
     return db.select().from(academicGroups).where(eq(academicGroups.institutionId, institutionId)).orderBy(academicGroups.name);
+  }
+
+  // ─── DIRECTOR DE GRUPO (homeroom teacher) ──────────────────────────────
+  async getAcademicGroupsWithHomeroom(institutionId: string) {
+    const rows = await db
+      .select({ group: academicGroups, teacher: users })
+      .from(academicGroups)
+      .leftJoin(users, eq(academicGroups.homeroomTeacherId, users.id))
+      .where(eq(academicGroups.institutionId, institutionId))
+      .orderBy(academicGroups.name);
+    return rows.map((r) => ({ ...r.group, homeroomTeacher: r.teacher || null }));
+  }
+
+  async assignHomeroomTeacher(groupId: string, teacherId: string | null) {
+    const [updated] = await db
+      .update(academicGroups)
+      .set({ homeroomTeacherId: teacherId })
+      .where(eq(academicGroups.id, groupId))
+      .returning();
+    return updated;
+  }
+
+  async getHomeroomGroupsForTeacher(teacherId: string) {
+    const rows = await db
+      .select({ group: academicGroups, grade: grades })
+      .from(academicGroups)
+      .leftJoin(grades, eq(academicGroups.gradeId, grades.id))
+      .where(eq(academicGroups.homeroomTeacherId, teacherId));
+    return rows.map((r) => ({ ...r.group, grade: r.grade || null }));
+  }
+
+  async getGroupRoster(groupId: string) {
+    const rows = await db
+      .select({ enrollment: studentEnrollments, student: users })
+      .from(studentEnrollments)
+      .innerJoin(users, eq(studentEnrollments.studentId, users.id))
+      .where(and(eq(studentEnrollments.groupId, groupId), eq(studentEnrollments.status, "enrolled")));
+    return rows.map((r) => ({ ...r.enrollment, student: r.student }));
   }
 
   async createAcademicGroup(data: { gradeId: string; name: string }, institutionId: string) {

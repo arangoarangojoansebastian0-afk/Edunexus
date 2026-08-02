@@ -166,6 +166,24 @@ export async function runMigrations(): Promise<void> {
         ADD COLUMN IF NOT EXISTS academic_period_id VARCHAR REFERENCES academic_periods(id) ON DELETE SET NULL;
     `);
 
+    // Blindaje: `group_id` (usado por el tablón de publicaciones del curso)
+    // vive en el CREATE TABLE de `courses` de más arriba, pero ese CREATE
+    // TABLE IF NOT EXISTS no hace nada si la tabla ya existía de antes sin
+    // esa columna. Este ALTER TABLE asegura que quede sin importar cómo se
+    // haya sincronizado el esquema anteriormente.
+    await client.query(`
+      ALTER TABLE courses
+        ADD COLUMN IF NOT EXISTS group_id VARCHAR REFERENCES groups(id) ON DELETE SET NULL;
+    `);
+
+    // Director de grupo: docente encargado de un grado/grupo académico
+    // completo (asignado por directivos), en vez de tener que marcarlo
+    // repetidamente en cada matrícula individual de estudiante.
+    await client.query(`
+      ALTER TABLE academic_groups
+        ADD COLUMN IF NOT EXISTS homeroom_teacher_id VARCHAR REFERENCES users(id) ON DELETE SET NULL;
+    `);
+
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_enrollments_course ON course_enrollments(course_id);
       CREATE INDEX IF NOT EXISTS idx_enrollments_student ON course_enrollments(student_id);
@@ -238,6 +256,31 @@ export async function runMigrations(): Promise<void> {
       );
       CREATE INDEX IF NOT EXISTS idx_auth_tokens_token ON auth_tokens(token);
       CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id);
+    `);
+
+    // ── Tablón de publicaciones del aula (anuncios + comentarios) ───────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS course_announcements (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        course_id VARCHAR NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+        author_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        attachments TEXT[] DEFAULT '{}',
+        pinned BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_announcements_course ON course_announcements(course_id);
+      CREATE INDEX IF NOT EXISTS idx_announcements_created ON course_announcements(created_at);
+
+      CREATE TABLE IF NOT EXISTS announcement_comments (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        announcement_id VARCHAR NOT NULL REFERENCES course_announcements(id) ON DELETE CASCADE,
+        author_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_announcement_comments_announcement ON announcement_comments(announcement_id);
     `);
 
     // ── Nivel 4: bitácora de auditoría de acciones administrativas ─────────

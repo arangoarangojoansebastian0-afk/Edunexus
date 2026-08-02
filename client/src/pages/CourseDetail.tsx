@@ -1216,8 +1216,20 @@ export default function CourseDetail() {
   });
 
   const createBoardPostMutation = useMutation({
-    mutationFn: async (content: string) => {
-      await apiRequest("POST", `/api/classroom/courses/${id}/board`, { content });
+    mutationFn: async ({ content, files }: { content: string; files?: File[] }) => {
+      if (files && files.length > 0) {
+        const formData = new FormData();
+        formData.append("content", content);
+        files.forEach((f) => formData.append("attachments", f));
+        const res = await fetch(`/api/classroom/courses/${id}/board`, {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+        });
+        if (!res.ok) throw new Error("Error al publicar");
+      } else {
+        await apiRequest("POST", `/api/classroom/courses/${id}/board`, { content });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/classroom/courses", id, "board"] });
@@ -1345,7 +1357,7 @@ export default function CourseDetail() {
           {/* Tablón de publicaciones */}
           <TabsContent value="board" className="space-y-4 mt-4">
             <CreatePostCard
-              onSubmit={(content) => createBoardPostMutation.mutate(content)}
+              onSubmit={(content, files) => createBoardPostMutation.mutate({ content, files })}
               isSubmitting={createBoardPostMutation.isPending}
               placeholder={isTeacher ? "Publica un anuncio para tu clase..." : "Comparte algo con tu curso..."}
             />

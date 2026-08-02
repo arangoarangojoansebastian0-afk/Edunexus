@@ -133,8 +133,20 @@ export default function GroupDetail() {
   }, [messages]);
 
   const createPostMutation = useMutation({
-    mutationFn: async (content: string) => {
-      await apiRequest("POST", `/api/groups/${groupId}/posts`, { content });
+    mutationFn: async ({ content, files }: { content: string; files?: File[] }) => {
+      if (files && files.length > 0) {
+        const formData = new FormData();
+        formData.append("content", content);
+        files.forEach((f) => formData.append("attachments", f));
+        const res = await fetch(`/api/groups/${groupId}/posts`, {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+        });
+        if (!res.ok) throw new Error("Error al publicar");
+      } else {
+        await apiRequest("POST", `/api/groups/${groupId}/posts`, { content });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/groups", groupId, "posts"] });
@@ -361,7 +373,7 @@ export default function GroupDetail() {
                 <TabsContent value="forum" className="space-y-4 mt-4">
                   {isMember && user?.verified && (
                     <CreatePostCard
-                      onSubmit={(content) => createPostMutation.mutate(content)}
+                      onSubmit={(content, files) => createPostMutation.mutate({ content, files })}
                       isSubmitting={createPostMutation.isPending}
                       placeholder="¿Qué quieres compartir con el grupo?"
                     />

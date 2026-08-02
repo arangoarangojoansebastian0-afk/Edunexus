@@ -74,12 +74,32 @@ function requireVerified(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  if (req.user?.role !== "admin") {
-    return res.status(403).json({ message: "Admin access required" });
-  }
-  next();
+// ─── SISTEMA DE PERMISOS POR ROL ───────────────────────────────────────
+// Antes, TODO endpoint del panel administrativo (requireAdmin) solo dejaba
+// pasar a role === "admin". Esto significaba que rector (role "director"),
+// coordinador y secretaría podían ENTRAR a la pantalla del panel admin
+// (el frontend sí se los permitía) pero cada acción que intentaran hacer
+// fallaba con 403 — el panel se veía pero no servía para nada, para
+// ningún rol que no fuera literalmente "admin".
+//
+// Ahora: rector (director) tiene acceso total igual que admin (son el
+// "mayor rol"). Coordinador y secretaría tienen acceso solo a las áreas
+// que les corresponden — no a configuración institucional, borrado
+// permanente de usuarios, auditoría, ni integraciones sensibles.
+function requireRole(...roles: string[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ message: "No tienes permisos para esta acción" });
+    }
+    next();
+  };
 }
+
+const FULL_ACCESS_ROLES = ["admin", "director", "super_admin"]; // rector y admin: acceso total
+const requireAdmin = requireRole(...FULL_ACCESS_ROLES);
+const requireCoordinator = requireRole(...FULL_ACCESS_ROLES, "coordinator"); // área académica
+const requireSecretary = requireRole(...FULL_ACCESS_ROLES, "secretary"); // área administrativa
+const requireStaff = requireRole(...FULL_ACCESS_ROLES, "coordinator", "secretary"); // compartido
 
 function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
   if (req.user?.role !== "super_admin") {
@@ -316,10 +336,14 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/posts", requireAuth, requireVerified, async (req, res) => {
+  app.post("/api/posts", requireAuth, requireVerified, upload.array("attachments", 5), async (req, res) => {
     try {
       const userId = req.user!.id;
-      const data = insertPostSchema.parse({ ...req.body, authorId: userId });
+      const files = (req.files as Express.Multer.File[]) || [];
+      const media = files.length > 0
+        ? await Promise.all(files.map((f) => uploadToSupabase(f, "posts")))
+        : undefined;
+      const data = insertPostSchema.parse({ ...req.body, authorId: userId, ...(media ? { media } : {}) });
       const post = await storage.createPost(data);
       
       const allUsers = await storage.getAllUsers();
@@ -504,7 +528,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/groups/:id/posts", requireAuth, requireVerified, async (req, res) => {
+  app.post("/api/groups/:id/posts", requireAuth, requireVerified, upload.array("attachments", 5), async (req, res) => {
     try {
       const userId = req.user!.id;
       const groupId = req.params.id;
@@ -512,10 +536,15 @@ export async function registerRoutes(
       if (!isMember) {
         return res.status(403).json({ message: "Not a group member" });
       }
+      const files = (req.files as Express.Multer.File[]) || [];
+      const media = files.length > 0
+        ? await Promise.all(files.map((f) => uploadToSupabase(f, "posts")))
+        : undefined;
       const data = insertPostSchema.parse({
         ...req.body,
         authorId: userId,
         groupId,
+        ...(media ? { media } : {}),
       });
       const post = await storage.createPost(data);
       res.status(201).json(post);
@@ -679,14 +708,14 @@ export async function registerRoutes(
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.delete("/api/admin/subjects/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/admin/subjects/:id", requireAuth, requireCoordinator, async (req, res) => {
     try {
       await storage.deleteSubject(req.params.id);
       res.json({ success: true });
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.get("/api/admin/academic-years", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/academic-years", requireAuth, requireCoordinator, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -695,7 +724,7 @@ export async function registerRoutes(
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.post("/api/admin/academic-years", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/academic-years", requireAuth, requireCoordinator, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -704,7 +733,7 @@ export async function registerRoutes(
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.patch("/api/admin/academic-years/:id/activate", requireAuth, requireAdmin, async (req, res) => {
+  app.patch("/api/admin/academic-years/:id/activate", requireAuth, requireCoordinator, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -714,40 +743,40 @@ export async function registerRoutes(
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.delete("/api/admin/academic-years/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/admin/academic-years/:id", requireAuth, requireCoordinator, async (req, res) => {
     try {
       await storage.deleteAcademicYear(req.params.id);
       res.json({ success: true });
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.get("/api/admin/academic-years/:yearId/periods", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/academic-years/:yearId/periods", requireAuth, requireCoordinator, async (req, res) => {
     try {
       res.json(await storage.getPeriodsByYear(req.params.yearId));
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.post("/api/admin/academic-years/:yearId/periods", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/academic-years/:yearId/periods", requireAuth, requireCoordinator, async (req, res) => {
     try {
       res.json(await storage.createAcademicPeriod({ ...req.body, academicYearId: req.params.yearId }));
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.patch("/api/admin/periods/:id/activate", requireAuth, requireAdmin, async (req, res) => {
+  app.patch("/api/admin/periods/:id/activate", requireAuth, requireCoordinator, async (req, res) => {
     try {
       await storage.setActivePeriod(req.params.id);
       res.json({ success: true });
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.delete("/api/admin/periods/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/admin/periods/:id", requireAuth, requireCoordinator, async (req, res) => {
     try {
       await storage.deleteAcademicPeriod(req.params.id);
       res.json({ success: true });
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.get("/api/admin/grades", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/grades", requireAuth, requireCoordinator, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -757,7 +786,7 @@ export async function registerRoutes(
     catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.post("/api/admin/grades", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/grades", requireAuth, requireCoordinator, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -767,7 +796,7 @@ export async function registerRoutes(
     catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.delete("/api/admin/grades/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/admin/grades/:id", requireAuth, requireCoordinator, async (req, res) => {
     try { await storage.deleteGrade(req.params.id); res.json({ success: true }); }
     catch { res.status(500).json({ message: "Error" }); }
   });
@@ -777,12 +806,12 @@ export async function registerRoutes(
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
       }
-      res.json(await storage.getAcademicGroups(req.user.institutionId));
+      res.json(await storage.getAcademicGroupsWithHomeroom(req.user.institutionId));
     }
     catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.post("/api/admin/academic-groups", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/academic-groups", requireAuth, requireCoordinator, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -792,12 +821,37 @@ export async function registerRoutes(
     catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.delete("/api/admin/academic-groups/:id", requireAuth, requireAdmin, async (req, res) => {
+  // Director de grupo: solo directivos (rector/admin/coordinador) pueden
+  // asignar qué docente queda a cargo de un grado/grupo.
+  app.patch("/api/admin/academic-groups/:id/homeroom-teacher", requireAuth, requireCoordinator, async (req, res) => {
+    try {
+      const { teacherId } = req.body as { teacherId: string | null };
+      const updated = await storage.assignHomeroomTeacher(req.params.id, teacherId || null);
+      res.json(updated);
+    } catch {
+      res.status(500).json({ message: "Error al asignar director de grupo" });
+    }
+  });
+
+  // Para el docente: sus propios grupos a cargo (con la lista de estudiantes)
+  app.get("/api/teacher/homeroom-groups", requireAuth, async (req, res) => {
+    try {
+      const groups = await storage.getHomeroomGroupsForTeacher(req.user!.id);
+      const withRoster = await Promise.all(
+        groups.map(async (g: any) => ({ ...g, roster: await storage.getGroupRoster(g.id) }))
+      );
+      res.json(withRoster);
+    } catch {
+      res.status(500).json({ message: "Error al obtener tus grupos a cargo" });
+    }
+  });
+
+  app.delete("/api/admin/academic-groups/:id", requireAuth, requireCoordinator, async (req, res) => {
     try { await storage.deleteAcademicGroup(req.params.id); res.json({ success: true }); }
     catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.get("/api/admin/enrollments", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/enrollments", requireAuth, requireSecretary, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -808,7 +862,7 @@ export async function registerRoutes(
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.post("/api/admin/enrollments", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/enrollments", requireAuth, requireSecretary, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -818,7 +872,7 @@ export async function registerRoutes(
     catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.get("/api/admin/enrollments/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/enrollments/:id", requireAuth, requireSecretary, async (req, res) => {
     try {
       const enrollments = await storage.getStudentEnrollments(req.user!.institutionId!, undefined);
       const found = (enrollments as any[]).find((e: any) => e.enrollment?.id === req.params.id);
@@ -827,19 +881,19 @@ export async function registerRoutes(
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.patch("/api/admin/enrollments/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.patch("/api/admin/enrollments/:id", requireAuth, requireSecretary, async (req, res) => {
     try {
       const updated = await storage.updateStudentEnrollment(req.params.id, req.body);
       res.json(updated);
     } catch { res.status(500).json({ message: "Error al actualizar matrícula" }); }
   });
 
-  app.delete("/api/admin/enrollments/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/admin/enrollments/:id", requireAuth, requireSecretary, async (req, res) => {
     try { await storage.deleteStudentEnrollment(req.params.id); res.json({ success: true }); }
     catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.post("/api/admin/users/:id/expel", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/users/:id/expel", requireAuth, requireSecretary, async (req, res) => {
     try {
       await storage.expelStudent(req.params.id);
       logAudit({
@@ -871,7 +925,7 @@ export async function registerRoutes(
     catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.get("/api/admin/codes/teacher", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/codes/teacher", requireAuth, requireSecretary, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -881,7 +935,7 @@ export async function registerRoutes(
     catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.post("/api/admin/codes/teacher", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/codes/teacher", requireAuth, requireSecretary, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -892,19 +946,19 @@ export async function registerRoutes(
     catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.post("/api/admin/codes/teacher/:id/deactivate", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/codes/teacher/:id/deactivate", requireAuth, requireSecretary, async (req, res) => {
     try {
       await storage.deactivateTeacherCode(req.params.id);
       res.json({ success: true });
     } catch { res.status(500).json({ message: "Error deactivating teacher code" }); }
   });
 
-  app.delete("/api/admin/codes/teacher/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/admin/codes/teacher/:id", requireAuth, requireSecretary, async (req, res) => {
     try { await storage.deleteTeacherCode(req.params.id); res.json({ success: true }); }
     catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.get("/api/admin/codes/staff", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/codes/staff", requireAuth, requireSecretary, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -914,7 +968,7 @@ export async function registerRoutes(
     catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.post("/api/admin/codes/staff", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/codes/staff", requireAuth, requireSecretary, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -925,19 +979,19 @@ export async function registerRoutes(
     catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.post("/api/admin/codes/staff/:id/deactivate", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/codes/staff/:id/deactivate", requireAuth, requireSecretary, async (req, res) => {
     try {
       await storage.deactivateStaffCode(req.params.id);
       res.json({ success: true });
     } catch { res.status(500).json({ message: "Error deactivating staff code" }); }
   });
 
-  app.delete("/api/admin/codes/staff/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/admin/codes/staff/:id", requireAuth, requireSecretary, async (req, res) => {
     try { await storage.deleteStaffCode(req.params.id); res.json({ success: true }); }
     catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.get("/api/admin/institutional-stats", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/institutional-stats", requireAuth, requireStaff, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -947,7 +1001,7 @@ export async function registerRoutes(
   });
 
   // ─── INDICADORES DE GESTIÓN (detalle) ────────────────────────────────
-  app.get("/api/admin/indicators/attendance-trend", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/indicators/attendance-trend", requireAuth, requireStaff, async (req, res) => {
     try {
       if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
       const groupBy = (req.query.groupBy as "period" | "week") || "week";
@@ -955,7 +1009,7 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: "Error al calcular asistencia" }); }
   });
 
-  app.get("/api/admin/indicators/performance", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/indicators/performance", requireAuth, requireStaff, async (req, res) => {
     try {
       if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
       const [bySubject, byGroup] = await Promise.all([
@@ -966,7 +1020,7 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: "Error al calcular rendimiento" }); }
   });
 
-  app.get("/api/admin/indicators/at-risk", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/indicators/at-risk", requireAuth, requireStaff, async (req, res) => {
     try {
       if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
       const students = await storage.getStudentsAtRisk(req.user.institutionId);
@@ -974,7 +1028,7 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: "Error al calcular estudiantes en riesgo" }); }
   });
 
-  app.get("/api/admin/indicators/recent-activity", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/indicators/recent-activity", requireAuth, requireStaff, async (req, res) => {
     try {
       if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
       const gradeId = req.query.gradeId as string | undefined;
@@ -1008,7 +1062,7 @@ export async function registerRoutes(
     return { description, commitment, followUp };
   };
 
-  app.get("/api/admin/observations", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/observations", requireAuth, requireCoordinator, async (req, res) => {
     try {
       if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
       const studentId = req.query.studentId as string | undefined;
@@ -1034,7 +1088,7 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: "Error al obtener observaciones" }); }
   });
 
-  app.post("/api/admin/observations", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/observations", requireAuth, requireCoordinator, async (req, res) => {
     try {
       if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
       const { studentId, type, description, commitment, followUp } = req.body;
@@ -1072,7 +1126,7 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: "Error al crear observación" }); }
   });
 
-  app.delete("/api/admin/observations/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/admin/observations/:id", requireAuth, requireCoordinator, async (req, res) => {
     try {
       if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
       await storage.deleteObservation(req.params.id, req.user.institutionId);
@@ -1089,7 +1143,7 @@ export async function registerRoutes(
   });
 
   // ─── BOLETINES / CALIFICACIONES (GRADEBOOK) ──────────────────────────
-  app.get("/api/admin/gradebook", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/gradebook", requireAuth, requireCoordinator, async (req, res) => {
     try {
       if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
       const { groupId, subjectId, academicPeriodId, studentId } = req.query as Record<string, string | undefined>;
@@ -1098,7 +1152,7 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: "Error al obtener calificaciones" }); }
   });
 
-  app.post("/api/admin/gradebook", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/gradebook", requireAuth, requireCoordinator, async (req, res) => {
     try {
       if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
       const data = insertGradebookEntrySchema.parse({
@@ -1122,7 +1176,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/report-card/:studentId/:periodId", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/report-card/:studentId/:periodId", requireAuth, requireStaff, async (req, res) => {
     try {
       const entries = await storage.getStudentReportCard(req.params.studentId, req.params.periodId);
       res.json(entries);
@@ -1130,7 +1184,7 @@ export async function registerRoutes(
   });
 
   // Consolidado de boletín por grupo: usado por TabBoletines (vista de tabla)
-  app.get("/api/admin/report-cards", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/report-cards", requireAuth, requireStaff, async (req, res) => {
     try {
       if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
       const { groupId, periodId } = req.query as Record<string, string | undefined>;
@@ -1142,7 +1196,7 @@ export async function registerRoutes(
   });
 
   // Nivel 2.5: exportar el boletín consolidado del grupo a Excel
-  app.get("/api/admin/report-cards/export/excel", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/report-cards/export/excel", requireAuth, requireStaff, async (req, res) => {
     try {
       if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
       const { groupId, periodId } = req.query as Record<string, string | undefined>;
@@ -1173,7 +1227,7 @@ export async function registerRoutes(
   });
 
   // Nivel 2.6: exportar el boletín consolidado del grupo a PDF
-  app.get("/api/admin/report-cards/export/pdf", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/report-cards/export/pdf", requireAuth, requireStaff, async (req, res) => {
     try {
       if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
       const { groupId, periodId } = req.query as Record<string, string | undefined>;
@@ -1233,15 +1287,15 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/subjects/:id/toggle", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/subjects/:id/toggle", requireAuth, requireCoordinator, async (req, res) => {
     try { await storage.toggleSubjectActive(req.params.id, req.body.active); res.json({ success: true }); } catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.post("/api/admin/users/:id/reintegrate", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/users/:id/reintegrate", requireAuth, requireSecretary, async (req, res) => {
     try { await storage.reintegrateStudent(req.params.id); res.json({ success: true }); } catch { res.status(500).json({ message: "Error" }); }
   });
 
-  app.get("/api/admin/periods", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/periods", requireAuth, requireCoordinator, async (req, res) => {
     try { res.json(await storage.getAllPeriods(req.query.yearId as string)); } catch { res.status(500).json({ message: "Error" }); }
   });
 
@@ -1260,7 +1314,7 @@ export async function registerRoutes(
   });
 
   // Crear clase en horario
-  app.post("/api/admin/schedules", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/schedules", requireAuth, requireStaff, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -1277,7 +1331,7 @@ export async function registerRoutes(
   });
 
   // Eliminar clase del horario
-  app.delete("/api/admin/schedules/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/admin/schedules/:id", requireAuth, requireStaff, async (req, res) => {
     try {
       await storage.deleteSchedule(req.params.id);
       res.status(204).end();
@@ -1334,7 +1388,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/teacher-assignments", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/teacher-assignments", requireAuth, requireCoordinator, async (req, res) => {
     try { res.status(201).json(await storage.createTeacherAssignment(req.body)); } catch { res.status(500).json({ message: "Error" }); }
   });
 
@@ -1350,7 +1404,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/subjects", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/subjects", requireAuth, requireCoordinator, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -1375,7 +1429,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/library", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/library", requireAuth, requireSecretary, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -1386,7 +1440,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/admin/files/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/admin/files/:id", requireAuth, requireSecretary, async (req, res) => {
     try {
       await storage.deleteFile(req.params.id);
       res.json({ success: true });
@@ -1840,7 +1894,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/classroom/courses/:id/board", requireAuth, requireVerified, async (req, res) => {
+  app.post("/api/classroom/courses/:id/board", requireAuth, requireVerified, upload.array("attachments", 5), async (req, res) => {
     try {
       const user = req.user!;
       const course = await storage.getCourse(req.params.id);
@@ -1848,10 +1902,15 @@ export async function registerRoutes(
         return res.status(403).json({ message: "No tienes acceso al tablón de este curso" });
       }
       const groupId = await storage.getOrCreateCourseGroup(req.params.id);
+      const files = (req.files as Express.Multer.File[]) || [];
+      const media = files.length > 0
+        ? await Promise.all(files.map((f) => uploadToSupabase(f, "posts")))
+        : undefined;
       const data = insertPostSchema.parse({
         ...req.body,
         authorId: user.id,
         groupId,
+        ...(media ? { media } : {}),
       });
       const post = await storage.createPost(data);
 
@@ -2088,6 +2147,21 @@ export async function registerRoutes(
     }
   });
 
+  // BUG CORREGIDO: el frontend ya llamaba a este endpoint para precargar la
+  // asistencia del día seleccionado, pero la ruta nunca existió en el
+  // backend — cada carga de la pestaña de asistencia fallaba (404/500) antes
+  // de que el usuario alcanzara siquiera a guardar nada.
+  app.get("/api/classroom/courses/:id/attendance", requireAuth, async (req, res) => {
+    try {
+      const dateParam = req.query.date as string | undefined;
+      const date = dateParam ? new Date(`${dateParam}T00:00:00`) : undefined;
+      const records = await storage.getAttendance(req.params.id, date);
+      res.json(records);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to get attendance" });
+    }
+  });
+
   app.post("/api/classroom/courses/:id/attendance", requireAuth, async (req, res) => {
     try {
       const user = req.user!;
@@ -2098,6 +2172,11 @@ export async function registerRoutes(
       if (!Array.isArray(records)) {
         return res.status(400).json({ message: "records array required" });
       }
+      // BUG CORREGIDO: `recordedBy` es NOT NULL en el esquema de `attendance`,
+      // pero nunca se estaba enviando desde aquí — cada guardado fallaba con
+      // un 500 por violar la restricción de la base de datos. Se agrega
+      // también `institutionId` para mantener el aislamiento entre colegios
+      // consistente con el resto de tablas.
       const saved = await Promise.all(
         records.map((r: { studentId: string; status: string; date: string; notes?: string }) => 
           storage.recordAttendance({
@@ -2105,7 +2184,9 @@ export async function registerRoutes(
             studentId: r.studentId,
             status: r.status,
             date: new Date(r.date),
-            notes: r.notes || null
+            notes: r.notes || null,
+            recordedBy: user.id,
+            institutionId: user.institutionId,
           })
         )
       );
@@ -3172,14 +3253,14 @@ export async function registerRoutes(
 
   // ── Administración de vínculos (respaldo cuando el estudiante no puede
   // aprobar por sí mismo, típico en primaria) ──────────────────────────────
-  app.get("/api/admin/parent-links", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/parent-links", requireAuth, requireSecretary, async (req, res) => {
     try {
       if (!req.user!.institutionId) return res.json([]);
       res.json(await storage.getAllParentLinksForInstitution(req.user!.institutionId));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.post("/api/admin/parent-links/:id/respond", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/parent-links/:id/respond", requireAuth, requireSecretary, async (req, res) => {
     try {
       const { approve } = req.body as { approve: boolean };
       await storage.respondToParentLink(req.params.id, req.user!.id, !!approve);
@@ -3187,7 +3268,7 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.delete("/api/admin/parent-links/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/admin/parent-links/:id", requireAuth, requireSecretary, async (req, res) => {
     try {
       await storage.deleteParentLink(req.params.id);
       res.json({ message: "Vínculo eliminado" });

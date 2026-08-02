@@ -92,22 +92,6 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
-//classroom announcements table
-export const courseAnnouncements = pgTable("course_announcements", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  // Agrega aquí las columnas que necesites para los anuncios, por ejemplo:
-  title: varchar("title", { length: 255 }).notNull(),
-  content: text("content").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export const announcementComments = pgTable("announcement_comments", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  // Agrega aquí las columnas que necesites para los comentarios, por ejemplo:
-  announcementId: uuid("announcement_id").notNull(),
-  content: text("content").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
 
 // Groups table (courses and clubs)
 export const groups = pgTable("groups", {
@@ -469,6 +453,12 @@ export const academicGroups = pgTable("academic_groups", {
   institutionId: uuid("institution_id")
     .notNull()
     .references(() => institutionSettings.id, { onDelete: "cascade" }),
+  // Director de grupo: el docente encargado de este grado/grupo específico
+  // (asignado por directivos — rector/admin/coordinador). Antes solo existía
+  // `classroomTeacherId` repetido por cada matrícula individual de
+  // estudiante, lo cual obligaba a asignarlo uno por uno; ahora se asigna
+  // una sola vez a nivel de grupo.
+  homeroomTeacherId: varchar("homeroom_teacher_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -660,6 +650,42 @@ export const activities = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [index("idx_activities_course").on(table.courseId)]
+);
+
+// ====== TABLÓN DE PUBLICACIONES DEL AULA (estilo "Stream" de Classroom) ======
+// El docente (o admin) publica anuncios en el curso; cualquier estudiante
+// inscrito puede comentar. Es intencionalmente independiente del sistema de
+// "posts" de la comunidad (que usa groupId) porque un curso no siempre tiene
+// un grupo asociado, y el tablón de un aula es conceptualmente distinto de
+// un feed social.
+export const courseAnnouncements = pgTable(
+  "course_announcements",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    courseId: varchar("course_id").references(() => courses.id, { onDelete: "cascade" }).notNull(),
+    authorId: varchar("author_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    content: text("content").notNull(),
+    attachments: text("attachments").array().default(sql`ARRAY[]::text[]`),
+    pinned: boolean("pinned").default(false).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_announcements_course").on(table.courseId),
+    index("idx_announcements_created").on(table.createdAt),
+  ]
+);
+
+export const announcementComments = pgTable(
+  "announcement_comments",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    announcementId: varchar("announcement_id").references(() => courseAnnouncements.id, { onDelete: "cascade" }).notNull(),
+    authorId: varchar("author_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    content: text("content").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_announcement_comments_announcement").on(table.announcementId)]
 );
 
 export const submissions = pgTable(
@@ -1177,6 +1203,17 @@ export const activitiesRelations = relations(activities, ({ one, many }) => ({
   submissions: many(submissions),
 }));
 
+export const courseAnnouncementsRelations = relations(courseAnnouncements, ({ one, many }) => ({
+  course: one(courses, { fields: [courseAnnouncements.courseId], references: [courses.id] }),
+  author: one(users, { fields: [courseAnnouncements.authorId], references: [users.id] }),
+  comments: many(announcementComments),
+}));
+
+export const announcementCommentsRelations = relations(announcementComments, ({ one }) => ({
+  announcement: one(courseAnnouncements, { fields: [announcementComments.announcementId], references: [courseAnnouncements.id] }),
+  author: one(users, { fields: [announcementComments.authorId], references: [users.id] }),
+}));
+
 export const submissionsRelations = relations(submissions, ({ one }) => ({
   activity: one(activities, { fields: [submissions.activityId], references: [activities.id] }),
   student: one(users, { fields: [submissions.studentId], references: [users.id] }),
@@ -1222,6 +1259,8 @@ export const insertTeachingAssignmentSchema = createInsertSchema(teachingAssignm
 export const insertCourseSchema = createInsertSchema(courses).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertCourseEnrollmentSchema = createInsertSchema(courseEnrollments).omit({ id: true, enrolledAt: true });
 export const insertActivitySchema = createInsertSchema(activities, { dueDate: z.string().transform(val => val ? new Date(val) : null).optional().nullable() }).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertCourseAnnouncementSchema = createInsertSchema(courseAnnouncements).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertAnnouncementCommentSchema = createInsertSchema(announcementComments).omit({ id: true, createdAt: true });
 export const insertSubmissionSchema = createInsertSchema(submissions).omit({ id: true, submittedAt: true, grade: true, feedback: true, gradedAt: true, gradedBy: true });
 export const insertAttendanceSchema = createInsertSchema(attendance).omit({ id: true, createdAt: true });
 export const insertGradebookEntrySchema = createInsertSchema(gradebookEntries).omit({ id: true, createdAt: true, updatedAt: true });
@@ -1284,6 +1323,17 @@ export type CourseEnrollment = typeof courseEnrollments.$inferSelect;
 export type InsertCourseEnrollment = z.infer<typeof insertCourseEnrollmentSchema>;
 export type Activity = typeof activities.$inferSelect;
 export type InsertActivity = z.infer<typeof insertActivitySchema>;
+export type CourseAnnouncement = typeof courseAnnouncements.$inferSelect;
+export type InsertCourseAnnouncement = z.infer<typeof insertCourseAnnouncementSchema>;
+export type AnnouncementComment = typeof announcementComments.$inferSelect;
+export type InsertAnnouncementComment = z.infer<typeof insertAnnouncementCommentSchema>;
+export type AnnouncementCommentWithAuthor = AnnouncementComment & {
+  author: { id: string; firstName: string; lastName: string; profileImageUrl?: string | null; role: string };
+};
+export type CourseAnnouncementWithAuthor = CourseAnnouncement & {
+  author: { id: string; firstName: string; lastName: string; profileImageUrl?: string | null; role: string };
+  commentCount: number;
+};
 export type Submission = typeof submissions.$inferSelect;
 export type InsertSubmission = z.infer<typeof insertSubmissionSchema>;
 export type Attendance = typeof attendance.$inferSelect;

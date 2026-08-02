@@ -35,7 +35,7 @@ export function formatRole(role: string): string {
     teacher: "Profesor",
     admin: "Administrador",
     parent: "Padre/Acudiente",
-    director: "Director",
+    director: "Rector",
     coordinator: "Coordinador",
     secretary: "Secretaria",
     super_admin: "Super Admin",

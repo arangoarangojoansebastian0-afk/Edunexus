@@ -1312,6 +1312,18 @@ function TabGradosGrupos() {
     },
   });
  
+  const { data: teachers = [] } = useQuery<any[]>({ queryKey: ["/api/admin/users", "teacher"] });
+
+  const assignHomeroom = useMutation({
+    mutationFn: ({ groupId, teacherId }: { groupId: string; teacherId: string | null }) =>
+      apiRequest("PATCH", `/api/admin/academic-groups/${groupId}/homeroom-teacher`, { teacherId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/academic-groups"] });
+      toast({ title: "Director de grupo actualizado" });
+    },
+    onError: () => toast({ title: "Error al asignar director de grupo", variant: "destructive" }),
+  });
+
   const gradeById = (id: string) => (grades as any[]).find((g: any) => g.id === id);
  
   return (
@@ -1372,17 +1384,40 @@ function TabGradosGrupos() {
             {(academicGroups as any[]).map((g: any) => (
               <div
                 key={g.id}
-                className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/40 transition"
+                className="p-3 rounded-lg border bg-card hover:bg-muted/40 transition space-y-2"
               >
-                <div>
-                  <p className="font-medium">{g.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {gradeById(g.gradeId)?.name || "Sin grado asignado"}
-                  </p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">{g.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {gradeById(g.gradeId)?.name || "Sin grado asignado"}
+                    </p>
+                  </div>
+                  <Button size="icon" variant="ghost" onClick={() => deleteGroup.mutate(g.id)}>
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
                 </div>
-                <Button size="icon" variant="ghost" onClick={() => deleteGroup.mutate(g.id)}>
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground shrink-0">Director de grupo:</span>
+                  <Select
+                    value={g.homeroomTeacherId || "none"}
+                    onValueChange={(v) =>
+                      assignHomeroom.mutate({ groupId: g.id, teacherId: v === "none" ? null : v })
+                    }
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Sin asignar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Sin asignar</SelectItem>
+                      {(teachers as any[]).map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.firstName} {t.lastName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             ))}
             {academicGroups.length === 0 && (
@@ -2381,7 +2416,7 @@ function TabCodigos() {
   const roleLabel: Record<string, string> = {
     teacher: "Docente",
     coordinator: "Coordinador",
-    director: "Director",
+    director: "Rector",
     secretary: "Secretaria",
     admin: "Administrador",
   };
@@ -3837,96 +3872,112 @@ function TabAuditoria() {
 const TAB_SECTIONS = [
   {
     id: "dashboard",
+    allowedRoles: ["admin", "director", "super_admin", "coordinator", "secretary"],
     label: "Dashboard",
     icon: LayoutDashboard,
     component: TabDashboard,
   },
   {
     id: "colegio",
+    allowedRoles: ["admin", "director", "super_admin"],
     label: "Colegio",
     icon: School,
     component: TabConfigColegio,
   },
   {
     id: "academica",
+    allowedRoles: ["admin", "director", "super_admin", "coordinator"],
     label: "Académico",
     icon: Settings2,
     component: TabConfigAcademica,
   },
   {
     id: "materias",
+    allowedRoles: ["admin", "director", "super_admin", "coordinator"],
     label: "Materias",
     icon: BookOpen,
     component: TabMaterias,
   },
   {
     id: "grados",
+    allowedRoles: ["admin", "director", "super_admin", "coordinator"],
     label: "Grados/Grupos",
     icon: GraduationCap,
     component: TabGradosGrupos,
   },
   {
     id: "docentes",
+    allowedRoles: ["admin", "director", "super_admin", "coordinator", "secretary"],
     label: "Docentes",
     icon: UserCheck,
     component: TabDocentes,
   },
   {
     id: "estudiantes",
+    allowedRoles: ["admin", "director", "super_admin", "secretary"],
     label: "Estudiantes",
     icon: Users,
     component: TabEstudiantes,
   },
   {
     id: "matriculas",
+    allowedRoles: ["admin", "director", "super_admin", "secretary"],
     label: "Matrículas",
     icon: ClipboardList,
     component: TabMatriculas,
   },
   {
     id: "horarios",
+    allowedRoles: ["admin", "director", "super_admin", "coordinator", "secretary"],
     label: "Horarios",
     icon: Clock,
     component: TabHorarios,
   },
   {
     id: "observador",
+    allowedRoles: ["admin", "director", "super_admin", "coordinator"],
     label: "Observador",
     icon: Eye,
     component: TabObservador,
   },
   {
     id: "vinculos-padres",
+    allowedRoles: ["admin", "director", "super_admin", "secretary"],
     label: "Padres/Acudientes",
     icon: Link2,
     component: TabVinculosPadres,
   },
   {
     id: "boletines",
+    allowedRoles: ["admin", "director", "super_admin", "coordinator", "secretary"],
     label: "Boletines",
     icon: BarChart2,
     component: TabBoletines,
   },
   {
     id: "classroom",
+    allowedRoles: ["admin", "director", "super_admin", "coordinator"],
     label: "Classroom",
     icon: Monitor,
     component: TabClassroom,
   },
   {
     id: "biblioteca",
+    allowedRoles: ["admin", "director", "super_admin", "secretary"],
     label: "Biblioteca",
     icon: BookMarked,
     component: TabBiblioteca,
   },
   {
     id: "codigos",
+    allowedRoles: ["admin", "director", "super_admin", "secretary"],
     label: "Códigos",
     icon: Key,
     component: TabCodigos,
   },
   {
     id: "auditoria",
+    allowedRoles: ["admin", "director", "super_admin"],
     label: "Auditoría",
     icon: Shield,
     component: TabAuditoria,
@@ -3941,7 +3992,7 @@ export default function InstitutionalAdmin() {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState("dashboard");
  
-  const allowedRoles = ["admin", "director", "coordinator", "secretary"];
+  const allowedRoles = ["admin", "director", "coordinator", "secretary", "super_admin"];
  
   useEffect(() => {
     if (user && !allowedRoles.includes(user.role)) {
@@ -3955,9 +4006,24 @@ export default function InstitutionalAdmin() {
   }, [user, setLocation, toast]);
  
   const { data: institutionConfig } = useInstitutionSettings();
+
+  // Cada rol ve solo las secciones que le corresponden. Antes coordinador y
+  // secretaría veían TODAS las pestañas (el mismo panel completo que admin)
+  // pero cada acción fallaba con 403 al no tener permiso real en el backend
+  // — el panel se veía pero no servía. Ahora el frontend solo muestra lo que
+  // el backend realmente le va a dejar hacer.
+  const visibleTabs = TAB_SECTIONS.filter(
+    (tab) => user && tab.allowedRoles.includes(user.role)
+  );
+
+  useEffect(() => {
+    if (visibleTabs.length > 0 && !visibleTabs.some((t) => t.id === activeTab)) {
+      setActiveTab(visibleTabs[0].id);
+    }
+  }, [visibleTabs, activeTab]);
  
   const ActiveComponent =
-    TAB_SECTIONS.find((t) => t.id === activeTab)?.component || TabDashboard;
+    visibleTabs.find((t) => t.id === activeTab)?.component || visibleTabs[0]?.component || TabDashboard;
  
   return (
     <AppLayout>
@@ -3979,7 +4045,7 @@ export default function InstitutionalAdmin() {
           </div>
  
           <nav className="flex-1 space-y-0.5">
-            {TAB_SECTIONS.map((tab) => {
+            {visibleTabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
               return (
@@ -4011,7 +4077,7 @@ export default function InstitutionalAdmin() {
         <div className="lg:hidden w-full">
           <div className="border-b bg-card px-4 py-2 overflow-x-auto">
             <div className="flex gap-1 min-w-max">
-              {TAB_SECTIONS.map((tab) => {
+              {visibleTabs.map((tab) => {
                 const Icon = tab.icon;
                 return (
                   <button
@@ -4038,7 +4104,7 @@ export default function InstitutionalAdmin() {
           <div className="mb-6">
             <h1 className="text-xl font-bold flex items-center gap-2">
               {(() => {
-                const tab = TAB_SECTIONS.find((t) => t.id === activeTab);
+                const tab = visibleTabs.find((t) => t.id === activeTab);
                 const Icon = tab?.icon || LayoutDashboard;
                 return (
                   <>

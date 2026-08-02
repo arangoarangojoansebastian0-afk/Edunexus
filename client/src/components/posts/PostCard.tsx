@@ -25,6 +25,7 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 import { getFullName, getInitials, formatRole } from "@/lib/authUtils";
+import { FileViewer } from "@/components/FileViewer";
 import type { PostWithAuthor } from "@shared/schema";
 import { cn } from "@/lib/utils";
 
@@ -154,32 +155,7 @@ export function PostCard({
 
       <CardContent className="pb-3">
         <p className="text-sm whitespace-pre-wrap">{post.content}</p>
-        {post.media && post.media.length > 0 && (
-          <div className={cn(
-            "mt-3 grid gap-2",
-            post.media.length === 1 ? "grid-cols-1" : "grid-cols-2"
-          )}>
-            {post.media.slice(0, 4).map((url, idx) => (
-              <div
-                key={idx}
-                className="relative aspect-video rounded-lg overflow-hidden bg-muted"
-              >
-                <img
-                  src={url}
-                  alt={`Imagen ${idx + 1}`}
-                  className="w-full h-full object-cover"
-                />
-                {post.media.length > 4 && idx === 3 && (
-                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                    <span className="text-white font-semibold text-lg">
-                      +{post.media.length - 4}
-                    </span>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+        {post.media && post.media.length > 0 && <FileViewer urls={post.media} />}
       </CardContent>
 
       <CardFooter className="pt-0 border-t">

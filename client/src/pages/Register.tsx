@@ -17,7 +17,7 @@ const roleOptions: { value: Role; label: string; description: string; needsCode:
   { value: "parent",      label: "Padre/Acudiente", description: "Seguimiento de tus hijos",         needsCode: false },
   { value: "teacher",     label: "Maestro",       description: "Gestión de cursos y calificaciones", needsCode: true  },
   { value: "coordinator", label: "Coordinador",   description: "Coordinación académica",             needsCode: true  },
-  { value: "director",    label: "Director",      description: "Dirección de grupo o área",          needsCode: true  },
+  { value: "director",    label: "Rector",        description: "Máxima autoridad del colegio",        needsCode: true  },
   { value: "secretary",   label: "Secretaria",    description: "Gestión administrativa",             needsCode: true  },
   { value: "admin",       label: "Administrador", description: "Control total del sistema",          needsCode: true  },
 ];
