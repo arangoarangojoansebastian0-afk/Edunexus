@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { storage } from "./storage";
 import { db } from "./db";
-import { staffCodes, teacherCodes, institutionSettings } from "@shared/schema";
+import { staffCodes, teacherCodes, institutionSettings, academicYears } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
 
 export interface AuthSession {
@@ -29,7 +29,9 @@ export async function registerUser(
   lastName: string,
   role: RegisterRole = "student",
   accessCode?: string,
-  institutionId?: string  // <-- FIX: nuevo parámetro
+  institutionId?: string,  // <-- FIX: nuevo parámetro
+  gradeId?: string,
+  groupId?: string
 ) {
   // Normalizamos el correo (sin espacios, en minúsculas) para que login,
   // registro y recuperación de contraseña siempre comparen lo mismo — si no,
@@ -110,6 +112,43 @@ export async function registerUser(
     role,
     institutionId: institutionId || undefined,
   });
+
+  // BUG CORREGIDO: el formulario de registro ya le pedía "Grado" y "Grupo"
+  // al estudiante, pero esa elección nunca se guardaba en ningún lado — el
+  // schema de /api/auth/register ni siquiera aceptaba esos campos. El
+  // estudiante quedaba con el usuario creado pero SIN matrícula real
+  // (`student_enrollments`), así que nunca aparecía en el listado de su
+  // director de grupo, en asistencia, boletines, ni en ningún reporte que
+  // dependa de esa tabla — aunque visualmente pareciera "estar en el
+  // grupo" porque lo eligió al registrarse.
+  if (role === "student" && groupId && institutionId) {
+    try {
+      const activeYear = await db
+        .select()
+        .from(academicYears)
+        .where(sql`${academicYears.institutionId} = ${institutionId} AND ${academicYears.isActive} = true`)
+        .limit(1);
+
+      if (activeYear.length > 0) {
+        await storage.createStudentEnrollment({
+          studentId: user.id,
+          groupId,
+          academicYearId: activeYear[0].id,
+          institutionId,
+          status: "enrolled",
+          enrollmentType: "new",
+        });
+      }
+      // Si no hay ningún año académico activo configurado, se omite la
+      // matrícula automática en vez de fallar el registro completo — el
+      // admin/secretaría puede matricularlo manualmente después desde el
+      // panel. Vale la pena revisar que el colegio tenga un año activo.
+    } catch {
+      // No bloqueamos el registro del usuario si la matrícula automática
+      // falla por cualquier motivo — el usuario ya quedó creado y se
+      // puede matricular manualmente después.
+    }
+  }
 
   return user;
 }

@@ -32,6 +32,15 @@ const registerSchema = z.object({
     .default("student"),
   accessCode: z.string().optional(),
   institutionId: z.string().optional(), // <-- FIX: recibimos el ID de institución
+  // BUG CORREGIDO: el formulario de registro ya le pedía al estudiante su
+  // grado y grupo (8-1, 9-1, etc.), pero este schema no los aceptaba —
+  // Zod descarta en silencio cualquier campo que no esté declarado aquí,
+  // así que esa elección se perdía sin ningún error visible. El
+  // estudiante quedaba registrado sin ninguna matrícula real, por lo que
+  // nunca aparecía en el roster de su director de grupo ni en ningún
+  // reporte que dependiera de `student_enrollments`.
+  gradeId: z.string().optional(),
+  groupId: z.string().optional(),
   // Correo del hijo/a — solo aplica cuando role === "parent". Queda pendiente
   // de aprobación por el estudiante (o un admin) antes de ver cualquier dato.
   studentEmail: z.string().email().optional(),
@@ -54,7 +63,9 @@ export function setupAuthRoutes(app: Express) {
         data.lastName,
         data.role,
         data.accessCode,
-        data.institutionId  // <-- FIX: pasamos el institutionId
+        data.institutionId,  // <-- FIX: pasamos el institutionId
+        data.gradeId,
+        data.groupId
       );
 
       req.session.userId = user.id;
