@@ -929,7 +929,10 @@ export async function registerRoutes(
       }
       res.json(await storage.createStudentEnrollment({ ...req.body, institutionId: req.user.institutionId }));
     }
-    catch { res.status(500).json({ message: "Error" }); }
+    catch (err: any) {
+      console.error("[enrollments] Error al crear matrícula:", err.message || err);
+      res.status(500).json({ message: "Error al crear la matrícula" });
+    }
   });
 
   app.get("/api/admin/enrollments/:id", requireAuth, requireSecretary, async (req, res) => {

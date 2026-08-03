@@ -3256,6 +3256,19 @@ async getInstitutionByCode(code: string) {
   }
 
   async createStudentEnrollment(data: any) {
+    // BUG CORREGIDO: el formulario de "Nueva matrícula" manda
+    // `previousYear: ""` (string vacío) cuando el campo "Último año
+    // aprobado" se deja en blanco — pero esa columna es INTEGER en la
+    // base de datos, y Postgres rechaza con un 500 cualquier intento de
+    // guardar un string vacío ahí. Lo mismo puede pasar si algún día se
+    // agregan otros campos numéricos opcionales al formulario.
+    if (data.previousYear === "" || data.previousYear === undefined) {
+      data.previousYear = null;
+    } else if (typeof data.previousYear === "string") {
+      const parsed = parseInt(data.previousYear, 10);
+      data.previousYear = Number.isNaN(parsed) ? null : parsed;
+    }
+
     // Generar número de matrícula automático si no viene
     if (!data.enrollmentNumber) {
       const year = new Date().getFullYear();
@@ -3273,6 +3286,14 @@ async getInstitutionByCode(code: string) {
   }
 
   async updateStudentEnrollment(id: string, data: any) {
+    // Mismo saneo que en createStudentEnrollment: previousYear no puede
+    // llegar como string vacío a una columna INTEGER.
+    if (data.previousYear === "" || data.previousYear === undefined) {
+      data.previousYear = null;
+    } else if (typeof data.previousYear === "string") {
+      const parsed = parseInt(data.previousYear, 10);
+      data.previousYear = Number.isNaN(parsed) ? null : parsed;
+    }
     const [updated] = await db.update(studentEnrollments)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(studentEnrollments.id, id))
