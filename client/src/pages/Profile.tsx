@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { usePersistentState } from "@/hooks/usePersistentState";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation, Link } from "wouter";
 import { useCall } from "@/context/CallContext";
@@ -140,6 +141,32 @@ export default function Profile() {
     },
   });
 
+  const [profileDraft, setProfileDraft, clearProfileDraft] = usePersistentState<Partial<ProfileForm> | null>(`profile-draft-${profileUserId || "self"}`, null);
+  const draftLoaded = useRef(false);
+
+  useEffect(() => {
+    if (isOwnProfile && displayUser && profileDraft && !draftLoaded.current) {
+      form.reset({
+        firstName: profileDraft.firstName || displayUser.firstName || "",
+        lastName: profileDraft.lastName || displayUser.lastName || "",
+        grade: profileDraft.grade || displayUser.grade || "",
+        bio: profileDraft.bio || displayUser.bio || "",
+        interests: profileDraft.interests || displayUser.interests || [],
+      });
+      draftLoaded.current = true;
+    }
+  }, [isOwnProfile, displayUser, form, profileDraft]);
+
+  useEffect(() => {
+    if (!isOwnProfile || !isEditOpen) return;
+    const subscription = form.watch((values) => setProfileDraft(values));
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (form.formState.isDirty) { event.preventDefault(); event.returnValue = ""; }
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => { subscription.unsubscribe(); window.removeEventListener("beforeunload", beforeUnload); };
+  }, [isOwnProfile, isEditOpen, form, setProfileDraft]);
+
   const { data: posts, isLoading: postsLoading } = useQuery<PostWithAuthor[]>({
     queryKey: ["/api/users", profileUserId, "posts"],
     enabled: !!profileUserId,
@@ -149,6 +176,16 @@ export default function Profile() {
     queryKey: ["/api/users", profileUserId, "files"],
     enabled: !!profileUserId,
   });
+
+  const { data: ownGrades = [] } = useQuery<Array<{ grade: string }>>({
+    queryKey: ["/api/gradebook/me"],
+    enabled: isOwnProfile && displayUser?.role === "student",
+  });
+
+  const ownNumericGrades = ownGrades.map((entry) => Number(String(entry.grade).replace(",", "."))).filter(Number.isFinite);
+  const ownAverage = ownNumericGrades.length
+    ? ownNumericGrades.reduce((sum, value) => sum + value, 0) / ownNumericGrades.length
+    : null;
 
   const { data: badges, refetch: refetchBadges } = useQuery<(UserBadge & { badge: BadgeType })[]>({
     queryKey: ["/api/users", profileUserId, "badges"],
@@ -213,6 +250,7 @@ export default function Profile() {
       await apiRequest("PATCH", "/api/users/me", data);
     },
     onSuccess: () => {
+      clearProfileDraft();
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       if (!isOwnProfile && profileUserId) {
         queryClient.invalidateQueries({ queryKey: ["/api/users", profileUserId] });
@@ -502,6 +540,13 @@ export default function Profile() {
             </CardContent>
           </Card>
 
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Publicaciones</p><p className="mt-1 text-2xl font-semibold">{posts?.length || 0}</p></CardContent></Card>
+            <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Archivos</p><p className="mt-1 text-2xl font-semibold">{files?.length || 0}</p></CardContent></Card>
+            {isOwnProfile && displayUser?.role === "student" && <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Notas registradas</p><p className="mt-1 text-2xl font-semibold">{ownGrades.length}</p></CardContent></Card>}
+            {isOwnProfile && displayUser?.role === "student" && <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Promedio</p><p className="mt-1 text-2xl font-semibold">{ownAverage === null ? "—" : ownAverage.toFixed(2)}</p></CardContent></Card>}
+          </div>
+
           {/* Badges */}
           {(badges && badges.length > 0) || (!isOwnProfile && authUser && (authUser.role === "teacher" || authUser.role === "admin") && displayUser?.role === "student") ? (
             <Card>
@@ -647,7 +692,7 @@ export default function Profile() {
                     <FileCard
                       key={file.id}
                       file={file}
-                      isOwner={true}
+                      isOwner={file.uploaderId === authUser?.id}
                     />
                   ))}
                 </div>

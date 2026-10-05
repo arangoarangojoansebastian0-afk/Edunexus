@@ -387,3 +387,20 @@ html.accessibility-reduce-motion *::after {
   animation-iteration-count: 1 !important;
   transition-duration: .01ms !important;
 }
+
+/* EduNexus final responsive pass */
+@media (max-width: 767px) {
+  .edunexus-main .overflow-x-auto { -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+  .edunexus-main table { min-width: 640px; }
+  .edunexus-main [role="dialog"] { max-height: 92vh; overflow-y: auto; }
+  .edunexus-main input, .edunexus-main textarea, .edunexus-main select, .edunexus-main button { max-width: 100%; }
+  .edunexus-main .grid-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .edunexus-main .grid-cols-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .edunexus-main .sticky { max-width: 100vw; }
+}
+@media (min-width: 768px) and (max-width: 1024px) {
+  .edunexus-main table { min-width: 600px; }
+}
+.edunexus-main img { max-width: 100%; }
+.edunexus-main button:disabled { cursor: not-allowed; }
+.edunexus-main :focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }

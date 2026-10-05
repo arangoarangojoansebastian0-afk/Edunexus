@@ -25,18 +25,19 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { FileText, Users, Calendar, BookOpen, ClipboardList, X } from "lucide-react";
+import { FileText, Users, Calendar, BookOpen, ClipboardList, X, MessageSquare, ShieldCheck, UserPlus, CheckCircle2, BarChart3 } from "lucide-react";
 import type { PostWithAuthor, Group, EventWithHost, User } from "@shared/schema";
 import { Link } from "wouter";
 import { getFullName, getInitials } from "@/lib/authUtils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { usePersistentState } from "@/hooks/usePersistentState";
 
 const grades = ["6", "7", "8", "9", "10", "11"];
 
 export default function Home() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [gradeFilter, setGradeFilter] = useState<string>("all");
+  const [gradeFilter, setGradeFilter] = usePersistentState<string>("home-grade-filter", "all");
   const [expandedCommentPostId, setExpandedCommentPostId] = useState<string | null>(null);
   const [convertPostId, setConvertPostId] = useState<string | null>(null);
   const [selectedPost, setSelectedPost] = useState<PostWithAuthor | null>(null);
@@ -217,6 +218,19 @@ export default function Home() {
                 </CardContent>
               </Card>
             )}
+
+            <Card className="border-primary/15 bg-primary/[0.025]">
+              <CardHeader className="pb-3"><CardTitle className="text-base">Accesos rápidos</CardTitle></CardHeader>
+              <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {(user?.role === "student" ? [
+                  ["Entregar actividad", "/classroom", ClipboardList], ["Ver calificaciones", "/grades", BarChart3], ["Mensajes", "/messages", MessageSquare], ["Calendario", "/calendar", Calendar]
+                ] : user?.role === "teacher" ? [
+                  ["Crear actividad", "/classroom", ClipboardList], ["Revisar entregas", "/grades", CheckCircle2], ["Publicar anuncio", "/", FileText], ["Abrir curso", "/classroom", BookOpen]
+                ] : [
+                  ["Gestionar usuarios", "/admin", UserPlus], ["Gestionar cursos", "/admin", BookOpen], ["Ver estadísticas", "/admin", BarChart3], ["Administración", "/admin", ShieldCheck]
+                ]).map(([label, href, Icon]) => <Button key={label as string} asChild variant="outline" className="h-auto min-h-16 justify-start gap-2 whitespace-normal text-left"><Link href={href as string}><Icon className="h-4 w-4 shrink-0" /><span className="text-xs sm:text-sm">{label as string}</span></Link></Button>)}
+              </CardContent>
+            </Card>
 
             {/* Create Post */}
             <CreatePostCard

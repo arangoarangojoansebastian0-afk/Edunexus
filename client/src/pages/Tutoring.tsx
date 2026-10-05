@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { usePersistentState } from "@/hooks/usePersistentState";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { EventCard, EventCardSkeleton } from "@/components/tutoring/EventCard";
@@ -107,8 +108,8 @@ export default function Tutoring() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("available");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [subjectFilter, setSubjectFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = usePersistentState("tutoring-search", "");
+  const [subjectFilter, setSubjectFilter] = usePersistentState<string>("tutoring-subject", "all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   const form = useForm<CreateEventForm>({
@@ -130,17 +131,17 @@ export default function Tutoring() {
 
   const { data: events, isLoading, refetch: refetchEvents } = useQuery<EventWithHost[]>({
     queryKey: ["/api/events"],
-    refetchInterval: 3000,
+    refetchInterval: 30000,
   });
 
   const { data: myEvents, refetch: refetchMyEvents } = useQuery<EventWithHost[]>({
     queryKey: ["/api/events/my"],
-    refetchInterval: 3000,
+    refetchInterval: 30000,
   });
 
   const { data: myBookings, refetch: refetchMyBookings } = useQuery<EventWithHost[]>({
     queryKey: ["/api/events/booked"],
-    refetchInterval: 3000,
+    refetchInterval: 30000,
   });
 
   const { data: allGroups } = useQuery<{ id: string; name: string }[]>({

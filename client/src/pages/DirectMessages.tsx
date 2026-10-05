@@ -1,3 +1,4 @@
+import { usePersistentState } from "@/hooks/usePersistentState";
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
@@ -87,7 +88,7 @@ export default function DirectMessages() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const uploadRequest = useRef<{ abort: () => void } | null>(null);
   const [search, setSearch] = useState("");
-  const [conversationFilter, setConversationFilter] = useState("");
+  const [conversationFilter, setConversationFilter] = usePersistentState("messages-filter", "");
   const [messageSearch, setMessageSearch] = useState("");
   const [showMessageSearch, setShowMessageSearch] = useState(false);
   const [showSearch, setShowSearch] = useState(false);

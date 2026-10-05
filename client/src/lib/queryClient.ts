@@ -1,4 +1,4 @@
-import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { QueryClient, QueryFunction, QueryCache, MutationCache } from "@tanstack/react-query";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -41,17 +41,26 @@ export const getQueryFn: <T>(options: {
     return await res.json();
   };
 
+function reportGlobalError(error: unknown) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("edunexus:api-error", { detail: { message: error instanceof Error ? error.message : "No se pudo completar la operación." } }));
+}
+
 export const queryClient = new QueryClient({
+  queryCache: new QueryCache({ onError: reportGlobalError }),
+  mutationCache: new MutationCache({ onError: reportGlobalError }),
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
-      refetchOnWindowFocus: false,
-      staleTime: Infinity,
-      retry: false,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      staleTime: 30_000,
+      retry: (failureCount, error: any) => {
+        if (error?.status === 401 || error?.message?.startsWith("401:")) return false;
+        return failureCount < 2;
+      },
     },
-    mutations: {
-      retry: false,
-    },
+    mutations: { retry: 1 },
   },
 });

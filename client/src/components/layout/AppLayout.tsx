@@ -3,12 +3,14 @@ import { AppSidebar } from "./AppSidebar";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { UserMenu } from "@/components/UserMenu";
 import { Button } from "@/components/ui/button";
-import { Bell, Search, Command, ArrowRight, X, Loader2 } from "lucide-react";
+import { Bell, Search, Command, ArrowRight, X, Loader2, Home, BookOpen, MessageSquare, CalendarDays, BarChart3, WifiOff } from "lucide-react";
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useInstitutionSettings } from "@/hooks/useInstitutionSettings";
 import { useQuery } from "@tanstack/react-query";
 import { useAccessibilityPreferences } from "@/hooks/useAccessibilityPreferences";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 
 type SearchHit = { title: string; description: string; href: string };
 type GlobalSearchData = Record<string, SearchHit[]>;
@@ -100,11 +102,14 @@ const quickLinks = [
 
 export function AppLayout({ children, title }: AppLayoutProps) {
   useAccessibilityPreferences();
+  const { user } = useAuth();
+  const { toast } = useToast();
   const institution = useInstitutionColors();
   const [location, navigate] = useLocation();
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedTerm, setDebouncedTerm] = useState("");
+  const [online, setOnline] = useState(() => typeof navigator === "undefined" ? true : navigator.onLine);
   const searchInput = useRef<HTMLInputElement>(null);
   const style = {
     "--sidebar-width": "16rem",
@@ -121,6 +126,13 @@ export function AppLayout({ children, title }: AppLayoutProps) {
     const timer = window.setTimeout(() => setDebouncedTerm(searchTerm.trim()), 250);
     return () => window.clearTimeout(timer);
   }, [searchTerm]);
+
+  const { data: notificationItems = [] } = useQuery<Array<{ read: boolean }>>({
+    queryKey: ["/api/notifications"],
+    enabled: !!searchOpen || location !== "/login",
+    staleTime: 15_000,
+  });
+  const unreadNotifications = notificationItems.filter((item) => !item.read).length;
 
   const globalSearch = useQuery<GlobalSearchData>({
     queryKey: ["/api/search/global", debouncedTerm],
@@ -148,6 +160,25 @@ export function AppLayout({ children, title }: AppLayoutProps) {
     ].filter((group) => group.items.length > 0);
   }, [globalSearch.data]);
   const firstGlobalResult = resultGroups[0]?.items[0];
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ message?: string }>).detail;
+      const raw = detail?.message || "No se pudo completar la operación.";
+      const message = raw.replace(/^\d+:\s*/, "").slice(0, 180);
+      toast({ title: "No se pudo completar la operación", description: message || "Intenta nuevamente.", variant: "destructive" });
+    };
+    window.addEventListener("edunexus:api-error", handler);
+    return () => window.removeEventListener("edunexus:api-error", handler);
+  }, [toast]);
+
+  useEffect(() => {
+    const onlineHandler = () => setOnline(true);
+    const offlineHandler = () => setOnline(false);
+    window.addEventListener("online", onlineHandler);
+    window.addEventListener("offline", offlineHandler);
+    return () => { window.removeEventListener("online", onlineHandler); window.removeEventListener("offline", offlineHandler); };
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -185,14 +216,26 @@ export function AppLayout({ children, title }: AppLayoutProps) {
               <Button type="button" variant="outline" onClick={() => setSearchOpen(true)} className="edunexus-search-trigger h-9 justify-start gap-2 px-2.5 sm:px-3 text-muted-foreground" aria-label="Buscar en EduNexus">
                 <Search className="h-4 w-4" /><span className="hidden sm:inline text-sm">Buscar en EduNexus</span><kbd className="ml-3 hidden lg:inline-flex items-center gap-1 rounded border bg-muted px-1.5 py-0.5 text-[10px] font-medium"><Command className="h-3 w-3"/> K</kbd>
               </Button>
-              <Button asChild variant="ghost" size="icon" className="relative" aria-label="Abrir notificaciones"><Link href="/notifications"><Bell className="h-[18px] w-[18px]" /></Link></Button>
+              <Button asChild variant="ghost" size="icon" className="relative" aria-label="Abrir notificaciones"><Link href="/notifications"><Bell className="h-[18px] w-[18px]" />{unreadNotifications > 0 && <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-semibold text-destructive-foreground">{unreadNotifications > 99 ? "99+" : unreadNotifications}</span>}</Link></Button>
               <ThemeToggle />
               <UserMenu />
             </div>
           </header>
-          <main className="edunexus-main flex-1 overflow-auto">
+          <main className="edunexus-main flex-1 overflow-auto pb-16 sm:pb-0">
+            {!online && <div role="status" className="mx-auto max-w-7xl px-4 pt-3 sm:px-6"><div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"><WifiOff className="h-4 w-4 shrink-0" /> Sin conexión. Los cambios que requieran servidor esperarán hasta recuperar internet.</div></div>}
             <div key={location} className="edunexus-page-enter">{children}</div>
           </main>
+          <nav aria-label="Navegación móvil" className="fixed inset-x-0 bottom-0 z-50 border-t bg-background/95 backdrop-blur-xl sm:hidden">
+            <div className="grid grid-cols-5">
+              {[
+                { href: "/", label: "Inicio", Icon: Home },
+                { href: "/classroom", label: "Aula", Icon: BookOpen },
+                { href: "/messages", label: "Mensajes", Icon: MessageSquare },
+                { href: "/calendar", label: "Calendario", Icon: CalendarDays },
+                { href: "/grades", label: "Notas", Icon: BarChart3 },
+              ].map(({ href, label, Icon }) => <Link key={href} href={href} className={`flex min-h-14 flex-col items-center justify-center gap-0.5 text-[10px] ${location === href ? "text-primary font-semibold" : "text-muted-foreground"}`} aria-current={location === href ? "page" : undefined}><Icon className="h-4 w-4" /><span>{label}</span></Link>)}
+            </div>
+          </nav>
         </SidebarInset>
       </div>
       {searchOpen && (

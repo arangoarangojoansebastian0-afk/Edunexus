@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { usePersistentState } from "@/hooks/usePersistentState";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { GroupCard, GroupCardSkeleton } from "@/components/groups/GroupCard";
@@ -57,9 +58,9 @@ export default function Groups() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("discover");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [gradeFilter, setGradeFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = usePersistentState("groups-search", "");
+  const [typeFilter, setTypeFilter] = usePersistentState<string>("groups-type", "all");
+  const [gradeFilter, setGradeFilter] = usePersistentState<string>("groups-grade", "all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   const form = useForm<CreateGroupForm>({
@@ -74,12 +75,12 @@ export default function Groups() {
 
   const { data: allGroups, isLoading: allLoading, refetch: refetchAllGroups } = useQuery<GroupWithMembers[]>({
     queryKey: ["/api/groups"],
-    refetchInterval: 3000,
+    refetchInterval: 30000,
   });
 
   const { data: myGroups, isLoading: myLoading, refetch: refetchMyGroups } = useQuery<GroupWithMembers[]>({
     queryKey: ["/api/groups/my"],
-    refetchInterval: 3000,
+    refetchInterval: 30000,
   });
 
   const myGroupIds = new Set(myGroups?.map((g) => g.id) || []);

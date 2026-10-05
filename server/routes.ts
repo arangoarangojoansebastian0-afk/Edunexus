@@ -1455,6 +1455,45 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: "Error al obtener calificaciones" }); }
   });
 
+  app.get("/api/gradebook/teacher", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      if (user.role !== "teacher" || !user.institutionId) return res.json([]);
+      const { courses, activities, submissions, users } = await import("@shared/schema");
+      const { and, eq, inArray, desc } = await import("drizzle-orm");
+      const teacherCourses = await db.select({ id: courses.id, name: courses.name })
+        .from(courses)
+        .where(and(eq(courses.teacherId, user.id), eq(courses.institutionId, user.institutionId), eq(courses.isActive, true)));
+      if (!teacherCourses.length) return res.json([]);
+      const courseIds = teacherCourses.map((course) => course.id);
+      const rows = await db.select({
+        id: submissions.id,
+        courseId: activities.courseId,
+        courseName: courses.name,
+        activityId: submissions.activityId,
+        activityTitle: activities.title,
+        maxScore: activities.maxScore,
+        studentId: submissions.studentId,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        grade: submissions.grade,
+        feedback: submissions.feedback,
+        submittedAt: submissions.submittedAt,
+        status: submissions.status,
+      }).from(submissions)
+        .innerJoin(activities, eq(submissions.activityId, activities.id))
+        .innerJoin(courses, eq(activities.courseId, courses.id))
+        .innerJoin(users, eq(submissions.studentId, users.id))
+        .where(and(inArray(activities.courseId, courseIds), eq(courses.institutionId, user.institutionId)))
+        .orderBy(desc(submissions.submittedAt))
+        .limit(300);
+      res.json(rows.map((row) => ({ ...row, studentName: `${row.firstName || ""} ${row.lastName || ""}`.trim() || "Estudiante" })));
+    } catch (error) {
+      console.error("[teacher-gradebook]", error);
+      res.status(500).json({ message: "No se pudieron cargar las entregas" });
+    }
+  });
+
   app.get("/api/gradebook/me", requireAuth, async (req, res) => {
     try {
       const user = req.user!;
@@ -2679,7 +2718,7 @@ export async function registerRoutes(
       if (user.role === "teacher" && course.teacherId !== user.id) {
         return res.status(403).json({ message: "No eres el docente de este curso" });
       }
-      if (user.role === "student") {
+      if (user.role === "student" || (!FULL_ACCESS_ROLES.includes(user.role) && user.role !== "teacher")) {
         return res.status(403).json({ message: "Not authorized" });
       }
 

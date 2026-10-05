@@ -28,6 +28,7 @@ const Profile = lazy(() => import("@/pages/Profile"));
 const Admin = lazy(() => import("@/pages/Admin"));
 const SuperAdmin = lazy(() => import("@/pages/SuperAdmin"));
 const Notifications = lazy(() => import("@/pages/Notifications"));
+const Grades = lazy(() => import("@/pages/Grades"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const Classroom = lazy(() => import("@/pages/Classroom"));
 const CourseDetail = lazy(() => import("@/pages/CourseDetail"));
@@ -37,6 +38,7 @@ const DirectMessages = lazy(() => import("@/pages/DirectMessages"));
 import { CallProvider } from "@/context/CallContext";
 import { GlobalCallUI } from "@/components/calls/CallUI";
 import NotFound from "@/pages/not-found";
+import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 
 function Router() {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -78,6 +80,7 @@ function Router() {
           <Route path="/admin" component={canOpenAdmin ? Admin : NotFound} />
           <Route path="/super-admin" component={user?.role === "super_admin" ? SuperAdmin : NotFound} />
           <Route path="/notifications" component={Notifications} />
+          <Route path="/grades" component={isParent ? NotFound : Grades} />
           <Route path="/settings" component={Settings} />
           <Route path="/classroom" component={isParent ? NotFound : Classroom} />
           <Route path="/classroom/:id" component={isParent ? NotFound : CourseDetail} />
@@ -102,7 +105,7 @@ function App() {
           <TooltipProvider>
             <Toaster />
             <GlobalCallUI />
-            <Router />
+            <AppErrorBoundary><Router /></AppErrorBoundary>
           </TooltipProvider>
         </CallProvider>
       </AuthProvider>

@@ -1,3 +1,4 @@
+import { usePersistentState } from "@/hooks/usePersistentState";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -342,7 +343,7 @@ export default function Classroom() {
   const [showCreate, setShowCreate] = useState(false);
   const [view, setView] = useState<"mine" | "all">("mine");
   const [enrollingId, setEnrollingId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = usePersistentState("classroom-search", "");
 
   const isTeacher = user?.role === "teacher" || user?.role === "admin";
 

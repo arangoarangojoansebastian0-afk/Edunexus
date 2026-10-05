@@ -1,3 +1,4 @@
+import { usePersistentState } from "@/hooks/usePersistentState";
 import { FileViewer } from "@/components/FileViewer";
 import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -84,11 +85,11 @@ export default function Library() {
   const { user } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [subjectFilter, setSubjectFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = usePersistentState("library-search", "");
+  const [subjectFilter, setSubjectFilter] = usePersistentState<string>("library-subject", "all");
   const [sortBy, setSortBy] = useState<"recent" | "name" | "size">("recent");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [ownerFilter, setOwnerFilter] = useState<"all" | "mine">("all");
+  const [typeFilter, setTypeFilter] = usePersistentState("library-type", "all");
+  const [ownerFilter, setOwnerFilter] = usePersistentState<"all" | "mine">("library-owner", "all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -104,7 +105,7 @@ export default function Library() {
 
   const { data: files, isLoading, refetch: refetchFiles } = useQuery<FileWithUploader[]>({
     queryKey: ["/api/files"],
-    refetchInterval: 60000,
+    refetchInterval: 120000,
   });
 
   const filteredFiles = files?.filter((file) => {
