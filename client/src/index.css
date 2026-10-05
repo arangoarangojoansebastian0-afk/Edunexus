@@ -286,3 +286,104 @@
     inset: -1px;
   }
 }
+
+
+/* ──────────────────────────────────────────────────────────────────────────
+   EduNexus UI refresh · accessible, responsive, institution-aware
+   ────────────────────────────────────────────────────────────────────────── */
+:root {
+  --radius: 0.9rem;
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-serif: Poppins, Inter, ui-sans-serif, system-ui, sans-serif;
+  --background: 220 30% 98%;
+  --foreground: 222 35% 14%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 35% 14%;
+  --card-border: 220 24% 91%;
+  --border: 220 22% 90%;
+  --input: 220 20% 86%;
+  --muted: 220 25% 95%;
+  --muted-foreground: 218 14% 44%;
+  --primary: 224 76% 52%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 224 76% 52%;
+  --sidebar: 222 35% 11%;
+  --sidebar-foreground: 220 20% 93%;
+  --sidebar-border: 222 25% 19%;
+  --sidebar-primary: 224 82% 65%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 222 28% 18%;
+  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-ring: 224 82% 65%;
+}
+.dark {
+  --background: 224 30% 7%;
+  --foreground: 220 20% 95%;
+  --card: 224 25% 10%;
+  --card-foreground: 220 20% 95%;
+  --card-border: 224 20% 17%;
+  --border: 224 20% 18%;
+  --input: 224 18% 22%;
+  --muted: 224 22% 14%;
+  --muted-foreground: 220 12% 66%;
+  --primary: 224 86% 67%;
+  --primary-foreground: 224 40% 10%;
+  --ring: 224 86% 67%;
+  --sidebar: 225 32% 8%;
+  --sidebar-foreground: 220 20% 93%;
+  --sidebar-border: 224 24% 15%;
+  --sidebar-primary: 224 86% 67%;
+  --sidebar-primary-foreground: 224 40% 10%;
+  --sidebar-accent: 224 22% 14%;
+  --sidebar-accent-foreground: 220 20% 96%;
+  --sidebar-ring: 224 86% 67%;
+}
+html { scroll-behavior: smooth; }
+body { font-feature-settings: "ss01" on, "cv11" on; -webkit-font-smoothing: antialiased; }
+::selection { background: hsl(var(--primary) / .18); }
+:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+button, a, input, textarea, select { -webkit-tap-highlight-color: transparent; }
+.edunexus-app-shell { background: radial-gradient(ellipse at 75% -15%, hsl(var(--primary) / .055), transparent 42%), hsl(var(--background)); }
+.edunexus-topbar { border-color: hsl(var(--border) / .85); box-shadow: 0 4px 24px hsl(222 35% 12% / .025); }
+.edunexus-main { min-width: 0; }
+.edunexus-main > div { min-height: 100%; }
+.edunexus-page-enter { animation: edunexus-enter .22s ease-out both; }
+@keyframes edunexus-enter { from { opacity: .55; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.edunexus-search-trigger { border-color: hsl(var(--border)); background: hsl(var(--card) / .76); border-radius: 999px; }
+.edunexus-search-trigger:hover { color: hsl(var(--foreground)); border-color: hsl(var(--primary) / .45); background: hsl(var(--card)); }
+.edunexus-command-backdrop { position: fixed; z-index: 100; inset: 0; display: flex; justify-content: center; align-items: flex-start; padding: min(15vh, 120px) 16px 24px; background: hsl(222 40% 8% / .48); backdrop-filter: blur(7px); animation: edunexus-fade .12s ease-out; }
+.edunexus-command-panel { width: min(100%, 600px); overflow: hidden; border: 1px solid hsl(var(--border)); border-radius: 20px; background: hsl(var(--card)); color: hsl(var(--card-foreground)); box-shadow: 0 28px 90px hsl(222 45% 5% / .3); animation: edunexus-pop .16s ease-out; }
+.edunexus-command-result { transition: background .15s ease, transform .15s ease; }
+.edunexus-command-result:hover, .edunexus-command-result:focus-visible { background: hsl(var(--primary) / .075); transform: translateX(2px); outline: none; }
+@keyframes edunexus-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes edunexus-pop { from { opacity: .6; transform: translateY(-5px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
+/* Shared component polish without overriding each module's own layout. */
+.edunexus-main [data-radix-collection-item], .edunexus-main [role="tab"] { transition: background-color .16s ease, color .16s ease, border-color .16s ease; }
+.edunexus-main [class*="rounded-lg"][class*="border"], .edunexus-main [class*="rounded-xl"][class*="border"] { border-color: hsl(var(--border) / .9); }
+.edunexus-main .shadow-sm { box-shadow: 0 2px 8px hsl(222 35% 12% / .035); }
+.edunexus-main .shadow-md { box-shadow: 0 10px 28px hsl(222 35% 12% / .07); }
+@media (max-width: 640px) {
+  .edunexus-topbar { gap: .35rem; }
+  .edunexus-search-trigger { width: 38px; padding-inline: 0; justify-content: center; }
+  .edunexus-main { overflow-x: hidden; }
+  .edunexus-command-backdrop { padding-top: 8vh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+.edunexus-sidebar-brand { padding-bottom: 1.15rem; }
+.edunexus-brand-mark { box-shadow: 0 8px 24px hsl(var(--sidebar-primary) / .18); }
+[data-sidebar="menu-button"][data-active="true"] { box-shadow: inset 3px 0 0 hsl(var(--sidebar-primary)); }
+
+html.accessibility-large-text { font-size: 112.5%; }
+html.accessibility-high-contrast { --muted-foreground: 220 18% 22%; --border: 220 18% 78%; --input: 220 18% 58%; }
+html.dark.accessibility-high-contrast { --muted-foreground: 220 12% 82%; --border: 220 12% 34%; --input: 220 12% 50%; }
+html.accessibility-reduce-motion *,
+html.accessibility-reduce-motion *::before,
+html.accessibility-reduce-motion *::after {
+  scroll-behavior: auto !important;
+  animation-duration: .01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: .01ms !important;
+}

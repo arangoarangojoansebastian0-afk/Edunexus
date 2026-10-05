@@ -32,11 +32,16 @@ interface PushPayload {
   url?: string;
 }
 
+type PushPreference = "pushNewPost" | "pushNewAnswer" | "pushNewMessage";
+
 // Manda una notificación push a TODAS las suscripciones (dispositivos/navegadores)
 // registradas por ese usuario. Nunca lanza — cualquier fallo queda en el log.
-export async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
+export async function sendPushToUser(userId: string, payload: PushPayload, preference?: PushPreference): Promise<void> {
   if (!pushEnabled) return;
   try {
+    const prefs = await storage.getNotificationPreferences(userId);
+    if (prefs && !prefs.pushEnabled) return;
+    if (preference && prefs && !prefs[preference]) return;
     const subs = await storage.getPushSubscriptionsForUser(userId);
     if (subs.length === 0) return;
 

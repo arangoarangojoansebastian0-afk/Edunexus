@@ -34,6 +34,10 @@ import {
   BookOpen,
   FileText,
   AlertCircle,
+  List,
+  LayoutGrid,
+  Download,
+  Trash2,
 } from "lucide-react";
 import type { FileWithUploader } from "@shared/schema";
 import { useForm } from "react-hook-form";
@@ -82,6 +86,10 @@ export default function Library() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [subjectFilter, setSubjectFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<"recent" | "name" | "size">("recent");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [ownerFilter, setOwnerFilter] = useState<"all" | "mine">("all");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -96,7 +104,7 @@ export default function Library() {
 
   const { data: files, isLoading, refetch: refetchFiles } = useQuery<FileWithUploader[]>({
     queryKey: ["/api/files"],
-    refetchInterval: 3000,
+    refetchInterval: 60000,
   });
 
   const filteredFiles = files?.filter((file) => {
@@ -105,7 +113,13 @@ export default function Library() {
       if (!file.fileName.toLowerCase().includes(query)) return false;
     }
     if (subjectFilter !== "all" && file.subject !== subjectFilter) return false;
+    if (typeFilter !== "all" && file.fileName.split(".").pop()?.toLowerCase() !== typeFilter) return false;
+    if (ownerFilter === "mine" && file.uploaderId !== user?.id) return false;
     return true;
+  }).sort((a, b) => {
+    if (sortBy === "name") return a.fileName.localeCompare(b.fileName, "es", { sensitivity: "base" });
+    if (sortBy === "size") return b.fileSize - a.fileSize;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
 
   const uploadMutation = useMutation({
@@ -192,22 +206,21 @@ export default function Library() {
       const response = await fetch(`/api/files/${fileId}/download`, {
         credentials: "include",
       });
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        const file = files?.find((f) => f.id === fileId);
-        a.download = file?.fileName || "download";
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      }
+      if (!response.ok) throw new Error("El archivo no está disponible para descarga.");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const file = files?.find((f) => f.id === fileId);
+      a.download = file?.fileName || "download";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
     } catch (error) {
       toast({
         title: "Error",
-        description: "No se pudo descargar el archivo.",
+        description: error instanceof Error ? error.message : "No se pudo descargar el archivo.",
         variant: "destructive",
       });
     }
@@ -419,6 +432,44 @@ export default function Library() {
                 ))}
               </SelectContent>
             </Select>
+            <Select value={sortBy} onValueChange={(value: "recent" | "name" | "size") => setSortBy(value)}>
+              <SelectTrigger className="w-full sm:w-48" aria-label="Ordenar archivos">
+                <SelectValue placeholder="Ordenar por" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="recent">Más recientes</SelectItem>
+                <SelectItem value="name">Nombre A–Z</SelectItem>
+                <SelectItem value="size">Mayor tamaño</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={typeFilter} onValueChange={setTypeFilter}>
+              <SelectTrigger className="w-full sm:w-36" aria-label="Filtrar por tipo de archivo">
+                <SelectValue placeholder="Tipo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los tipos</SelectItem>
+                {Array.from(new Set((files || []).map((file) => file.fileName.split(".").pop()?.toLowerCase()))).filter((extension): extension is string => !!extension).sort().map((extension) => (
+                  <SelectItem key={extension} value={extension}>{extension.toUpperCase()}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={ownerFilter} onValueChange={(value: "all" | "mine") => setOwnerFilter(value)}>
+              <SelectTrigger className="w-full sm:w-36" aria-label="Filtrar por propietario">
+                <SelectValue placeholder="Propietario" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="mine">Mis archivos</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="flex shrink-0 rounded-md border p-1" role="group" aria-label="Vista de archivos">
+              <Button type="button" size="icon" variant={viewMode === "grid" ? "secondary" : "ghost"} aria-label="Vista de cuadrícula" aria-pressed={viewMode === "grid"} onClick={() => setViewMode("grid")}>
+                <LayoutGrid className="h-4 w-4" />
+              </Button>
+              <Button type="button" size="icon" variant={viewMode === "list" ? "secondary" : "ghost"} aria-label="Vista de lista" aria-pressed={viewMode === "list"} onClick={() => setViewMode("list")}>
+                <List className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
           {/* Files Grid */}
@@ -429,28 +480,45 @@ export default function Library() {
               ))}
             </div>
           ) : filteredFiles && filteredFiles.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {filteredFiles.map((file) => (
-                <FileCard
-                  key={file.id}
-                  file={file}
-                  onDownload={handleDownload}
-                  onPreview={(file) => {
-                    console.log(file);
-                    if (file.fileUrl) {
-                      setPreviewUrls([file.fileUrl]);
-                    }
-                    
-                  }}
-                  onDelete={handleDelete}
-                  isOwner={user?.id === file.uploaderId}
-                  isAdmin={user?.role === "admin"}
-                  isModerator={user?.role === "teacher"}
-                  
-                />
-              ))}
-              
-            </div>
+            viewMode === "grid" ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {filteredFiles.map((file) => (
+                  <FileCard
+                    key={file.id}
+                    file={file}
+                    onDownload={handleDownload}
+                    onPreview={(file) => { if (file.fileUrl) setPreviewUrls([file.fileUrl]); }}
+                    onDelete={handleDelete}
+                    isOwner={user?.id === file.uploaderId}
+                    isAdmin={user?.role === "admin"}
+                    isModerator={user?.role === "teacher"}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border">
+                <table className="w-full min-w-[640px] text-sm">
+                  <thead className="bg-muted/50 text-left text-muted-foreground">
+                    <tr><th className="p-3 font-medium">Archivo</th><th className="p-3 font-medium">Materia</th><th className="p-3 font-medium">Propietario</th><th className="p-3 font-medium">Tamaño</th><th className="p-3 font-medium">Fecha</th><th className="p-3 text-right font-medium">Acciones</th></tr>
+                  </thead>
+                  <tbody>
+                    {filteredFiles.map((file) => (
+                      <tr key={file.id} className="border-t hover:bg-muted/30">
+                        <td className="max-w-[280px] p-3"><button type="button" className="truncate text-left font-medium hover:underline" title={file.fileName} onClick={() => file.fileUrl && setPreviewUrls([file.fileUrl])}>{file.fileName}</button></td>
+                        <td className="p-3">{file.subject || "—"}</td>
+                        <td className="p-3">{file.uploader.firstName} {file.uploader.lastName}</td>
+                        <td className="whitespace-nowrap p-3">{(file.fileSize / 1024 / 1024).toFixed(2)} MB</td>
+                        <td className="whitespace-nowrap p-3">{new Date(file.createdAt).toLocaleDateString("es-CO")}</td>
+                        <td className="p-3"><div className="flex justify-end gap-1">
+                          {file.approved && <Button type="button" size="icon" variant="ghost" aria-label={`Descargar ${file.fileName}`} onClick={() => handleDownload(file.id)}><Download className="h-4 w-4" /></Button>}
+                          {(user?.id === file.uploaderId || user?.role === "admin" || user?.role === "teacher") && <Button type="button" size="icon" variant="ghost" aria-label={`Eliminar ${file.fileName}`} onClick={() => handleDelete(file.id)}><Trash2 className="h-4 w-4" /></Button>}
+                        </div></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
           ) : (
             <EmptyState
               icon={BookOpen}

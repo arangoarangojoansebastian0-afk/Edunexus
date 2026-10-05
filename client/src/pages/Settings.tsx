@@ -6,27 +6,42 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Settings as SettingsIcon, Moon, Sun, Bell, Shield, LogOut } from "lucide-react";
+import { Settings as SettingsIcon, Moon, Sun, Bell, Shield, LogOut, Accessibility } from "lucide-react";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { useAccessibilityPreferences } from "@/hooks/useAccessibilityPreferences";
 
 export default function Settings() {
   const { theme, toggleTheme } = useTheme();
+  const accessibility = useAccessibilityPreferences();
   const { user } = useAuth();
   const { toast } = useToast();
   const push = usePushNotifications();
+  type PushPreferenceKey = "pushNewMessage" | "pushNewPost" | "pushNewAnswer";
+  const { data: notificationPreferences } = useQuery<{
+    pushNewMessage: boolean;
+    pushNewPost: boolean;
+    pushNewAnswer: boolean;
+  }>({ queryKey: ["/api/notification-preferences"] });
+
+  const saveNotificationPreference = useMutation({
+    mutationFn: (preference: Partial<Record<PushPreferenceKey, boolean>>) =>
+      apiRequest("PATCH", "/api/notification-preferences", preference),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/notification-preferences"] }),
+    onError: () => toast({ title: "No se pudo guardar la preferencia", variant: "destructive" }),
+  });
 
   const togglePrivacy = useMutation({
     mutationFn: (isPrivate: boolean) => apiRequest("PATCH", "/api/users/me/privacy", { isPrivate }),
     onSuccess: (_data, isPrivate) => {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       toast({
-        title: isPrivate ? "Perfil privado activado" : "Perfil público activado",
+        title: isPrivate ? "Mensajes directos protegidos" : "Mensajes directos abiertos",
         description: isPrivate
-          ? "Ahora quien quiera escribirte por primera vez deberá enviarte una solicitud."
-          : "Ahora cualquiera de tu institución puede escribirte directamente.",
+          ? "Las personas que aún no tienen una conversación contigo deberán enviarte una solicitud."
+          : "Las personas de tu institución pueden iniciar una conversación directamente.",
       });
     },
     onError: () => toast({ title: "No se pudo actualizar la privacidad", variant: "destructive" }),
@@ -74,6 +89,24 @@ export default function Settings() {
 
             <Separator />
 
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium flex items-center gap-2"><Accessibility className="h-4 w-4" />Accesibilidad</h3>
+              <div className="flex items-center justify-between gap-4">
+                <div><Label htmlFor="large-text">Texto más grande</Label><p className="text-sm text-muted-foreground">Aumenta el tamaño base del texto en la plataforma.</p></div>
+                <Switch id="large-text" checked={accessibility.largeText} onCheckedChange={accessibility.setLargeText} />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div><Label htmlFor="high-contrast">Contraste alto</Label><p className="text-sm text-muted-foreground">Refuerza el contraste de textos secundarios y bordes.</p></div>
+                <Switch id="high-contrast" checked={accessibility.highContrast} onCheckedChange={accessibility.setHighContrast} />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div><Label htmlFor="reduce-motion">Reducir movimiento</Label><p className="text-sm text-muted-foreground">Desactiva animaciones y transiciones decorativas.</p></div>
+                <Switch id="reduce-motion" checked={accessibility.reduceMotion} onCheckedChange={accessibility.setReduceMotion} />
+              </div>
+            </div>
+
+            <Separator />
+
             {/* Notifications */}
             <div className="space-y-4">
               <h3 className="text-sm font-medium flex items-center gap-2">
@@ -81,15 +114,7 @@ export default function Settings() {
                 Notificaciones
               </h3>
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label htmlFor="email-notifications">Notificaciones por email</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Recibe actualizaciones importantes por correo
-                    </p>
-                  </div>
-                  <Switch id="email-notifications" defaultChecked data-testid="switch-email-notifications" />
-                </div>
+                <p className="text-sm text-muted-foreground">El envío de notificaciones por correo no está configurado. Las opciones disponibles controlan los avisos push del navegador.</p>
                 <div className="flex items-center justify-between">
                   <div>
                     <Label htmlFor="push-notifications">Notificaciones push</Label>
@@ -111,6 +136,21 @@ export default function Settings() {
                     data-testid="switch-push-notifications"
                   />
                 </div>
+                {([
+                  ["pushNewMessage", "Mensajes y solicitudes"],
+                  ["pushNewPost", "Anuncios y nuevas actividades"],
+                  ["pushNewAnswer", "Entregas y calificaciones"],
+                ] as [PushPreferenceKey, string][]).map(([key, label]) => (
+                  <div key={key} className="flex items-center justify-between gap-4 pl-4">
+                    <Label htmlFor={key} className="font-normal">{label}</Label>
+                    <Switch
+                      id={key}
+                      checked={notificationPreferences?.[key] ?? false}
+                      disabled={saveNotificationPreference.isPending}
+                      onCheckedChange={(checked) => saveNotificationPreference.mutate({ [key]: checked })}
+                    />
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -124,11 +164,11 @@ export default function Settings() {
               </h3>
               <div className="flex items-center justify-between">
                 <div>
-                  <Label htmlFor="profile-public">Perfil público</Label>
+                  <Label htmlFor="profile-public">Permitir mensajes directos</Label>
                   <p className="text-sm text-muted-foreground">
                     {user?.isPrivate
-                      ? "Tu perfil es privado: solo puedes chatear con quien acepte tu solicitud (o tú la de ellos)."
-                      : "Permitir que cualquiera de tu institución te escriba directamente."}
+                      ? "Desactivado: las personas nuevas deben enviarte una solicitud de chat."
+                      : "Activado: las personas de tu institución pueden iniciar chats directamente."}
                   </p>
                 </div>
                 <Switch

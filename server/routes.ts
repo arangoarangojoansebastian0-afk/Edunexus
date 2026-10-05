@@ -25,6 +25,7 @@ import { z } from "zod";
 import multer from "multer";
 import path from "path";
 import { randomUUID } from "crypto";
+import { Readable } from "stream";
 import session from "express-session";
 import { supabase } from "./supabase";
 import { db } from "./db";
@@ -180,6 +181,34 @@ const uploadToSupabase = async (file: Express.Multer.File, folder: string): Prom
   return urlData.publicUrl;
 };
 
+function getLoyolaStorageKey(storedKey: string | null | undefined): string | null {
+  if (!storedKey) return null;
+  const publicObjectPrefix = "/storage/v1/object/public/loyola-files/";
+  const signedObjectPrefix = "/storage/v1/object/sign/loyola-files/";
+  if (/^https?:\/\//i.test(storedKey)) {
+    try {
+      const { pathname } = new URL(storedKey);
+      const prefix = pathname.includes(publicObjectPrefix) ? publicObjectPrefix
+        : pathname.includes(signedObjectPrefix) ? signedObjectPrefix : null;
+      if (!prefix) return null;
+      const encodedKey = pathname.slice(pathname.indexOf(prefix) + prefix.length);
+      const key = decodeURIComponent(encodedKey);
+      return key && !key.split("/").some((part) => part === "..") ? key : null;
+    } catch {
+      return null;
+    }
+  }
+  if (storedKey.startsWith("/") || storedKey.split("/").some((part) => part === "..")) return null;
+  return storedKey;
+}
+
+async function removeLoyolaStorageObject(storedKey: string | null | undefined) {
+  const key = getLoyolaStorageKey(storedKey);
+  if (!key) return;
+  const { error } = await supabase.storage.from("loyola-files").remove([key]);
+  if (error) throw new Error("No se pudo eliminar el archivo del almacenamiento");
+}
+
 const savePrivateMedia = async (file: Express.Multer.File, user: User) => {
   const mimeType = validateMediaFile(file);
   const id = randomUUID();
@@ -275,7 +304,9 @@ export async function registerRoutes(
     if (req.session.userId) {
       try {
         const user = await storage.getUser(req.session.userId);
-        return res.json(user);
+        if (!user) return res.status(401).json({ error: "User not found" });
+        const { passwordHash: _passwordHash, ...safeUser } = user;
+        return res.json(safeUser);
       } catch (error) {
         return res.status(401).json({ error: "User not found" });
       }
@@ -283,7 +314,7 @@ export async function registerRoutes(
     res.status(401).json({ error: "Not authenticated" });
   });
 
-  app.get("/api/stats", async (req, res) => {
+  app.get("/api/stats", requireAuth, requireSuperAdmin, async (req, res) => {
     try {
       const stats = await storage.getStats();
       res.json(stats);
@@ -294,10 +325,11 @@ export async function registerRoutes(
 
   // ─── USER MANAGEMENT ─────────────────────────────────────────────────
 
-  app.get("/api/users", async (req, res) => {
+  app.get("/api/users", requireAuth, async (req, res) => {
     try {
-      const users = await storage.getAllUsers();
-      res.json(users);
+      if (!req.user!.institutionId) return res.json([]);
+      const directory = await storage.getUserDirectory(req.user!.institutionId);
+      res.json(directory);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch users" });
     }
@@ -330,13 +362,73 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  app.get("/api/search/global", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      const query = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 80) : "";
+      if (!user.institutionId || query.length < 2) {
+        return res.json({ users: [], groups: [], courses: [], activities: [], announcements: [], posts: [], files: [], conversations: [] });
+      }
+      const pattern = `%${query.replace(/[\\%_]/g, "\\$&")}%`;
+      const { and, desc, eq, ilike, inArray, or, sql } = await import("drizzle-orm");
+      const { users, groups, courses, activities, courseAnnouncements, posts, files } = await import("@shared/schema");
+      const staffRoles = [...FULL_ACCESS_ROLES, "coordinator", "secretary"];
+      const accessibleCourses = staffRoles.includes(user.role)
+        ? await storage.getAllCoursesForAdmin(user.institutionId)
+        : user.role === "teacher"
+          ? await storage.getCoursesByTeacher(user.id)
+          : user.role === "student"
+            ? await storage.getEnrolledCourses(user.id)
+            : [];
+      const courseList = accessibleCourses.filter((course) => course.institutionId === user.institutionId);
+      const courseIds = courseList.map((course) => course.id);
+
+      const [people, matchedGroups, matchedCourses, matchedActivities, matchedAnnouncements, matchedPosts, matchedFiles, conversations] = await Promise.all([
+        storage.searchUsersByInstitution(user.institutionId, query, user.id),
+        storage.getAllGroups(user.institutionId).then((items) => items.filter((item) => `${item.name} ${item.description || ""}`.toLocaleLowerCase("es").includes(query.toLocaleLowerCase("es"))).slice(0, 5)),
+        Promise.resolve(courseList.filter((item) => `${item.name} ${item.subject} ${item.description || ""}`.toLocaleLowerCase("es").includes(query.toLocaleLowerCase("es"))).slice(0, 5)),
+        courseIds.length ? db.select({ id: activities.id, title: activities.title, courseId: activities.courseId, courseName: courses.name, dueDate: activities.dueDate })
+          .from(activities).innerJoin(courses, eq(activities.courseId, courses.id))
+          .where(and(inArray(activities.courseId, courseIds), or(ilike(activities.title, pattern), ilike(activities.description, pattern)), ...(user.role === "student" ? [eq(activities.isPublished, true)] : [])))
+          .orderBy(desc(activities.createdAt)).limit(5) : Promise.resolve([]),
+        courseIds.length ? db.select({ id: courseAnnouncements.id, content: courseAnnouncements.content, courseId: courseAnnouncements.courseId, courseName: courses.name, createdAt: courseAnnouncements.createdAt })
+          .from(courseAnnouncements).innerJoin(courses, eq(courseAnnouncements.courseId, courses.id))
+          .where(and(inArray(courseAnnouncements.courseId, courseIds), ilike(courseAnnouncements.content, pattern)))
+          .orderBy(desc(courseAnnouncements.createdAt)).limit(5) : Promise.resolve([]),
+        db.select({ id: posts.id, content: posts.content, createdAt: posts.createdAt, authorId: posts.authorId, firstName: users.firstName, lastName: users.lastName })
+          .from(posts).innerJoin(users, eq(posts.authorId, users.id))
+          .where(and(eq(users.institutionId, user.institutionId), sql`${posts.groupId} IS NULL`, ilike(posts.content, pattern)))
+          .orderBy(desc(posts.createdAt)).limit(5),
+        db.select({ id: files.id, fileName: files.fileName, description: files.description, fileType: files.fileType, createdAt: files.createdAt })
+          .from(files).where(and(eq(files.institutionId, user.institutionId), eq(files.approved, true), eq(files.visibility, "public"), or(ilike(files.fileName, pattern), ilike(files.description, pattern))))
+          .orderBy(desc(files.createdAt)).limit(5),
+        storage.getDirectConversations(user.id, user.institutionId),
+      ]);
+      const matches = (value: string) => value.toLocaleLowerCase("es").includes(query.toLocaleLowerCase("es"));
+      res.json({
+        users: people.slice(0, 5).map((person) => ({ title: `${person.firstName || ""} ${person.lastName || ""}`.trim() || "Usuario", description: person.role, href: `/profile/${person.id}` })),
+        groups: matchedGroups.map((group) => ({ title: group.name, description: group.description || "Comunidad", href: `/groups/${group.id}` })),
+        courses: matchedCourses.map((course) => ({ title: course.name, description: course.subject, href: `/classroom/${course.id}` })),
+        activities: matchedActivities.map((activity) => ({ title: activity.title, description: `Actividad · ${activity.courseName}`, href: `/classroom/${activity.courseId}` })),
+        announcements: matchedAnnouncements.map((announcement) => ({ title: announcement.content.slice(0, 90), description: `Anuncio · ${announcement.courseName}`, href: `/classroom/${announcement.courseId}` })),
+        posts: matchedPosts.map((post) => ({ title: post.content.slice(0, 90), description: `Publicación · ${post.firstName || ""} ${post.lastName || ""}`.trim(), href: "/" })),
+        files: matchedFiles.map((file) => ({ title: file.fileName, description: file.description || file.fileType, href: "/library" })),
+        conversations: conversations.filter((conversation: any) => matches(`${conversation.content || ""} ${conversation.otherUser?.firstName || ""} ${conversation.otherUser?.lastName || ""}`)).slice(0, 5).map((conversation: any) => ({ title: `${conversation.otherUser?.firstName || ""} ${conversation.otherUser?.lastName || ""}`.trim() || "Conversación", description: conversation.content || "Archivo multimedia", href: `/messages/${conversation.otherUser?.id}` })),
+      });
+    } catch {
+      res.status(500).json({ message: "No pudimos completar la búsqueda" });
+    }
+  });
+
   app.get("/api/users/:id", requireAuth, async (req, res) => {
     try {
       const user = await storage.getUser(req.params.id);
-      if (!user) {
+      if (!user || user.institutionId !== req.user!.institutionId) {
         return res.status(404).json({ message: "User not found" });
       }
-      res.json(user);
+      const { id, firstName, lastName, profileImageUrl, role, grade, interests, bio, isPrivate, institutionId } = user;
+      const canViewEmail = user.id === req.user!.id || FULL_ACCESS_ROLES.includes(req.user!.role);
+      res.json({ id, firstName, lastName, profileImageUrl, role, grade, interests, bio, isPrivate, institutionId, ...(canViewEmail ? { email: user.email } : {}) });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch user" });
     }
@@ -375,7 +467,9 @@ export async function registerRoutes(
 
   app.get("/api/users/:id/posts", requireAuth, async (req, res) => {
     try {
-      const posts = await storage.getPostsByUser(req.params.id);
+      const author = await storage.getUser(req.params.id);
+      if (!author || author.institutionId !== req.user!.institutionId) return res.status(404).json({ message: "User not found" });
+      const posts = await storage.getPostsByUser(req.params.id, req.user!.institutionId!);
       res.json(posts);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch posts" });
@@ -384,7 +478,9 @@ export async function registerRoutes(
 
   app.get("/api/users/:id/files", requireAuth, async (req, res) => {
     try {
-      const files = await storage.getFilesByUser(req.params.id);
+      const owner = await storage.getUser(req.params.id);
+      if (!owner || owner.institutionId !== req.user!.institutionId) return res.status(404).json({ message: "User not found" });
+      const files = await storage.getFilesByUser(req.params.id, req.user!.institutionId!, true);
       res.json(files);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch files" });
@@ -395,7 +491,7 @@ export async function registerRoutes(
 
   app.get("/api/posts", requireAuth, async (req, res) => {
     try {
-      const posts = await storage.getAllPosts();
+      const posts = await storage.getAllPosts(50, req.user!.institutionId || undefined);
       res.json(posts);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch posts" });
@@ -405,14 +501,15 @@ export async function registerRoutes(
   app.post("/api/posts", requireAuth, requireVerified, upload.array("attachments", 5), async (req, res) => {
     try {
       const userId = req.user!.id;
+      if (!req.user!.institutionId) return res.status(403).json({ message: "Debes pertenecer a una institución" });
       const files = (req.files as Express.Multer.File[]) || [];
       const media = files.length > 0
         ? await Promise.all(files.map(async (f) => (await savePrivateMedia(f, req.user!)).mediaUrl))
         : undefined;
-      const data = insertPostSchema.parse({ ...req.body, authorId: userId, ...(media ? { media } : {}) });
+      const data = insertPostSchema.parse({ ...req.body, authorId: userId, groupId: null, ...(media ? { media } : {}) });
       const post = await storage.createPost(data);
       
-      const allUsers = await storage.getAllUsers();
+      const allUsers = await storage.getUserDirectory(req.user!.institutionId);
       for (const user of allUsers) {
         if (user.id !== userId) {
           await storage.createNotification({
@@ -479,6 +576,8 @@ export async function registerRoutes(
   app.post("/api/posts/:id/reactions", requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id;
+      const post = await storage.getPost(req.params.id);
+      if (!post || !(await canAccessPost(post, req.user!))) return res.status(404).json({ message: "Publicación no encontrada" });
       const { type = "like" } = req.body;
       await storage.toggleReaction(req.params.id, userId, type);
       res.status(200).json({ success: true });
@@ -489,6 +588,8 @@ export async function registerRoutes(
 
   app.get("/api/posts/:id/comments", requireAuth, async (req, res) => {
     try {
+      const post = await storage.getPost(req.params.id);
+      if (!post || !(await canAccessPost(post, req.user!))) return res.status(404).json({ message: "Publicación no encontrada" });
       const comments = await storage.getCommentsByPost(req.params.id);
       res.json(comments);
     } catch (error) {
@@ -499,6 +600,8 @@ export async function registerRoutes(
   app.post("/api/posts/:id/comments", requireAuth, requireVerified, async (req, res) => {
     try {
       const userId = req.user!.id;
+      const post = await storage.getPost(req.params.id);
+      if (!post || !(await canAccessPost(post, req.user!))) return res.status(404).json({ message: "Publicación no encontrada" });
       const data = insertCommentSchema.parse({
         ...req.body,
         postId: req.params.id,
@@ -515,7 +618,8 @@ export async function registerRoutes(
 
   app.get("/api/groups", requireAuth, async (req, res) => {
     try {
-      const groups = await storage.getAllGroups();
+      if (!req.user!.institutionId) return res.json([]);
+      const groups = await storage.getAllGroups(req.user!.institutionId);
       res.json(groups);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch groups" });
@@ -535,7 +639,7 @@ export async function registerRoutes(
   app.get("/api/groups/:id", requireAuth, async (req, res) => {
     try {
       const group = await storage.getGroup(req.params.id);
-      if (!group) {
+      if (!group || group.institutionId !== req.user!.institutionId) {
         return res.status(404).json({ message: "Group not found" });
       }
       res.json(group);
@@ -563,6 +667,8 @@ export async function registerRoutes(
     try {
       const userId = req.user!.id;
       const groupId = req.params.id;
+      const group = await storage.getGroup(groupId);
+      if (!group || group.institutionId !== req.user!.institutionId) return res.status(404).json({ message: "Group not found" });
       const isMember = await storage.isGroupMember(groupId, userId);
       if (isMember) {
         return res.status(400).json({ message: "Already a member" });
@@ -577,6 +683,8 @@ export async function registerRoutes(
   app.post("/api/groups/:id/leave", requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id;
+      const group = await storage.getGroup(req.params.id);
+      if (!group || group.institutionId !== req.user!.institutionId) return res.status(404).json({ message: "Group not found" });
       await storage.removeGroupMember(req.params.id, userId);
       res.status(200).json({ success: true });
     } catch (error) {
@@ -586,6 +694,8 @@ export async function registerRoutes(
 
   app.get("/api/groups/:id/members", requireAuth, async (req, res) => {
     try {
+      const group = await storage.getGroup(req.params.id);
+      if (!group || group.institutionId !== req.user!.institutionId) return res.status(404).json({ message: "Group not found" });
       const members = await storage.getGroupMembers(req.params.id);
       res.json(members);
     } catch (error) {
@@ -595,6 +705,9 @@ export async function registerRoutes(
 
   app.get("/api/groups/:id/posts", requireAuth, async (req, res) => {
     try {
+      const group = await storage.getGroup(req.params.id);
+      if (!group || group.institutionId !== req.user!.institutionId) return res.status(404).json({ message: "Group not found" });
+      if (!(await storage.isGroupMember(req.params.id, req.user!.id))) return res.status(403).json({ message: "No perteneces a este grupo" });
       const posts = await storage.getPostsByGroup(req.params.id);
       res.json(posts);
     } catch (error) {
@@ -1015,7 +1128,7 @@ export async function registerRoutes(
         title: type === "positive" ? "Nueva observación positiva" : "Nueva anotación en tu observador",
         body: description.slice(0, 120),
         url: "/profile",
-      }).catch(() => {});
+      }, "pushNewAnswer").catch(() => {});
 
       logAudit({
         institutionId: req.user.institutionId,
@@ -1300,7 +1413,7 @@ export async function registerRoutes(
         title: type === "positive" ? "Nueva observación positiva" : "Nueva anotación en tu observador",
         body: description.slice(0, 120),
         url: "/profile",
-      }).catch(() => {});
+      }, "pushNewAnswer").catch(() => {});
 
       logAudit({
         institutionId: req.user.institutionId,
@@ -1342,6 +1455,35 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: "Error al obtener calificaciones" }); }
   });
 
+  app.get("/api/gradebook/me", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      if (user.role !== "student" || !user.institutionId) return res.json([]);
+      const { gradebookEntries, subjects, academicPeriods } = await import("@shared/schema");
+      const { and, eq, desc } = await import("drizzle-orm");
+      const rows = await db.select({
+        id: gradebookEntries.id,
+        grade: gradebookEntries.grade,
+        notes: gradebookEntries.notes,
+        updatedAt: gradebookEntries.updatedAt,
+        subjectName: subjects.name,
+        periodName: academicPeriods.name,
+      }).from(gradebookEntries)
+        .innerJoin(subjects, eq(gradebookEntries.subjectId, subjects.id))
+        .innerJoin(academicPeriods, eq(gradebookEntries.academicPeriodId, academicPeriods.id))
+        .where(and(
+          eq(gradebookEntries.studentId, user.id),
+          eq(gradebookEntries.institutionId, user.institutionId),
+        ))
+        .orderBy(desc(gradebookEntries.updatedAt))
+        .limit(100);
+      res.json(rows);
+    } catch (error) {
+      console.error("[student-gradebook]", error);
+      res.status(500).json({ message: "No se pudieron cargar tus calificaciones" });
+    }
+  });
+
   app.post("/api/admin/gradebook", requireAuth, requireCoordinator, async (req, res) => {
     try {
       if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
@@ -1357,7 +1499,7 @@ export async function registerRoutes(
         title: "Nueva calificación registrada",
         body: `Se registró una nota de ${data.grade} en tu boletín.`,
         url: "/profile",
-      }).catch(() => {});
+      }, "pushNewAnswer").catch(() => {});
 
       res.status(201).json(entry);
     } catch (error) {
@@ -1497,6 +1639,24 @@ export async function registerRoutes(
       const { teacherId, groupId } = req.query as Record<string, string | undefined>;
       const all = await storage.getSchedules(req.user.institutionId);
       let result = all as any[];
+      const role = req.user.role;
+      if (role === "teacher") {
+        result = result.filter((schedule) => schedule.teacherId === req.user!.id);
+      } else if (role === "student") {
+        const { studentEnrollments } = await import("@shared/schema");
+        const { and, eq } = await import("drizzle-orm");
+        const enrollments = await db.select({ groupId: studentEnrollments.groupId })
+          .from(studentEnrollments)
+          .where(and(
+            eq(studentEnrollments.studentId, req.user.id),
+            eq(studentEnrollments.institutionId, req.user.institutionId),
+            eq(studentEnrollments.status, "enrolled"),
+          ));
+        const permittedGroupIds = new Set(enrollments.map((enrollment) => enrollment.groupId));
+        result = result.filter((schedule) => permittedGroupIds.has(schedule.groupId));
+      } else if (!["admin", "director", "coordinator", "secretary", "super_admin"].includes(role)) {
+        result = [];
+      }
       if (teacherId) result = result.filter((s: any) => s.teacherId === teacherId);
       if (groupId) result = result.filter((s: any) => s.groupId === groupId);
       res.json(result);
@@ -1513,6 +1673,15 @@ export async function registerRoutes(
       if (!groupId || !subjectId || !teacherId || !day || !startTime || !endTime) {
         return res.status(400).json({ error: "Faltan campos obligatorios: grupo, materia, docente, día, hora inicio y hora fin" });
       }
+      const { academicGroups, subjects, users } = await import("@shared/schema");
+      const { and, eq } = await import("drizzle-orm");
+      const [group] = await db.select({ id: academicGroups.id }).from(academicGroups)
+        .where(and(eq(academicGroups.id, groupId), eq(academicGroups.institutionId, req.user.institutionId))).limit(1);
+      const [subject] = await db.select({ id: subjects.id }).from(subjects)
+        .where(and(eq(subjects.id, subjectId), eq(subjects.institutionId, req.user.institutionId))).limit(1);
+      const [teacher] = await db.select({ id: users.id }).from(users)
+        .where(and(eq(users.id, teacherId), eq(users.institutionId, req.user.institutionId), eq(users.role, "teacher"))).limit(1);
+      if (!group || !subject || !teacher) return res.status(400).json({ error: "Grupo, materia o docente inválido para esta institución" });
       const created = await storage.createSchedule({ groupId, subjectId, teacherId, day, startTime, endTime, room });
       res.status(201).json(created);
     } catch (e: any) {
@@ -1523,6 +1692,17 @@ export async function registerRoutes(
   // Eliminar clase del horario
   app.delete("/api/admin/schedules/:id", requireAuth, requireStaff, async (req, res) => {
     try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      const { classSchedules, academicGroups } = await import("@shared/schema");
+      const { and, eq } = await import("drizzle-orm");
+      const [schedule] = await db.select({ id: classSchedules.id })
+        .from(classSchedules)
+        .innerJoin(academicGroups, eq(classSchedules.groupId, academicGroups.id))
+        .where(and(
+          eq(classSchedules.id, req.params.id),
+          eq(academicGroups.institutionId, req.user.institutionId),
+        )).limit(1);
+      if (!schedule) return res.status(404).json({ message: "Horario no encontrado" });
       await storage.deleteSchedule(req.params.id);
       res.status(204).end();
     } catch (e: any) {
@@ -1533,6 +1713,37 @@ export async function registerRoutes(
   // Horarios públicos por grupo (para vista de grupo/perfil de estudiante)
   app.get("/api/group-schedule/:groupId", requireAuth, async (req, res) => {
     try {
+      if (!req.user!.institutionId) return res.status(403).json({ message: "No autorizado" });
+      const { academicGroups, studentEnrollments, teachingAssignments } = await import("@shared/schema");
+      const { and, eq } = await import("drizzle-orm");
+      const [group] = await db.select({ id: academicGroups.id })
+        .from(academicGroups)
+        .where(and(
+          eq(academicGroups.id, req.params.groupId),
+          eq(academicGroups.institutionId, req.user!.institutionId),
+        )).limit(1);
+      if (!group) return res.status(404).json({ message: "Grupo no encontrado" });
+
+      if (req.user!.role === "student") {
+        const [enrollment] = await db.select({ id: studentEnrollments.id })
+          .from(studentEnrollments)
+          .where(and(
+            eq(studentEnrollments.studentId, req.user!.id),
+            eq(studentEnrollments.groupId, group.id),
+            eq(studentEnrollments.status, "enrolled"),
+          )).limit(1);
+        if (!enrollment) return res.status(403).json({ message: "No autorizado" });
+      } else if (req.user!.role === "teacher") {
+        const [assignment] = await db.select({ id: teachingAssignments.id })
+          .from(teachingAssignments)
+          .where(and(
+            eq(teachingAssignments.teacherId, req.user!.id),
+            eq(teachingAssignments.groupId, group.id),
+          )).limit(1);
+        if (!assignment) return res.status(403).json({ message: "No autorizado" });
+      } else if (!["admin", "director", "coordinator", "secretary", "super_admin"].includes(req.user!.role)) {
+        return res.status(403).json({ message: "No autorizado" });
+      }
       const schedules = await storage.getSchedulesByGroup(req.params.groupId);
       res.json(schedules);
     } catch { res.status(500).json({ message: "Error" }); }
@@ -1606,9 +1817,12 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/users/:role", requireAuth, async (req, res) => {
+  app.get("/api/admin/users/:role", requireAuth, requireStaff, async (req, res) => {
     try {
       const { role } = req.params;
+      if (role !== "student" && role !== "teacher") {
+        return res.status(400).json({ message: "El rol solicitado no es válido" });
+      }
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
       }
@@ -1632,9 +1846,13 @@ export async function registerRoutes(
 
   app.delete("/api/admin/files/:id", requireAuth, requireSecretary, async (req, res) => {
     try {
+      const file = await storage.getFile(req.params.id);
+      if (!file || file.institutionId !== req.user!.institutionId || file.visibility !== "public") return res.status(404).json({ message: "Archivo no encontrado" });
+      await removeLoyolaStorageObject(file.storageKey);
       await storage.deleteFile(req.params.id);
       res.json({ success: true });
-    } catch {
+    } catch (error) {
+      console.error("[files:delete]", error);
       res.status(500).json({ message: "Error deleting file" });
     }
   });
@@ -1643,12 +1861,66 @@ export async function registerRoutes(
 
   app.get("/api/files", requireAuth, async (req, res) => {
     try {
-      const files = await storage.getAllFiles(true);
+      if (!req.user!.institutionId) return res.json([]);
+      const files = await storage.getAllFiles(true, req.user!.institutionId, true);
       res.json(files);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch files" });
     }
   });
+
+  app.get("/api/files/:id/download", requireAuth, async (req, res) => {
+    try {
+      const file = await storage.getFile(req.params.id);
+      if (!file || file.institutionId !== req.user!.institutionId || file.visibility !== "public") {
+        return res.status(404).json({ message: "Archivo no encontrado" });
+      }
+      if (!file.approved && file.uploaderId !== req.user!.id) {
+        return res.status(404).json({ message: "Archivo no encontrado" });
+      }
+      const objectKey = getLoyolaStorageKey(file.storageKey);
+      if (!objectKey) {
+        return res.status(404).json({ message: "El archivo no está disponible" });
+      }
+      const { data, error } = await supabase.storage.from("loyola-files").download(objectKey);
+      if (error || !data) return res.status(404).json({ message: "El archivo no está disponible" });
+      await storage.incrementDownloadCount(file.id);
+      res.setHeader("Content-Type", data.type || "application/octet-stream");
+      res.setHeader("Content-Length", String(data.size));
+      res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(file.fileName)}`);
+      Readable.fromWeb(data.stream() as any).pipe(res);
+    } catch (error) {
+      console.error("[files:download]", error);
+      res.status(500).json({ message: "No se pudo descargar el archivo" });
+    }
+  });
+
+  app.delete("/api/files/:id", requireAuth, async (req, res) => {
+    try {
+      const file = await storage.getFile(req.params.id);
+      if (!file || file.institutionId !== req.user!.institutionId || file.visibility !== "public") return res.status(404).json({ message: "Archivo no encontrado" });
+      const canModerate = ["admin", "director", "coordinator", "secretary", "teacher"].includes(req.user!.role);
+      if (file.uploaderId !== req.user!.id && !canModerate) return res.status(403).json({ message: "No tienes permiso para eliminar este archivo" });
+      await removeLoyolaStorageObject(file.storageKey);
+      await storage.deleteFile(file.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("[files:delete]", error);
+      res.status(500).json({ message: "No se pudo eliminar el archivo" });
+    }
+  });
+
+  async function canAccessPost(post: any, user: User): Promise<boolean> {
+    if (!user.institutionId) return false;
+    if (!post.groupId) return post.author?.institutionId === user.institutionId;
+    const group = await storage.getGroup(post.groupId);
+    if (!group || group.institutionId !== user.institutionId) return false;
+    if (FULL_ACCESS_ROLES.includes(user.role) || await storage.isGroupMember(group.id, user.id)) return true;
+    const { courses } = await import("@shared/schema");
+    const { eq } = await import("drizzle-orm");
+    const [course] = await db.select().from(courses).where(eq(courses.groupId, group.id)).limit(1);
+    return !!course && canAccessCourseBoard(course, user);
+  }
 
   app.post("/api/files", requireAuth, requireVerified, upload.single("file"), async (req, res) => {
     try {
@@ -1693,6 +1965,8 @@ export async function registerRoutes(
 
   app.post("/api/admin/files/:id/approve", requireAuth, requireAdmin, async (req, res) => {
     try {
+      const file = await storage.getFile(req.params.id);
+      if (!file || file.institutionId !== req.user!.institutionId || file.visibility !== "public") return res.status(404).json({ message: "Archivo no encontrado" });
       await storage.approveFile(req.params.id);
       res.status(200).json({ success: true });
     } catch (error) {
@@ -1761,6 +2035,47 @@ export async function registerRoutes(
 
   // ─── NOTIFICATIONS & REPORTS ─────────────────────────────────────────
 
+  app.get("/api/notification-preferences", requireAuth, async (req, res) => {
+    try {
+      const prefs = await storage.getNotificationPreferences(req.user!.id);
+      res.json(prefs ?? {
+        emailNewPost: true,
+        emailNewAnswer: true,
+        emailNewComment: true,
+        emailNewMessage: true,
+        pushEnabled: false,
+        pushNewPost: false,
+        pushNewAnswer: false,
+        pushNewMessage: false,
+      });
+    } catch (error) {
+      console.error("[notification-preferences]", error);
+      res.status(500).json({ message: "No se pudieron cargar las preferencias" });
+    }
+  });
+
+  app.patch("/api/notification-preferences", requireAuth, async (req, res) => {
+    const preferenceSchema = z.object({
+      emailNewPost: z.boolean().optional(),
+      emailNewAnswer: z.boolean().optional(),
+      emailNewComment: z.boolean().optional(),
+      emailNewMessage: z.boolean().optional(),
+      pushEnabled: z.boolean().optional(),
+      pushNewPost: z.boolean().optional(),
+      pushNewAnswer: z.boolean().optional(),
+      pushNewMessage: z.boolean().optional(),
+    }).strict().refine((value) => Object.keys(value).length > 0, "No hay preferencias para actualizar");
+    const parsed = preferenceSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Preferencias inválidas" });
+    try {
+      const prefs = await storage.updateNotificationPreferences(req.user!.id, parsed.data);
+      res.json(prefs);
+    } catch (error) {
+      console.error("[notification-preferences]", error);
+      res.status(500).json({ message: "No se pudieron guardar las preferencias" });
+    }
+  });
+
   app.get("/api/notifications", requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id;
@@ -1773,10 +2088,29 @@ export async function registerRoutes(
 
   app.post("/api/notifications/:id/read", requireAuth, async (req, res) => {
     try {
-      await storage.markNotificationAsRead(req.params.id);
+      await storage.markNotificationAsRead(req.params.id, req.user!.id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Failed to mark as read" });
+    }
+  });
+
+  app.post("/api/notifications/read-all", requireAuth, async (req, res) => {
+    try {
+      await storage.markAllNotificationsAsRead(req.user!.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "No se pudieron marcar las notificaciones" });
+    }
+  });
+
+  app.delete("/api/notifications/:id", requireAuth, async (req, res) => {
+    try {
+      const deleted = await storage.deleteNotification(req.params.id, req.user!.id);
+      if (!deleted) return res.status(404).json({ message: "Notificación no encontrada" });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "No se pudo eliminar la notificación" });
     }
   });
 
@@ -1934,7 +2268,7 @@ export async function registerRoutes(
   });
 
   // Admin: todos los cursos de la institución
-  app.get("/api/classroom/courses/all", requireAuth, async (req, res) => {
+  app.get("/api/classroom/courses/all", requireAuth, requireStaff, async (req, res) => {
     try {
       if (!req.user?.institutionId) return res.status(400).json({ error: "Sin institución" });
       const data = await storage.getAllCoursesForAdmin(req.user.institutionId);
@@ -1947,7 +2281,14 @@ export async function registerRoutes(
   // Actualizar aula (toggle activo, etc.)
   app.patch("/api/classroom/courses/:id", requireAuth, async (req, res) => {
     try {
-      const updated = await storage.updateCourse(req.params.id, req.body);
+      const user = req.user!;
+      const course = await storage.getCourse(req.params.id);
+      if (!course || course.institutionId !== user.institutionId) return res.status(404).json({ message: "Curso no encontrado" });
+      const canManage = FULL_ACCESS_ROLES.includes(user.role) || user.role === "coordinator" || (user.role === "teacher" && course.teacherId === user.id);
+      if (!canManage) return res.status(403).json({ message: "No tienes permisos para editar este curso" });
+      const allowedFields = ["name", "description", "subject", "grade", "semester", "academicYear", "coverImageUrl", "academicGroupId", "academicPeriodId", "evaluationType", "qualitativeScale", "gradeScale", "isActive"];
+      const updateData = Object.fromEntries(allowedFields.filter((key) => key in req.body).map((key) => [key, req.body[key]]));
+      const updated = await storage.updateCourse(req.params.id, updateData);
       res.json(updated);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -1955,6 +2296,11 @@ export async function registerRoutes(
   // Eliminar aula
   app.delete("/api/classroom/courses/:id", requireAuth, async (req, res) => {
     try {
+      const user = req.user!;
+      const course = await storage.getCourse(req.params.id);
+      if (!course || course.institutionId !== user.institutionId) return res.status(404).json({ message: "Curso no encontrado" });
+      const canManage = FULL_ACCESS_ROLES.includes(user.role) || user.role === "coordinator" || (user.role === "teacher" && course.teacherId === user.id);
+      if (!canManage) return res.status(403).json({ message: "No tienes permisos para eliminar este curso" });
       await storage.deleteCourse(req.params.id);
       res.status(204).end();
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -1964,6 +2310,14 @@ export async function registerRoutes(
     try {
       const course = await storage.getCourse(req.params.id);
       if (!course) return res.status(404).json({ message: "Course not found" });
+      const user = req.user!;
+      const canView = course.institutionId === user.institutionId && (
+        FULL_ACCESS_ROLES.includes(user.role)
+        || (user.role === "coordinator" || user.role === "secretary")
+        || (user.role === "teacher" && course.teacherId === user.id)
+        || (user.role === "student" && await storage.isEnrolled(course.id, user.id))
+      );
+      if (!canView) return res.status(404).json({ message: "Course not found" });
       res.json(course);
     } catch (err) {
       res.status(500).json({ message: "Failed to get course" });
@@ -1986,6 +2340,16 @@ export async function registerRoutes(
         teacherId, groupId, academicGroupId, academicPeriodId,
         evaluationType, qualitativeScale, gradeScale,
       } = req.body;
+
+      if (user.role === "teacher" && teacherId && teacherId !== user.id) {
+        return res.status(403).json({ message: "Un docente solo puede crear un curso a su nombre" });
+      }
+      if (teacherId) {
+        const assignedTeacher = await storage.getUser(teacherId);
+        if (!assignedTeacher || assignedTeacher.institutionId !== user.institutionId) {
+          return res.status(400).json({ message: "El docente debe pertenecer a tu institución" });
+        }
+      }
 
       if (!name || !subject) {
         return res.status(400).json({ message: "Nombre y materia son obligatorios" });
@@ -2029,6 +2393,9 @@ export async function registerRoutes(
 
   app.post("/api/classroom/courses/:id/enroll", requireAuth, async (req, res) => {
     try {
+      const course = await storage.getCourse(req.params.id);
+      if (!course || course.institutionId !== req.user!.institutionId) return res.status(404).json({ message: "Curso no encontrado" });
+      if (req.user!.role !== "student") return res.status(403).json({ message: "Solo estudiantes pueden inscribirse" });
       const enrollment = await storage.enrollStudent(req.params.id, req.user!.id);
       res.status(201).json(enrollment);
     } catch (err) {
@@ -2038,6 +2405,9 @@ export async function registerRoutes(
 
   app.delete("/api/classroom/courses/:id/enroll", requireAuth, async (req, res) => {
     try {
+      const course = await storage.getCourse(req.params.id);
+      if (!course || course.institutionId !== req.user!.institutionId) return res.status(404).json({ message: "Curso no encontrado" });
+      if (req.user!.role !== "student") return res.status(403).json({ message: "Solo estudiantes pueden cancelar su inscripción" });
       await storage.unenrollStudent(req.params.id, req.user!.id);
       res.json({ message: "Unenrolled" });
     } catch (err) {
@@ -2089,6 +2459,12 @@ export async function registerRoutes(
 
   app.get("/api/classroom/courses/:id/students", requireAuth, async (req, res) => {
     try {
+      const course = await storage.getCourse(req.params.id);
+      const canManage = !!course && course.institutionId === req.user!.institutionId && (
+        FULL_ACCESS_ROLES.includes(req.user!.role) || req.user!.role === "coordinator"
+        || (req.user!.role === "teacher" && course.teacherId === req.user!.id)
+      );
+      if (!canManage) return res.status(403).json({ message: "No tienes permisos para consultar la lista del curso" });
       const enrollments = await storage.getEnrollments(req.params.id);
       res.json(enrollments);
     } catch (err) {
@@ -2152,17 +2528,17 @@ export async function registerRoutes(
         if (e.studentId !== user.id) {
           await storage.createNotification({
             userId: e.studentId,
-            type: "post",
+            type: "course_post",
             title: `Nueva publicación en ${course!.name}`,
             message: `${user.firstName} publicó algo nuevo en el tablón del curso`,
-            relatedId: post.id,
+            relatedId: course!.id,
             read: false,
           });
           sendPushToUser(e.studentId, {
             title: `Nuevo anuncio en ${course!.name}`,
             body: `${user.firstName || "Tu profesor"} publicó algo nuevo en el curso.`,
             url: `/classroom/${course!.id}`,
-          }).catch(() => {});
+          }, "pushNewPost").catch(() => {});
         }
       }
 
@@ -2180,7 +2556,7 @@ export async function registerRoutes(
       const user = req.user!;
       const course = await storage.getCourse(req.params.id);
       if (!course) return res.status(404).json({ message: "Course not found" });
-      
+      if (!(await canAccessCourseBoard(course, user))) return res.status(404).json({ message: "Course not found" });
       const publishedOnly = user.role === "student" || course.teacherId !== user.id;
       const data = await storage.getActivities(req.params.id, publishedOnly);
       res.json(data);
@@ -2231,7 +2607,7 @@ export async function registerRoutes(
             title: `Nueva tarea en ${course.name}`,
             body: activity.title,
             url: `/classroom/${course.id}`,
-          })));
+          }, "pushNewPost")));
         }
         res.status(201).json(activity);
       } catch (err: any) {
@@ -2365,7 +2741,7 @@ export async function registerRoutes(
         title: "Actividad calificada",
         body: `"${activity.title}" fue calificada con ${req.body.grade}.`,
         url: `/classroom/${activity.courseId}`,
-      }).catch(() => {});
+      }, "pushNewAnswer").catch(() => {});
 
       res.json(updated);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -2396,7 +2772,7 @@ export async function registerRoutes(
         title: "Nueva entrega",
         body: `Un estudiante entregó: ${activity.title}`,
         url: `/classroom/${course.id}`,
-      }).catch(() => {});
+      }, "pushNewAnswer").catch(() => {});
       res.status(201).json(submission);
     } catch (err) {
       handleMediaError(res, err, "No se pudo enviar la entrega");
@@ -2481,7 +2857,7 @@ export async function registerRoutes(
           type: "comment",
           title: "Nuevo comentario privado",
           message: `${user.firstName} te dejó un comentario privado en una tarea`,
-          relatedId: comment.id,
+          relatedId: course!.id,
           read: false,
         });
       } else if (visibility === "public" && course) {
@@ -2490,7 +2866,7 @@ export async function registerRoutes(
           type: "comment",
           title: "Nuevo comentario en tarea",
           message: `${user.firstName} comentó en el tablón de la tarea`,
-          relatedId: comment.id,
+          relatedId: course.id,
           read: false,
         }).catch(() => {}); // si el autor es el propio docente, no pasa nada grave si falla
       }
@@ -2950,7 +3326,7 @@ export async function registerRoutes(
         title: `${req.user!.firstName} ${req.user!.lastName}`,
         body: req.body.content?.slice(0, 120) || "Nuevo mensaje",
         url: `/messages/${senderId}`,
-      }).catch(() => {});
+      }, "pushNewMessage").catch(() => {});
     } catch (e: any) { handleMediaError(res, e, "No se pudo enviar el mensaje"); }
   });
 
@@ -2989,6 +3365,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Suscripción inválida" });
       }
       await storage.savePushSubscription(req.user!.id, { endpoint, p256dh: keys.p256dh, auth: keys.auth });
+      await storage.updateNotificationPreferences(req.user!.id, { pushEnabled: true });
       res.json({ message: "Suscrito" });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -2996,7 +3373,15 @@ export async function registerRoutes(
   app.post("/api/push/unsubscribe", requireAuth, async (req, res) => {
     try {
       const { endpoint } = req.body as { endpoint?: string };
-      if (endpoint) await storage.removePushSubscription(endpoint);
+      if (endpoint) {
+        const ownSubscriptions = await storage.getPushSubscriptionsForUser(req.user!.id);
+        if (!ownSubscriptions.some((subscription) => subscription.endpoint === endpoint)) {
+          return res.status(404).json({ message: "Suscripción no encontrada" });
+        }
+        await storage.removePushSubscription(endpoint);
+      }
+      const remaining = await storage.getPushSubscriptionsForUser(req.user!.id);
+      await storage.updateNotificationPreferences(req.user!.id, { pushEnabled: remaining.length > 0 });
       res.json({ message: "Desuscrito" });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -3050,7 +3435,7 @@ export async function registerRoutes(
         title: "Nueva solicitud de mensaje",
         body: `${req.user!.firstName} ${req.user!.lastName} quiere escribirte`,
         url: "/messages",
-      }).catch(() => {});
+      }, "pushNewMessage").catch(() => {});
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
@@ -3281,7 +3666,7 @@ export async function registerRoutes(
               title: `Grupo`,
               body: `${req.user!.firstName}: ${content.trim().slice(0, 100)}`,
               url: `/messages/group/${req.params.id}`,
-            }))
+            }, "pushNewMessage"))
         ).catch(() => {});
       }).catch(() => {});
     } catch (e: any) {
@@ -3299,10 +3684,12 @@ export async function registerRoutes(
   app.get("/api/classroom/my-activities", requireAuth, async (req, res) => {
     try {
       const { db } = await import("./db");
-      const { activities, courses, courseEnrollments } = await import("@shared/schema");
-      const { eq, and, isNotNull, or } = await import("drizzle-orm");
+      const { activities, courses, courseEnrollments, submissions } = await import("@shared/schema");
+      const { eq, and, inArray, isNotNull, sql, desc } = await import("drizzle-orm");
       const uid = req.user!.id;
       const role = req.user!.role;
+      const institutionId = req.user!.institutionId;
+      if (!institutionId) return res.json([]);
 
       let rows: any[] = [];
       if (role === "teacher" || role === "admin") {
@@ -3313,7 +3700,26 @@ export async function registerRoutes(
           courseId: activities.courseId, courseName: courses.name,
         }).from(activities)
           .innerJoin(courses, eq(activities.courseId, courses.id))
-          .where(and(eq(courses.teacherId, uid), isNotNull(activities.dueDate)));
+          .where(and(
+            eq(courses.institutionId, institutionId),
+            ...(role === "teacher" ? [eq(courses.teacherId, uid)] : []),
+            isNotNull(activities.dueDate),
+          ));
+        if (role === "teacher" && rows.length > 0) {
+          const activityIds = rows.map((row) => row.id);
+          const reviewCounts = await db.select({
+            activityId: submissions.activityId,
+            count: sql<number>`count(*)::int`,
+          }).from(submissions)
+            .innerJoin(activities, eq(submissions.activityId, activities.id))
+            .where(and(
+              inArray(submissions.activityId, activityIds),
+              eq(submissions.status, "submitted"),
+            ))
+            .groupBy(submissions.activityId);
+          const byActivity = new Map(reviewCounts.map((row) => [row.activityId, row.count]));
+          rows = rows.map((row) => ({ ...row, pendingReviewCount: byActivity.get(row.id) ?? 0 }));
+        }
       } else {
         // Estudiante: actividades de cursos en los que está matriculado
         rows = await db.select({
@@ -3325,8 +3731,33 @@ export async function registerRoutes(
           .innerJoin(courseEnrollments, and(
             eq(courseEnrollments.courseId, courses.id),
             eq(courseEnrollments.studentId, uid),
+            eq(courseEnrollments.status, "active"),
           ))
-          .where(and(isNotNull(activities.dueDate), eq(activities.isPublished, true)));
+          .where(and(
+            eq(courses.institutionId, institutionId),
+            isNotNull(activities.dueDate),
+            eq(activities.isPublished, true),
+          ));
+        if (rows.length > 0) {
+          const activityIds = rows.map((row) => row.id);
+          const submittedRows = await db.select({
+            activityId: submissions.activityId,
+            status: submissions.status,
+            grade: submissions.grade,
+          }).from(submissions).where(and(
+            eq(submissions.studentId, uid),
+            inArray(submissions.activityId, activityIds),
+          )).orderBy(desc(submissions.submittedAt));
+          const byActivity = new Map<string, typeof submittedRows[number]>();
+          submittedRows.forEach((row) => {
+            if (!byActivity.has(row.activityId)) byActivity.set(row.activityId, row);
+          });
+          rows = rows.map((row) => ({
+            ...row,
+            submissionStatus: byActivity.get(row.id)?.status ?? "pending",
+            grade: byActivity.get(row.id)?.grade ?? null,
+          }));
+        }
       }
       res.json(rows);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -3741,7 +4172,7 @@ export async function registerRoutes(
               title: "Llamada entrante",
               body: `${msg.callerName} te está llamando`,
               url: "/messages",
-            }).catch(() => {});
+            }, "pushNewMessage").catch(() => {});
             break;
           }
           case "call-cancel": {

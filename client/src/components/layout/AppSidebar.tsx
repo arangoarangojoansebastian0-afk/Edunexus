@@ -106,12 +106,14 @@ export function AppSidebar() {
 
   return (
     <Sidebar>
-      <SidebarHeader className="p-4">
-        <Link href="/" className="flex items-center gap-2 min-w-0">
-          <GraduationCap className="h-8 w-8 text-primary shrink-0" />
-          <span className="font-serif font-bold text-lg capitalize truncate">
-            
-            {institution?.institutionName || "Comunidad"}
+      <SidebarHeader className="edunexus-sidebar-brand p-4">
+        <Link href="/" className="flex items-center gap-3 min-w-0 rounded-xl p-1.5 transition-colors hover:bg-white/5">
+          <span className="edunexus-brand-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg">
+            <GraduationCap className="h-6 w-6" />
+          </span>
+          <span className="min-w-0">
+            <span className="block font-serif text-base font-bold leading-tight tracking-tight text-sidebar-foreground truncate">EduNexus</span>
+            <span className="mt-1 block truncate text-[10px] font-medium uppercase tracking-[0.13em] text-sidebar-foreground/55">{institution?.institutionName || "Comunidad educativa"}</span>
           </span>
         </Link>
       </SidebarHeader>

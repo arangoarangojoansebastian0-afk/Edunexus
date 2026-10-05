@@ -61,6 +61,14 @@ const ACTIVITY_LABELS: Record<string, string> = {
   exam: "Examen",
 };
 
+function parseNumericGrade(value: unknown): number | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const normalized = String(value).trim().replace(",", ".");
+  if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(normalized)) return null;
+  const grade = Number(normalized);
+  return Number.isFinite(grade) ? grade : null;
+}
+
 function CreateActivityDialog({
   courseId,
   open,
@@ -1122,6 +1130,8 @@ export default function CourseDetail() {
   const [gradeSubmission, setGradeSubmission] = useState<SubmissionWithStudent | null>(null);
   const [gradingActivity, setGradingActivity] = useState<Activity | null>(null);
   const [selectedSubmissions, setSelectedSubmissions] = useState<string | null>(null);
+  const [activitySearch, setActivitySearch] = useState("");
+  const [activityStatusFilter, setActivityStatusFilter] = useState("all");
 
   // Necesario para que la tabla de Calificaciones muestre el sistema
   // evaluativo real (cuantitativo/cualitativo/mixto) en vez de asumir
@@ -1139,6 +1149,34 @@ export default function CourseDetail() {
     queryFn: () =>
       fetch(`/api/classroom/courses/${id}/activities`, { credentials: "include" }).then((r) => r.json()),
     enabled: !!id,
+  });
+
+  const { data: myActivities = [] } = useQuery<Array<{
+    id: string;
+    submissionStatus?: string;
+    grade?: string | null;
+  }>>({
+    queryKey: ["/api/classroom/my-activities"],
+    queryFn: async () => {
+      const response = await fetch("/api/classroom/my-activities", { credentials: "include" });
+      if (!response.ok) throw new Error("No se pudieron cargar los estados de entrega");
+      return response.json();
+    },
+    enabled: user?.role === "student",
+  });
+
+  const activityStatusById = new Map(myActivities.map((activity) => [activity.id, activity.submissionStatus]));
+  const normalizedActivitySearch = activitySearch.trim().toLocaleLowerCase();
+  const filteredActivityList = (activityList || []).filter((activity) => {
+    const matchesSearch = !normalizedActivitySearch || `${activity.title} ${activity.description || ""} ${ACTIVITY_LABELS[activity.type] || activity.type}`
+      .toLocaleLowerCase().includes(normalizedActivitySearch);
+    if (!matchesSearch) return false;
+    if (activityStatusFilter === "all" || user?.role !== "student") return true;
+    const submissionStatus = activityStatusById.get(activity.id) || "pending";
+    const overdue = !!activity.dueDate && isPast(new Date(activity.dueDate)) && submissionStatus === "pending";
+    if (activityStatusFilter === "overdue") return overdue;
+    if (overdue) return false;
+    return submissionStatus === activityStatusFilter;
   });
 
   const { data: students } = useQuery<{ id: string; student: { id: string; firstName: string | null; lastName: string | null; profileImageUrl: string | null } }[]>({
@@ -1316,7 +1354,7 @@ export default function CourseDetail() {
           {/* Tablón de publicaciones */}
           <TabsContent value="board" className="space-y-4 mt-4">
             <CreatePostCard
-              onSubmit={(content, files) => createBoardPostMutation.mutate({ content, files })}
+              onSubmit={(content, files) => createBoardPostMutation.mutateAsync({ content, files })}
               isSubmitting={createBoardPostMutation.isPending}
               placeholder={isTeacher ? "Publica un anuncio para tu clase..." : "Comparte algo con tu curso..."}
             />
@@ -1364,6 +1402,30 @@ export default function CourseDetail() {
                 </Button>
               </div>
             )}
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                type="search"
+                aria-label="Buscar actividades del curso"
+                placeholder="Buscar por título, instrucciones o tipo..."
+                value={activitySearch}
+                onChange={(event) => setActivitySearch(event.target.value)}
+                className="sm:flex-1"
+              />
+              {user?.role === "student" && (
+                <Select value={activityStatusFilter} onValueChange={setActivityStatusFilter}>
+                  <SelectTrigger className="w-full sm:w-48" aria-label="Filtrar actividades por estado">
+                    <SelectValue placeholder="Todos los estados" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos los estados</SelectItem>
+                    <SelectItem value="pending">Pendientes</SelectItem>
+                    <SelectItem value="submitted">Entregadas</SelectItem>
+                    <SelectItem value="graded">Calificadas</SelectItem>
+                    <SelectItem value="overdue">Vencidas pendientes</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
             {!activityList || activityList.length === 0 ? (
               <div className="text-center py-12">
                 <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
@@ -1375,9 +1437,13 @@ export default function CourseDetail() {
                 )}
               </div>
             ) : (
+              filteredActivityList.length === 0 ? (
+                <EmptyState icon={FileText} title="No encontramos actividades" description="Cambia la búsqueda o el filtro de estado para ver otras actividades." />
+              ) : (
               <div className="space-y-3">
-                {activityList.map((activity) => {
+                {filteredActivityList.map((activity) => {
                   const isOverdue = activity.dueDate && isPast(new Date(activity.dueDate));
+                  const submissionStatus = activityStatusById.get(activity.id);
                   return (
                     <Card key={activity.id} data-testid={`card-activity-${activity.id}`}>
                       <CardContent className="p-4">
@@ -1390,6 +1456,11 @@ export default function CourseDetail() {
                               {!activity.isPublished && (
                                 <Badge variant="secondary" className="text-xs no-default-active-elevate">
                                   Borrador
+                                </Badge>
+                              )}
+                              {user?.role === "student" && submissionStatus && (
+                                <Badge variant={submissionStatus === "graded" ? "default" : submissionStatus === "submitted" ? "secondary" : isOverdue ? "destructive" : "outline"} className="text-xs">
+                                  {submissionStatus === "graded" ? "Calificada" : submissionStatus === "submitted" ? "Entregada" : isOverdue ? "Vencida · pendiente" : "Pendiente"}
                                 </Badge>
                               )}
                             </div>
@@ -1534,6 +1605,7 @@ export default function CourseDetail() {
                   );
                 })}
               </div>
+              )
             )}
           </TabsContent>
 
@@ -1576,18 +1648,29 @@ export default function CourseDetail() {
                             </div>
                           </th>
                         ))}
-                        <th className="text-center p-2 font-semibold min-w-16 text-primary">Prom.</th>
+                        <th className="text-center p-2 font-semibold min-w-20 text-primary">Prom. (%)</th>
                       </tr>
                     </thead>
                     <tbody>
                       {students.map(({ student }) => {
                         const studentSubs = (allSubmissions as SubmissionWithStudent[])
                           .filter((s) => s.studentId === student.id);
-                        const numericGrades = studentSubs
-                          .map((s) => parseFloat(String(s.grade)))
-                          .filter((g) => !isNaN(g));
-                        const avg = numericGrades.length > 0
-                          ? (numericGrades.reduce((a,b) => a+b, 0) / numericGrades.length).toFixed(1)
+                        const latestSubmissionByActivity = new Map<string, SubmissionWithStudent>();
+                        studentSubs.forEach((submission) => {
+                          const current = latestSubmissionByActivity.get(submission.activityId);
+                          if (!current || new Date(submission.submittedAt).getTime() > new Date(current.submittedAt).getTime()) {
+                            latestSubmissionByActivity.set(submission.activityId, submission);
+                          }
+                        });
+                        const latestStudentSubs = Array.from(latestSubmissionByActivity.values());
+                        const numericPercentages = institution?.evaluationType === "qualitative" ? [] : latestStudentSubs.flatMap((submission) => {
+                          const activity = activityList.find((candidate) => candidate.id === submission.activityId);
+                          const grade = parseNumericGrade(submission.grade);
+                          const maxScore = Number(activity?.maxScore);
+                          return grade !== null && Number.isFinite(maxScore) && maxScore > 0 ? [grade / maxScore * 100] : [];
+                        });
+                        const avg = numericPercentages.length > 0
+                          ? `${(numericPercentages.reduce((sum, percentage) => sum + percentage, 0) / numericPercentages.length).toFixed(1)}%`
                           : null;
                         return (
                           <tr key={student.id} className="border-b hover-elevate">
@@ -1604,10 +1687,10 @@ export default function CourseDetail() {
                               </div>
                             </td>
                             {activityList.map((a) => {
-                              const sub = studentSubs.find((s) => s.activityId === a.id);
+                              const sub = latestSubmissionByActivity.get(a.id);
                               const g = sub?.grade;
-                              const numeric = g != null ? parseFloat(String(g)) : NaN;
-                              const pct = !isNaN(numeric) ? numeric / a.maxScore : null;
+                              const numeric = institution?.evaluationType === "qualitative" ? null : parseNumericGrade(g);
+                              const pct = numeric !== null && Number(a.maxScore) > 0 ? numeric / Number(a.maxScore) : null;
                               const color = pct == null ? "" : pct >= 0.8 ? "text-green-600" : pct >= 0.6 ? "text-amber-600" : "text-red-500";
                               return (
                                 <td key={a.id} className="p-2 text-center">

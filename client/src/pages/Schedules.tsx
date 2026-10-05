@@ -10,6 +10,7 @@ import {
 import { CalendarDays, Users, User, Clock } from "lucide-react";
 import { getFullName } from "@/lib/authUtils";
 import type { User as UserType } from "@shared/schema";
+import { useAuth } from "@/hooks/useAuth";
 
 const DAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"];
 const DAY_MAP: Record<number, string> = {
@@ -119,23 +120,28 @@ function ScheduleGrid({ schedules, mode }: { schedules: any[]; mode: "group" | "
 }
 
 export default function Schedules() {
+  const { user } = useAuth();
   const [viewMode, setViewMode] = useState<"group" | "teacher">("group");
   const [selectedGroup, setSelectedGroup] = useState("");
   const [selectedTeacher, setSelectedTeacher] = useState("");
 
+  const isStaff = ["admin", "director", "coordinator", "secretary"].includes(user?.role || "");
   const { data: academicGroups = [] } = useQuery<any[]>({
     queryKey: ["/api/admin/academic-groups"],
+    enabled: isStaff,
   });
   const { data: teachers = [] } = useQuery<UserType[]>({
     queryKey: ["/api/admin/users", "teacher"],
+    enabled: isStaff,
   });
 
   const { data: schedules = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/admin/schedules", viewMode, selectedGroup, selectedTeacher],
+    enabled: Boolean(user?.institutionId),
     queryFn: () => {
       const p = new URLSearchParams();
-      if (viewMode === "group" && selectedGroup) p.set("groupId", selectedGroup);
-      if (viewMode === "teacher" && selectedTeacher) p.set("teacherId", selectedTeacher);
+      if (isStaff && viewMode === "group" && selectedGroup) p.set("groupId", selectedGroup);
+      if (isStaff && viewMode === "teacher" && selectedTeacher) p.set("teacherId", selectedTeacher);
       return fetch(`/api/admin/schedules?${p}`, { credentials: "include" })
         .then((r) => r.ok ? r.json() : [])
         .then((d) => Array.isArray(d) ? d : []);
@@ -146,7 +152,9 @@ export default function Schedules() {
   const selectedGroupName = (academicGroups as any[]).find((g: any) => g.id === selectedGroup)?.name;
   const selectedTeacherObj = teacherList.find((t) => t.id === selectedTeacher);
 
-  const title = viewMode === "group"
+  const title = !isStaff
+    ? "Mi horario de clases"
+    : viewMode === "group"
     ? selectedGroupName ? `Horario — ${selectedGroupName}` : "Horarios por Grupo"
     : selectedTeacherObj
       ? `Horario — ${getFullName(selectedTeacherObj.firstName, selectedTeacherObj.lastName)}`
@@ -163,8 +171,8 @@ export default function Schedules() {
               <CalendarDays className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h1 className="text-xl font-bold">Horarios institucionales</h1>
-              <p className="text-xs text-muted-foreground">Vista semanal por grupo o docente</p>
+          <h1 className="text-xl font-bold">{isStaff ? "Horarios institucionales" : "Mi horario"}</h1>
+          <p className="text-xs text-muted-foreground">{isStaff ? "Vista semanal por grupo o docente" : "Tus clases de la semana"}</p>
             </div>
           </div>
           {(selectedGroup || selectedTeacher) && (
@@ -175,7 +183,7 @@ export default function Schedules() {
         </div>
 
         {/* Controles */}
-        <Card>
+        {isStaff && <Card>
           <CardContent className="p-4 flex flex-wrap gap-3 items-center">
             {/* Toggle grupo / docente */}
             <div className="flex rounded-lg border overflow-hidden text-sm bg-muted/30">
@@ -231,7 +239,7 @@ export default function Schedules() {
               </Select>
             )}
           </CardContent>
-        </Card>
+        </Card>}
 
         {/* Grilla */}
         <Card className="overflow-hidden">
@@ -254,7 +262,7 @@ export default function Schedules() {
         </Card>
 
         {/* Grid de grupos o docentes */}
-        {!selectedGroup && !selectedTeacher && viewMode === "group" && (academicGroups as any[]).length > 0 && (
+        {isStaff && !selectedGroup && !selectedTeacher && viewMode === "group" && (academicGroups as any[]).length > 0 && (
           <div>
             <p className="text-sm font-medium text-muted-foreground mb-3">Acceso rápido por grupo</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -277,7 +285,7 @@ export default function Schedules() {
           </div>
         )}
 
-        {!selectedGroup && !selectedTeacher && viewMode === "teacher" && teacherList.length > 0 && (
+        {isStaff && !selectedGroup && !selectedTeacher && viewMode === "teacher" && teacherList.length > 0 && (
           <div>
             <p className="text-sm font-medium text-muted-foreground mb-3">Acceso rápido por docente</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">

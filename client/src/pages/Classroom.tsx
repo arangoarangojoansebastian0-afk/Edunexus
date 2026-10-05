@@ -20,7 +20,7 @@ import { useInstitutionSettings } from "@/hooks/useInstitutionSettings";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   BookOpen, Plus, Users, ChevronRight, GraduationCap,
-  CheckCircle2, Loader2, Telescope,
+  CheckCircle2, Loader2, Telescope, Search,
 } from "lucide-react";
 import type { CourseWithTeacher } from "@shared/schema";
 
@@ -342,14 +342,15 @@ export default function Classroom() {
   const [showCreate, setShowCreate] = useState(false);
   const [view, setView] = useState<"mine" | "all">("mine");
   const [enrollingId, setEnrollingId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const isTeacher = user?.role === "teacher" || user?.role === "admin";
 
-  const { data: myCourses, isLoading } = useQuery<CourseWithTeacher[]>({
+  const { data: myCourses, isLoading, isError: myCoursesError, refetch: refetchMyCourses } = useQuery<CourseWithTeacher[]>({
     queryKey: ["/api/classroom/courses"],
   });
 
-  const { data: allCourses, isLoading: allLoading } = useQuery<CourseWithTeacher[]>({
+  const { data: allCourses, isLoading: allLoading, isError: allCoursesError, refetch: refetchAllCourses } = useQuery<CourseWithTeacher[]>({
     queryKey: ["/api/classroom/courses/all"],
     enabled: view === "all",
   });
@@ -371,6 +372,13 @@ export default function Classroom() {
   const enrolledIds = new Set(myCourses?.map((c) => c.id));
   const displayCourses = view === "mine" || isTeacher ? myCourses : allCourses;
   const isLoadingDisplay = view === "mine" || isTeacher ? isLoading : allLoading;
+  const courseLoadError = view === "mine" || isTeacher ? myCoursesError : allCoursesError;
+  const filteredCourses = displayCourses?.filter((course) => {
+    const needle = searchQuery.trim().toLocaleLowerCase("es");
+    if (!needle) return true;
+    return [course.name, course.subject, course.description, course.grade, course.teacher?.firstName, course.teacher?.lastName]
+      .some((value) => value?.toLocaleLowerCase("es").includes(needle));
+  });
 
   return (
     <AppLayout title="Aula Virtual">
@@ -417,6 +425,18 @@ export default function Classroom() {
           </div>
         </div>
 
+        <div className="relative max-w-xl">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Buscar por curso, asignatura o docente..."
+            aria-label="Buscar cursos"
+            className="pl-9"
+          />
+        </div>
+
         {/* Course grid */}
         {isLoadingDisplay ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -432,15 +452,23 @@ export default function Classroom() {
               </Card>
             ))}
           </div>
-        ) : displayCourses && displayCourses.length > 0 ? (
+        ) : courseLoadError ? (
+          <Card className="flex flex-wrap items-center justify-between gap-3 p-5">
+            <p className="text-sm text-muted-foreground">No se pudieron cargar los cursos.</p>
+            <Button variant="outline" size="sm" onClick={() => {
+              if (view === "mine" || isTeacher) void refetchMyCourses();
+              else void refetchAllCourses();
+            }}>Reintentar</Button>
+          </Card>
+        ) : filteredCourses && filteredCourses.length > 0 ? (
           <>
             {view === "all" && !isTeacher && (
               <p className="text-sm text-muted-foreground">
-                {displayCourses.filter((c) => !enrolledIds.has(c.id)).length} cursos disponibles
+                {filteredCourses.filter((c) => !enrolledIds.has(c.id)).length} cursos disponibles
               </p>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {displayCourses.map((course) => (
+              {filteredCourses.map((course) => (
                 <CourseCard
                   key={course.id}
                   course={course}
@@ -459,25 +487,29 @@ export default function Classroom() {
           <div className="flex flex-col items-center justify-center py-20">
             <BookOpen className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="font-semibold text-lg">
-              {view === "mine"
+              {searchQuery.trim()
+                ? "No hay resultados"
+                : view === "mine"
                 ? isTeacher
                   ? "No has creado cursos aún"
                   : "No estás inscrito en ningún curso"
                 : "No hay cursos disponibles"}
             </h3>
             <p className="text-sm text-muted-foreground mt-1 text-center max-w-sm">
-              {view === "mine"
+              {searchQuery.trim()
+                ? "Prueba con otro nombre de curso, asignatura o docente."
+                : view === "mine"
                 ? isTeacher
                   ? 'Crea tu primer curso con "Nuevo curso"'
                   : 'Ve a "Explorar" para inscribirte en cursos disponibles'
                 : "Los profesores aún no han publicado cursos"}
             </p>
-            {isTeacher ? (
+            {!searchQuery.trim() && isTeacher ? (
               <Button className="mt-4" onClick={() => setShowCreate(true)}>
                 <Plus className="h-4 w-4 mr-2" />
                 Crear primer curso
               </Button>
-            ) : view === "mine" ? (
+            ) : !searchQuery.trim() && view === "mine" ? (
               <Button className="mt-4" variant="outline" onClick={() => setView("all")}>
                 <Telescope className="h-4 w-4 mr-2" />
                 Explorar cursos

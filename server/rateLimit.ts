@@ -1,9 +1,11 @@
-import rateLimit from "express-rate-limit";
+import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 
 /**
- * Límites de tasa (rate limiting) para proteger rutas sensibles de fuerza
- * bruta / abuso automatizado. Requiere `app.set("trust proxy", 1)` en
- * server/index.ts para leer la IP real detrás del proxy de Render.
+ * Límites de tasa para proteger rutas sensibles contra fuerza bruta
+ * y abuso automatizado.
+ *
+ * Si la aplicación está detrás de un proxy, configura correctamente
+ * `trust proxy` en server/index.ts.
  */
 
 export const loginLimiter = rateLimit({
@@ -11,7 +13,10 @@ export const loginLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { message: "Demasiados intentos de inicio de sesión. Intenta de nuevo en unos minutos." },
+  message: {
+    message:
+      "Demasiados intentos de inicio de sesión. Intenta de nuevo en unos minutos.",
+  },
   skipSuccessfulRequests: true,
 });
 
@@ -20,7 +25,10 @@ export const registerLimiter = rateLimit({
   max: 8,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { message: "Demasiados registros desde esta red. Intenta de nuevo más tarde." },
+  message: {
+    message:
+      "Demasiados registros desde esta red. Intenta de nuevo más tarde.",
+  },
 });
 
 export const messagingLimiter = rateLimit({
@@ -28,16 +36,31 @@ export const messagingLimiter = rateLimit({
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { message: "Estás enviando mensajes muy rápido. Espera un momento." },
-  keyGenerator: (req) => (req as any).user?.id || req.ip,
+  message: {
+    message: "Estás enviando mensajes muy rápido. Espera un momento.",
+  },
+  keyGenerator: (req) => {
+    const userId = (req as typeof req & {
+      user?: { id?: string | number };
+    }).user?.id;
+
+    if (userId !== undefined && userId !== null) {
+      return `user:${userId}`;
+    }
+
+    return `ip:${ipKeyGenerator(req.ip ?? "127.0.0.1")}`;
+  },
 });
 
-// Nivel 3: recuperación de contraseña — 5 solicitudes cada 15 min por IP,
-// para que no se pueda usar para bombardear el correo de alguien.
+// Recuperación de contraseña: 5 solicitudes cada 15 minutos por IP.
 export const passwordResetLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { message: "Demasiadas solicitudes de recuperación. Intenta de nuevo más tarde." },
+  message: {
+    message:
+      "Demasiadas solicitudes de recuperación. Intenta de nuevo más tarde.",
+  },
 });
+

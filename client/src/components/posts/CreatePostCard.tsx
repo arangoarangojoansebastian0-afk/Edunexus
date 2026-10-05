@@ -15,7 +15,7 @@ interface CreatePostCardProps {
   // "Imagen" ni siquiera tenía un input de archivo detrás, era decorativo.
   // Ahora se puede adjuntar cualquier archivo (no solo imágenes) y se
   // manda junto con el texto.
-  onSubmit: (content: string, files?: File[]) => void;
+  onSubmit: (content: string, files?: File[]) => void | Promise<unknown>;
   placeholder?: string;
   isSubmitting?: boolean;
   groupId?: string;
@@ -34,14 +34,18 @@ export function CreatePostCard({
   const [files, setFiles] = useState<File[]>([]);
   const [draftFile, setDraftFile] = useState<File | null>(null);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const completeFiles = [...files, ...(draftFile ? [draftFile] : [])];
-    if (!content.trim() && completeFiles.length === 0) return;
-    onSubmit(content.trim(), completeFiles.length > 0 ? completeFiles : undefined);
-    setContent("");
-    setFiles([]);
-    setDraftFile(null);
-    setIsFocused(false);
+    if ((!content.trim() && completeFiles.length === 0) || isSubmitting) return;
+    try {
+      await onSubmit(content.trim(), completeFiles.length > 0 ? completeFiles : undefined);
+      setContent("");
+      setFiles([]);
+      setDraftFile(null);
+      setIsFocused(false);
+    } catch {
+      // The mutation owns the error message; keep the draft available to retry.
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

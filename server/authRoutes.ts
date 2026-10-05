@@ -3,7 +3,7 @@ import { registerUser, loginUser, hashPassword } from "./authSimple";
 import { z } from "zod";
 import { storage } from "./storage";
 import { db } from "./db";
-import { users, authTokens } from "@shared/schema";
+import { users, authTokens, sessions } from "@shared/schema";
 import { eq, sql, and, or } from "drizzle-orm";
 import crypto from "crypto";
 import { loginLimiter, registerLimiter, passwordResetLimiter } from "./rateLimit";
@@ -203,7 +203,7 @@ export function setupAuthRoutes(app: Express) {
     }
   });
 
-  app.post("/api/auth/reset-password", async (req: Request, res: Response) => {
+  app.post("/api/auth/reset-password", passwordResetLimiter, async (req: Request, res: Response) => {
     try {
       const { token, password } = z.object({
         token: z.string(),
@@ -219,8 +219,11 @@ export function setupAuthRoutes(app: Express) {
       }
 
       const passwordHash = await hashPassword(password);
-      await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, row.userId));
-      await db.update(authTokens).set({ usedAt: new Date() }).where(eq(authTokens.id, row.id));
+      await db.transaction(async (tx) => {
+        await tx.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, row.userId));
+        await tx.update(authTokens).set({ usedAt: new Date() }).where(eq(authTokens.id, row.id));
+        await tx.delete(sessions).where(sql`${sessions.sess}->>'userId' = ${row.userId}`);
+      });
 
       res.json({ success: true });
     } catch (error) {

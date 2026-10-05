@@ -1,8 +1,8 @@
 import bcrypt from "bcryptjs";
 import { storage } from "./storage";
 import { db } from "./db";
-import { staffCodes, teacherCodes, institutionSettings, academicYears } from "@shared/schema";
-import { eq, sql } from "drizzle-orm";
+import { staffCodes, teacherCodes, institutionSettings, academicGroups, academicYears, users } from "@shared/schema";
+import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 
 export interface AuthSession {
   userId: string;
@@ -42,38 +42,8 @@ export async function registerUser(
 
   const staffRoles: RegisterRole[] = ["teacher", "director", "coordinator", "secretary", "admin"];
 
-  if (staffRoles.includes(role)) {
-    if (!accessCode) {
-      throw new Error("Se requiere un código de acceso para este rol");
-    }
-
-    // Normalizar accessCode: sin espacios y en mayúsculas para comparación case-insensitive
-    const normalizedCode = accessCode.trim().toUpperCase();
-
-    if (role === "teacher") {
-      const found = await db
-        .select()
-        .from(teacherCodes)
-        .where(sql`UPPER(${teacherCodes.code}) = ${normalizedCode}`)
-        .limit(1);
-      if (found.length === 0) {
-        throw new Error("Código de maestro inválido");
-      }
-    } else {
-      const found = await db
-        .select()
-        .from(staffCodes)
-        .where(sql`UPPER(${staffCodes.code}) = ${normalizedCode}`)
-        .limit(1);
-      if (found.length === 0) {
-        throw new Error("Código de acceso inválido");
-      }
-      const staffEntry = found[0];
-      if (staffEntry.role && staffEntry.role !== role) {
-        throw new Error(`Este código no corresponde al rol de ${role}`);
-      }
-    }
-  }
+  if (staffRoles.includes(role) && !accessCode) throw new Error("Se requiere un código de acceso para este rol");
+  if (staffRoles.includes(role) && !institutionId) throw new Error("Selecciona la institución asociada al código de acceso");
 
   // ── Email domain restriction ─────────────────────────────────────────────
   // Los padres/acudientes normalmente NO tienen correo institucional (usan su
@@ -103,7 +73,7 @@ export async function registerUser(
   // enlace del correo — el flujo de verificación de correo no tenía ningún
   // efecto real. Ahora arranca en false y solo cambia a true cuando el
   // usuario confirma su correo desde /verify-email.
-  const user = await storage.upsertUser({
+  const userData = {
     email,
     passwordHash,
     firstName,
@@ -111,7 +81,55 @@ export async function registerUser(
     verified: false,
     role,
     institutionId: institutionId || undefined,
-  });
+  };
+
+  let user;
+  if (staffRoles.includes(role)) {
+    const normalizedCode = accessCode!.trim().toUpperCase();
+    const now = new Date();
+    if (role === "teacher") {
+      user = await db.transaction(async (tx) => {
+        const [code] = await tx.select().from(teacherCodes).where(and(
+          sql`UPPER(${teacherCodes.code}) = ${normalizedCode}`,
+          eq(teacherCodes.institutionId, institutionId!),
+          eq(teacherCodes.isUsed, false),
+          or(isNull(teacherCodes.expiresAt), gt(teacherCodes.expiresAt, now)),
+        )).limit(1).for("update");
+        if (!code) throw new Error("Código de maestro inválido, usado o vencido para esta institución");
+
+        const [createdUser] = await tx.insert(users).values(userData).returning();
+        const [consumedCode] = await tx.update(teacherCodes).set({
+          isUsed: true,
+          usedAt: now,
+          teacherId: createdUser.id,
+        }).where(and(eq(teacherCodes.id, code.id), eq(teacherCodes.isUsed, false))).returning();
+        if (!consumedCode) throw new Error("El código de maestro ya fue utilizado");
+        return createdUser;
+      });
+    } else {
+      user = await db.transaction(async (tx) => {
+        const [code] = await tx.select().from(staffCodes).where(and(
+          sql`UPPER(${staffCodes.code}) = ${normalizedCode}`,
+          eq(staffCodes.institutionId, institutionId!),
+          eq(staffCodes.isUsed, false),
+          or(isNull(staffCodes.expiresAt), gt(staffCodes.expiresAt, now)),
+        )).limit(1).for("update");
+        if (!code) throw new Error("Código de acceso inválido, usado o vencido para esta institución");
+        if (code.role && code.role !== role) throw new Error(`Este código no corresponde al rol de ${role}`);
+
+        const [createdUser] = await tx.insert(users).values(userData).returning();
+        const [consumedCode] = await tx.update(staffCodes).set({
+          isUsed: true,
+          usedAt: now,
+          userId: createdUser.id,
+        }).where(and(eq(staffCodes.id, code.id), eq(staffCodes.isUsed, false))).returning();
+        if (!consumedCode) throw new Error("El código de acceso ya fue utilizado");
+        return createdUser;
+      });
+    }
+  } else {
+    user = await storage.upsertUser(userData);
+  }
 
   // BUG CORREGIDO: el formulario de registro ya le pedía "Grado" y "Grupo"
   // al estudiante, pero esa elección nunca se guardaba en ningún lado — el
@@ -123,6 +141,11 @@ export async function registerUser(
   // grupo" porque lo eligió al registrarse.
   if (role === "student" && groupId && institutionId) {
     try {
+      const [group] = await db.select({ id: academicGroups.id }).from(academicGroups).where(and(
+        eq(academicGroups.id, groupId),
+        eq(academicGroups.institutionId, institutionId),
+      )).limit(1);
+      if (!group) throw new Error("El grupo seleccionado no pertenece a esta institución");
       const activeYear = await db
         .select()
         .from(academicYears)

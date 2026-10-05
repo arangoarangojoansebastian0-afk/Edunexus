@@ -1,3 +1,4 @@
+
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
@@ -6,7 +7,9 @@ import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 export default defineConfig({
   plugins: [
     react(),
-    runtimeErrorOverlay(),
+    ...(process.env.NODE_ENV !== "production"
+      ? [runtimeErrorOverlay()]
+      : []),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [
@@ -19,6 +22,7 @@ export default defineConfig({
         ]
       : []),
   ],
+
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),
@@ -27,14 +31,43 @@ export default defineConfig({
       "@assets": path.resolve(import.meta.dirname, "attached_assets"),
     },
   },
+
   root: path.resolve(import.meta.dirname, "client"),
+
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+
+          if (
+            /node_modules\/(react|react-dom|react-router|react-router-dom)\//.test(
+              id,
+            )
+          ) {
+            return "react-vendor";
+          }
+
+          if (id.includes("node_modules/lucide-react/")) {
+            return "icons";
+          }
+
+          if (id.includes("node_modules/recharts/")) {
+            return "charts";
+          }
+
+          if (id.includes("node_modules/@radix-ui/")) {
+            return "radix-ui";
+          }
+        },
+      },
+    },
   },
+
   server: {
     proxy: {
-      // Configuramos el proxy de forma robusta para interceptar de inmediato todo lo que empiece por /api
       "^/api/.*": {
         target: "http://localhost:2000",
         changeOrigin: true,

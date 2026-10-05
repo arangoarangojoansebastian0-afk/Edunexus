@@ -74,6 +74,25 @@ app.use(
 
 app.use(express.urlencoded({ extended: false, limit: "50mb" }));
 
+// Never serialize password hashes, even if a route accidentally returns a
+// joined user row instead of a deliberately selected public profile.
+function redactPasswordHashes(value: any): any {
+  if (Array.isArray(value)) return value.map(redactPasswordHashes);
+  if (!value || typeof value !== "object" || value instanceof Date || Buffer.isBuffer(value)) return value;
+  const safe: Record<string, any> = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (key.toLowerCase() === "passwordhash" || key.toLowerCase() === "password_hash") continue;
+    safe[key] = redactPasswordHashes(child);
+  }
+  return safe;
+}
+
+app.use((_req, res, next) => {
+  const originalJson = res.json.bind(res);
+  res.json = ((body: any) => originalJson(redactPasswordHashes(body))) as typeof res.json;
+  next();
+});
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",

@@ -120,6 +120,34 @@ import {
   parentStudentLinks,
 } from "@shared/schema";
 
+function numericGradeExpression() {
+  return sql<number>`CASE
+    WHEN btrim(${gradebookEntries.grade}) ~ '^[+-]?[0-9]+([.,][0-9]+)?$'
+    THEN replace(btrim(${gradebookEntries.grade}), ',', '.')::numeric
+    ELSE NULL
+  END`;
+}
+
+function parseNumericGrade(value: string): number | null {
+  const normalized = value.trim().replace(",", ".");
+  if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+async function getNumericGradeRiskThreshold(institutionId: string): Promise<number | null> {
+  const [settings] = await db.select({ evaluationType: institutionSettings.evaluationType, gradeScale: institutionSettings.gradeScale })
+    .from(institutionSettings).where(eq(institutionSettings.id, institutionId)).limit(1);
+  if (!settings || settings.evaluationType === "qualitative") return null;
+  const scaleNumbers = (settings.gradeScale || "").match(/[+-]?(?:\d+(?:[.,]\d+)?|\.\d+)/g);
+  if (!scaleNumbers || scaleNumbers.length < 2) return null;
+  const minimum = Number(scaleNumbers[0].replace(",", "."));
+  const maximum = Number(scaleNumbers[1].replace(",", "."));
+  if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || maximum <= minimum) return null;
+  // The existing 1–5 scale used 3.0 as its risk threshold (the midpoint).
+  return minimum + (maximum - minimum) / 2;
+}
+
 export interface IStorage {
   getInstitutionByCode(code: string): Promise<any | undefined>;
   getGradesByInstitution(institutionId: string): Promise<any[]>;
@@ -130,12 +158,13 @@ export interface IStorage {
   upsertUser(user: UpsertUser): Promise<User>;
   updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined>;
   getAllUsers(): Promise<User[]>;
+  getUserDirectory(institutionId: string): Promise<any[]>;
   verifyUser(id: string): Promise<void>;
   blockUser(id: string): Promise<void>;
   unblockUser(id: string): Promise<void>;
   updateUserRole(id: string, role: string): Promise<void>;
   getGroup(id: string): Promise<GroupWithMembers | undefined>;
-  getAllGroups(): Promise<GroupWithMembers[]>;
+  getAllGroups(institutionId: string): Promise<GroupWithMembers[]>;
   getGroupsByUser(userId: string): Promise<GroupWithMembers[]>;
   createGroup(group: InsertGroup): Promise<Group>;
   updateGroup(id: string, data: Partial<InsertGroup>): Promise<Group | undefined>;
@@ -146,9 +175,9 @@ export interface IStorage {
   isGroupMember(groupId: string, userId: string): Promise<boolean>;
   isGroupOwner(groupId: string, userId: string): Promise<boolean>;
   getPost(id: string): Promise<PostWithAuthor | undefined>;
-  getAllPosts(limit?: number): Promise<PostWithAuthor[]>;
+  getAllPosts(limit?: number, institutionId?: string): Promise<PostWithAuthor[]>;
   getPostsByGroup(groupId: string): Promise<PostWithAuthor[]>;
-  getPostsByUser(userId: string): Promise<PostWithAuthor[]>;
+  getPostsByUser(userId: string, institutionId?: string): Promise<PostWithAuthor[]>;
   createPost(post: InsertPost): Promise<Post>;
   updatePost(id: string, data: Partial<InsertPost>): Promise<Post | undefined>;
   deletePost(id: string): Promise<void>;
@@ -160,8 +189,8 @@ export interface IStorage {
   toggleReaction(postId: string, userId: string, type: string): Promise<void>;
   hasUserReacted(postId: string, userId: string): Promise<boolean>;
   getFile(id: string): Promise<FileWithUploader | undefined>;
-  getAllFiles(approved?: boolean): Promise<FileWithUploader[]>;
-  getFilesByUser(userId: string): Promise<FileWithUploader[]>;
+  getAllFiles(approved?: boolean, institutionId?: string, publicOnly?: boolean): Promise<FileWithUploader[]>;
+  getFilesByUser(userId: string, institutionId?: string, publicOnly?: boolean): Promise<FileWithUploader[]>;
   getPendingFiles(): Promise<FileWithUploader[]>;
   createFile(file: InsertFile): Promise<File>;
   approveFile(id: string): Promise<void>;
@@ -195,7 +224,8 @@ export interface IStorage {
   updateNotificationPreferences(userId: string, prefs: Partial<InsertNotificationPreference>): Promise<NotificationPreference>;
   getNotifications(userId: string, limit?: number): Promise<Notification[]>;
   createNotification(notif: InsertNotification): Promise<Notification>;
-  markNotificationAsRead(id: string): Promise<void>;
+  markNotificationAsRead(id: string, userId: string): Promise<void>;
+  markAllNotificationsAsRead(userId: string): Promise<void>;
   getRecognitions(limit?: number): Promise<RecognitionWithUsers[]>;
   createRecognition(recognition: InsertRecognition): Promise<Recognition>;
   getStats(): Promise<{ totalUsers: number; totalPosts: number; totalGroups: number; totalEvents: number; }>;
@@ -442,6 +472,20 @@ async getInstitutionByCode(code: string) {
     return db.select().from(users).orderBy(desc(users.createdAt));
   }
 
+  async getUserDirectory(institutionId: string): Promise<any[]> {
+    return db.select({
+      id: users.id,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      profileImageUrl: users.profileImageUrl,
+      role: users.role,
+      grade: users.grade,
+    }).from(users)
+      .where(and(eq(users.institutionId, institutionId), eq(users.blocked, false)))
+      .orderBy(users.firstName, users.lastName)
+      .limit(500);
+  }
+
   async verifyUser(id: string): Promise<void> {
     await db.update(users).set({ verified: true }).where(eq(users.id, id));
   }
@@ -484,8 +528,10 @@ async getInstitutionByCode(code: string) {
     };
   }
 
-  async getAllGroups(): Promise<GroupWithMembers[]> {
-    const allGroups = await db.select().from(groups).orderBy(desc(groups.createdAt));
+  async getAllGroups(institutionId: string): Promise<GroupWithMembers[]> {
+    const allGroups = await db.select().from(groups)
+      .where(eq(groups.institutionId, institutionId))
+      .orderBy(desc(groups.createdAt));
     const result: GroupWithMembers[] = [];
     for (const group of allGroups) {
       const memberCount = await db
@@ -619,12 +665,14 @@ async getInstitutionByCode(code: string) {
     };
   }
 
-  async getAllPosts(limit = 50): Promise<PostWithAuthor[]> {
+  async getAllPosts(limit = 50, institutionId?: string): Promise<PostWithAuthor[]> {
+    const conditions = [sql`${posts.groupId} IS NULL`];
+    if (institutionId) conditions.push(eq(users.institutionId, institutionId));
     const allPosts = await db
       .select()
       .from(posts)
-      .where(sql`${posts.groupId} IS NULL`)
       .innerJoin(users, eq(posts.authorId, users.id))
+      .where(and(...conditions))
       .orderBy(desc(posts.pinned), desc(posts.createdAt))
       .limit(limit);
 
@@ -684,12 +732,14 @@ async getInstitutionByCode(code: string) {
     return result;
   }
 
-  async getPostsByUser(userId: string): Promise<PostWithAuthor[]> {
+  async getPostsByUser(userId: string, institutionId?: string): Promise<PostWithAuthor[]> {
+    const conditions = [eq(posts.authorId, userId), sql`${posts.groupId} IS NULL`];
+    if (institutionId) conditions.push(eq(users.institutionId, institutionId));
     const userPosts = await db
       .select()
       .from(posts)
-      .where(eq(posts.authorId, userId))
       .innerJoin(users, eq(posts.authorId, users.id))
+      .where(and(...conditions))
       .orderBy(desc(posts.createdAt));
 
     const result: PostWithAuthor[] = [];
@@ -806,11 +856,12 @@ async getInstitutionByCode(code: string) {
     return { ...file.files, uploader: file.users };
   }
 
-  async getAllFiles(approved = true, institutionId?: string): Promise<FileWithUploader[]> {
+  async getAllFiles(approved = true, institutionId?: string, publicOnly = false): Promise<FileWithUploader[]> {
     const conditions = [eq(files.approved, approved)];
     if (institutionId) {
       conditions.push(eq(files.institutionId, institutionId));
     }
+    if (publicOnly) conditions.push(eq(files.visibility, "public"));
     const allFiles = await db
       .select()
       .from(files)
@@ -821,11 +872,16 @@ async getInstitutionByCode(code: string) {
     return allFiles.map((f) => ({ ...f.files, uploader: f.users }));
   }
 
-  async getFilesByUser(userId: string): Promise<FileWithUploader[]> {
+  async getFilesByUser(userId: string, institutionId?: string, publicOnly = false): Promise<FileWithUploader[]> {
+    const conditions = [eq(files.uploaderId, userId)];
+    if (institutionId) conditions.push(eq(files.institutionId, institutionId));
+    if (publicOnly) {
+      conditions.push(eq(files.visibility, "public"), eq(files.approved, true));
+    }
     const userFiles = await db
       .select()
       .from(files)
-      .where(eq(files.uploaderId, userId))
+      .where(and(...conditions))
       .innerJoin(users, eq(files.uploaderId, users.id))
       .orderBy(desc(files.createdAt));
 
@@ -833,7 +889,7 @@ async getInstitutionByCode(code: string) {
   }
 
   async getPendingFiles(institutionId?: string): Promise<FileWithUploader[]> {
-    return this.getAllFiles(false, institutionId);
+    return this.getAllFiles(false, institutionId, true);
   }
 
   async createFile(file: InsertFile): Promise<File> {
@@ -1198,7 +1254,14 @@ async getInstitutionByCode(code: string) {
         .returning();
       return updated;
     }
-    const [created] = await db.insert(notificationPreferences).values({ userId, ...prefs }).returning();
+    const activeSubscriptions = prefs.pushEnabled === undefined
+      ? await this.getPushSubscriptionsForUser(userId)
+      : [];
+    const [created] = await db.insert(notificationPreferences).values({
+      userId,
+      pushEnabled: prefs.pushEnabled ?? activeSubscriptions.length > 0,
+      ...prefs,
+    }).returning();
     return created;
   }
 
@@ -1213,8 +1276,19 @@ async getInstitutionByCode(code: string) {
     return created;
   }
 
-  async markNotificationAsRead(id: string): Promise<void> {
-    await db.update(notifications).set({ read: true }).where(eq(notifications.id, id));
+  async markNotificationAsRead(id: string, userId: string): Promise<void> {
+    await db.update(notifications).set({ read: true }).where(and(eq(notifications.id, id), eq(notifications.userId, userId)));
+  }
+
+  async markAllNotificationsAsRead(userId: string): Promise<void> {
+    await db.update(notifications).set({ read: true }).where(and(eq(notifications.userId, userId), eq(notifications.read, false)));
+  }
+
+  async deleteNotification(id: string, userId: string): Promise<boolean> {
+    const deleted = await db.delete(notifications)
+      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
+      .returning({ id: notifications.id });
+    return deleted.length > 0;
   }
 
   // ─── AWARDS & RECOGNITIONS ───────────────────────────────────────────
@@ -1815,26 +1889,30 @@ async getInstitutionByCode(code: string) {
 
     const conditions = [eq(gradebookEntries.groupId, groupId)];
     if (academicPeriodId) conditions.push(eq(gradebookEntries.academicPeriodId, academicPeriodId));
-    const entries = await db.select().from(gradebookEntries).where(and(...conditions));
+    const entries = await db.select().from(gradebookEntries).where(and(...conditions)).orderBy(desc(gradebookEntries.updatedAt));
 
     const students = enrolledStudents.map(({ student }) => {
       const studentEntries = entries.filter(e => e.studentId === student.id);
-      const gradesMap: Record<string, string> = {};
+      const gradesBySubject = new Map<string, string[]>();
       for (const e of studentEntries) {
-        if (gradesMap[e.subjectId] === undefined) {
-          gradesMap[e.subjectId] = String(e.grade);
-        } else {
-          // If numeric, average them; if qualitative, keep latest
-          const prev = parseFloat(gradesMap[e.subjectId]);
-          const curr = parseFloat(String(e.grade));
-          if (!isNaN(prev) && !isNaN(curr)) {
-            gradesMap[e.subjectId] = ((prev + curr) / 2).toFixed(1);
-          } else {
-            gradesMap[e.subjectId] = String(e.grade);
-          }
-        }
+        const gradesForSubject = gradesBySubject.get(e.subjectId) || [];
+        gradesForSubject.push(String(e.grade));
+        gradesBySubject.set(e.subjectId, gradesForSubject);
       }
-      const gradeValues = Object.values(gradesMap).map(v => parseFloat(v)).filter(v => !isNaN(v));
+      const gradesMap: Record<string, string> = {};
+      gradesBySubject.forEach((subjectGrades, subjectId) => {
+        const numericGrades = subjectGrades.map(parseNumericGrade);
+        if (numericGrades.length > 0 && numericGrades.every((grade) => grade !== null)) {
+          const average = numericGrades.reduce((sum, grade) => sum + (grade ?? 0), 0) / numericGrades.length;
+          gradesMap[subjectId] = (Math.round(average * 10) / 10).toFixed(1);
+        } else {
+          // Entries are ordered newest first; qualitative scales keep the latest assessment.
+          gradesMap[subjectId] = subjectGrades[0];
+        }
+      });
+      const gradeValues = Object.values(gradesMap)
+        .map(parseNumericGrade)
+        .filter((value): value is number => value !== null);
       const average = gradeValues.length > 0
         ? Math.round((gradeValues.reduce((a, b) => a + b, 0) / gradeValues.length) * 10) / 10
         : null;
@@ -1864,6 +1942,7 @@ async getInstitutionByCode(code: string) {
       try { return await fn(); } catch { return fallback; }
     };
 
+    const gradeRiskThreshold = await getNumericGradeRiskThreshold(institutionId).catch(() => null);
     const [studentsN, teachersN, staffN, subjectsN, gradesN, groupsN, enrollmentsN, coursesN, activitiesN, obsN] =
       await Promise.all([
         safeCount(() => db.select({ count: sql<number>`count(*)` }).from(users).where(and(eq(users.role, 'student'), eq(users.institutionId, institutionId)))),
@@ -1896,7 +1975,7 @@ async getInstitutionByCode(code: string) {
 
     // ── 2) Rendimiento académico promedio ──
     const gradeAgg = await safeQuery(() =>
-      db.select({ avg: sql<number>`avg(nullif(${gradebookEntries.grade}, '')::numeric)` })
+      db.select({ avg: sql<number>`avg(${numericGradeExpression()})` })
         .from(gradebookEntries).where(eq(gradebookEntries.institutionId, institutionId))
         .then(r => r[0]),
       null
@@ -1905,12 +1984,12 @@ async getInstitutionByCode(code: string) {
 
     // ── 3) Estudiantes en riesgo ──
     const [lowGradeStudents, severeObsStudents] = await Promise.all([
-      safeQuery(() =>
+      gradeRiskThreshold === null ? Promise.resolve([]) : safeQuery(() =>
         db.select({ studentId: gradebookEntries.studentId })
           .from(gradebookEntries)
           .where(eq(gradebookEntries.institutionId, institutionId))
           .groupBy(gradebookEntries.studentId)
-          .having(sql`avg(nullif(${gradebookEntries.grade}, '')::numeric) < 3.0`),
+          .having(sql`avg(${numericGradeExpression()}) < ${gradeRiskThreshold}`),
         []
       ),
       safeQuery(() =>
@@ -1999,7 +2078,7 @@ async getInstitutionByCode(code: string) {
     const rows = await db.select({
       subjectId: subjects.id,
       subjectName: subjects.name,
-      avgGrade: sql<number>`avg(nullif(${gradebookEntries.grade}, '')::numeric)`,
+      avgGrade: sql<number>`avg(${numericGradeExpression()})`,
       studentCount: sql<number>`count(distinct ${gradebookEntries.studentId})`,
     }).from(gradebookEntries)
       .innerJoin(subjects, eq(gradebookEntries.subjectId, subjects.id))
@@ -2019,7 +2098,7 @@ async getInstitutionByCode(code: string) {
     const rows = await db.select({
       groupId: academicGroups.id,
       groupName: academicGroups.name,
-      avgGrade: sql<number>`avg(nullif(${gradebookEntries.grade}, '')::numeric)`,
+      avgGrade: sql<number>`avg(${numericGradeExpression()})`,
       studentCount: sql<number>`count(distinct ${gradebookEntries.studentId})`,
     }).from(gradebookEntries)
       .innerJoin(academicGroups, eq(gradebookEntries.groupId, academicGroups.id))
@@ -2040,20 +2119,21 @@ async getInstitutionByCode(code: string) {
     const results: { student: User; reason: string; detail: string }[] = [];
     const seen = new Set<string>();
 
-    // Motivo 1: promedio académico bajo (< 3.0 en escala 1-5)
-    const lowGrades = await db.select({
+    // Motivo 1: rendimiento bajo relativo al punto medio de la escala cuantitativa.
+    const gradeRiskThreshold = await getNumericGradeRiskThreshold(institutionId).catch(() => null);
+    const lowGrades = gradeRiskThreshold === null ? [] : await db.select({
       studentId: gradebookEntries.studentId,
-      avg: sql<number>`avg(nullif(${gradebookEntries.grade}, '')::numeric)`,
+      avg: sql<number>`avg(${numericGradeExpression()})`,
     }).from(gradebookEntries)
       .where(eq(gradebookEntries.institutionId, institutionId))
       .groupBy(gradebookEntries.studentId)
-      .having(sql`avg(nullif(${gradebookEntries.grade}, '')::numeric) < 3.0`);
+      .having(sql`avg(${numericGradeExpression()}) < ${gradeRiskThreshold}`);
 
     for (const row of lowGrades) {
       const student = await this.getUser(row.studentId);
       if (student && !seen.has(student.id)) {
         seen.add(student.id);
-        results.push({ student, reason: "Bajo rendimiento académico", detail: `Promedio: ${(Number(row.avg) / 10).toFixed(1)}` });
+        results.push({ student, reason: "Bajo rendimiento académico", detail: `Promedio: ${Math.round(Number(row.avg) * 10) / 10}` });
       }
     }
 
@@ -3026,7 +3106,7 @@ async getInstitutionByCode(code: string) {
   }
 
   async getLibraryFiles(institutionId: string): Promise<FileWithUploader[]> {
-    return this.getAllFiles(true, institutionId);
+    return this.getAllFiles(true, institutionId, true);
   }
 
   async getAllCoursesForAdmin(institutionId: string): Promise<CourseWithTeacher[]> {

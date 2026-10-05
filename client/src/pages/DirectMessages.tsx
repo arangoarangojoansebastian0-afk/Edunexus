@@ -22,7 +22,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { getFullName, getInitials } from "@/lib/authUtils";
 import { format, isToday, isYesterday } from "date-fns";
 import { es } from "date-fns/locale";
-import { Search, MessageCircle, ArrowLeft, Check, CheckCheck, Phone, Video, Users, UserPlus2, Lock, Clock, X as XIcon, MoreVertical, ShieldOff, Shield, Settings2, LogOut, Crown, Trash2, PhoneCall } from "lucide-react";
+import { Search, MessageCircle, ArrowLeft, Check, CheckCheck, Phone, Video, Users, UserPlus2, Lock, Clock, X as XIcon, MoreVertical, ShieldOff, Shield, Settings2, LogOut, Crown, Trash2, PhoneCall, Star } from "lucide-react";
 import { useCall } from "@/context/CallContext";
 import { MediaComposer } from "@/components/media/MediaComposer";
 import { MediaViewer } from "@/components/media/MediaViewer";
@@ -87,7 +87,12 @@ export default function DirectMessages() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const uploadRequest = useRef<{ abort: () => void } | null>(null);
   const [search, setSearch] = useState("");
+  const [conversationFilter, setConversationFilter] = useState("");
+  const [messageSearch, setMessageSearch] = useState("");
+  const [showMessageSearch, setShowMessageSearch] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [pinnedConversationKeys, setPinnedConversationKeys] = useState<string[]>([]);
+  const [pinnedLoadedFor, setPinnedLoadedFor] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -101,6 +106,33 @@ export default function DirectMessages() {
 
   const activeType: "direct" | "group" | null = groupId ? "group" : otherId ? "direct" : null;
 
+  useEffect(() => {
+    if (!user?.id) return;
+    try {
+      const stored = localStorage.getItem(`edunexus:pinned-conversations:${user.id}`);
+      const parsed: unknown = stored ? JSON.parse(stored) : [];
+      setPinnedConversationKeys(Array.isArray(parsed) ? parsed.filter((key): key is string => typeof key === "string") : []);
+    } catch {
+      setPinnedConversationKeys([]);
+    }
+    setPinnedLoadedFor(user.id);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || pinnedLoadedFor !== user.id) return;
+    try {
+      localStorage.setItem(`edunexus:pinned-conversations:${user.id}`, JSON.stringify(pinnedConversationKeys));
+    } catch {
+      // Pinning remains available for this session if browser storage is disabled.
+    }
+  }, [user?.id, pinnedLoadedFor, pinnedConversationKeys]);
+
+  const togglePinnedConversation = (key: string) => {
+    setPinnedConversationKeys((current) => current.includes(key)
+      ? current.filter((item) => item !== key)
+      : [...current, key]);
+  };
+
   // Conversaciones 1 a 1
   const { data: conversations = [], isLoading: loadingConvs } = useQuery<any[]>({
     queryKey: ["/api/direct-messages/conversations"],
@@ -112,6 +144,18 @@ export default function DirectMessages() {
     queryKey: ["/api/chat-groups"],
     refetchInterval: 5000,
   });
+
+  const normalizedConversationFilter = conversationFilter.trim().toLocaleLowerCase();
+  const visibleConversations = (conversations as any[]).filter((conv) => {
+    if (!normalizedConversationFilter) return true;
+    const other = conv.otherUser;
+    return `${getFullName(other?.firstName, other?.lastName)} ${conv.content || ""}`
+      .toLocaleLowerCase().includes(normalizedConversationFilter);
+  }).sort((a, b) => Number(pinnedConversationKeys.includes(`direct:${b.otherUser?.id}`)) - Number(pinnedConversationKeys.includes(`direct:${a.otherUser?.id}`)));
+  const visibleChatGroups = (chatGroups as any[]).filter((group) =>
+    !normalizedConversationFilter || `${group.name || ""} ${group.description || ""}`
+      .toLocaleLowerCase().includes(normalizedConversationFilter),
+  ).sort((a, b) => Number(pinnedConversationKeys.includes(`group:${b.id}`)) - Number(pinnedConversationKeys.includes(`group:${a.id}`)));
 
   // Solicitudes de mensaje que me han enviado (perfiles privados) — pendientes de aceptar/rechazar
   const { data: incomingRequests = [] } = useQuery<any[]>({
@@ -184,6 +228,9 @@ export default function DirectMessages() {
   });
 
   const messages = activeType === "group" ? groupMessages : directMessages;
+  const visibleMessages = (messages as any[]).filter((message) =>
+    !messageSearch.trim() || String(message.content || "").toLocaleLowerCase().includes(messageSearch.trim().toLocaleLowerCase()),
+  );
   const loadingMsgs = activeType === "group" ? loadingGroupMsgs : loadingDirectMsgs;
 
   // Búsqueda de usuarios para iniciar un chat 1 a 1
@@ -379,7 +426,7 @@ export default function DirectMessages() {
 
   // Agrupar mensajes por fecha
   const groupedMessages: Array<{ date: string; msgs: any[] }> = [];
-  for (const msg of (messages as any[])) {
+  for (const msg of visibleMessages) {
     const d = formatMsgDate(msg.createdAt);
     const last = groupedMessages[groupedMessages.length - 1];
     if (last && last.date === d) last.msgs.push(msg);
@@ -460,35 +507,46 @@ export default function DirectMessages() {
 
           {/* Lista de conversaciones */}
           <div className="flex-1 overflow-y-auto">
+            <div className="px-3 pt-3">
+              <Input
+                aria-label="Buscar en conversaciones"
+                placeholder="Buscar conversaciones..."
+                value={conversationFilter}
+                onChange={(event) => setConversationFilter(event.target.value)}
+                className="h-9 text-sm"
+              />
+            </div>
             {/* Grupos privados — solo aparecen los grupos donde soy miembro/invitado */}
-            {!loadingGroups && (chatGroups as any[]).length > 0 && (
+            {!loadingGroups && visibleChatGroups.length > 0 && (
               <div>
                 <p className="px-4 pt-3 pb-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
                   Grupos privados
                 </p>
-                {(chatGroups as any[]).map((g: any) => {
+                {visibleChatGroups.map((g: any) => {
                   const isActive = g.id === groupId;
+                  const isPinned = pinnedConversationKeys.includes(`group:${g.id}`);
                   return (
-                    <button key={g.id}
-                      onClick={() => openGroup(g)}
-                      className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/60 transition-colors border-b border-border/40 ${isActive ? "bg-primary/5 border-l-2 border-l-primary" : ""}`}>
-                      <Avatar className="h-10 w-10 shrink-0">
-                        <AvatarImage src={g.avatarUrl} />
-                        <AvatarFallback className="text-sm bg-primary/10 text-primary"><Users className="h-4 w-4" /></AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0 text-left">
-                        <p className="text-sm font-medium truncate">{g.name}</p>
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">
-                          {g.description || "Grupo privado"}
-                        </p>
-                      </div>
-                    </button>
+                    <div key={g.id} className={`flex items-center border-b border-border/40 pr-2 hover:bg-muted/60 ${isActive ? "bg-primary/5 border-l-2 border-l-primary" : ""}`}>
+                      <button type="button" onClick={() => openGroup(g)} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left">
+                        <Avatar className="h-10 w-10 shrink-0">
+                          <AvatarImage src={g.avatarUrl} />
+                          <AvatarFallback className="text-sm bg-primary/10 text-primary"><Users className="h-4 w-4" /></AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate">{g.name}</p>
+                          <p className="text-xs text-muted-foreground truncate mt-0.5">{g.description || "Grupo privado"}</p>
+                        </div>
+                      </button>
+                      <Button type="button" size="icon" variant="ghost" className="shrink-0" aria-label={isPinned ? "Desfijar grupo" : "Fijar grupo"} title={isPinned ? "Desfijar" : "Fijar"} aria-pressed={isPinned} onClick={() => togglePinnedConversation(`group:${g.id}`)}>
+                        <Star className={`h-4 w-4 ${isPinned ? "fill-current text-amber-500" : "text-muted-foreground"}`} />
+                      </Button>
+                    </div>
                   );
                 })}
               </div>
             )}
 
-            {conversations && (conversations as any[]).length > 0 && (
+            {visibleConversations.length > 0 && (
               <p className="px-4 pt-3 pb-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
                 Chats directos
               </p>
@@ -498,50 +556,48 @@ export default function DirectMessages() {
               <div className="p-4 space-y-3">
                 {[1,2,3].map(i => <Skeleton key={i} className="h-14 w-full" />)}
               </div>
-            ) : (conversations as any[]).length === 0 && (chatGroups as any[]).length === 0 ? (
+            ) : visibleConversations.length === 0 && visibleChatGroups.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground p-6">
                 <MessageCircle className="h-10 w-10 opacity-20" />
-                <p className="text-sm text-center">Aún no tienes conversaciones.<br/>Busca a alguien para empezar.</p>
-                <Button size="sm" variant="outline" onClick={() => setShowSearch(true)}>
-                  <Search className="h-4 w-4 mr-1.5" /> Buscar persona
-                </Button>
+                {normalizedConversationFilter ? (
+                  <p className="text-sm text-center">No hay conversaciones que coincidan con “{conversationFilter}”.</p>
+                ) : (
+                  <>
+                    <p className="text-sm text-center">Aún no tienes conversaciones.<br/>Busca a alguien para empezar.</p>
+                    <Button size="sm" variant="outline" onClick={() => setShowSearch(true)}>
+                      <Search className="h-4 w-4 mr-1.5" /> Buscar persona
+                    </Button>
+                  </>
+                )}
               </div>
             ) : (
-              (conversations as any[]).map((conv: any) => {
+              visibleConversations.map((conv: any) => {
                 const other = conv.otherUser;
                 const isActive = other?.id === otherId;
+                const isPinned = pinnedConversationKeys.includes(`direct:${other?.id}`);
                 return (
-                  <button key={conv.id}
-                    onClick={() => { setGroupId(""); setOtherId(other.id); navigate(`/messages/${other.id}`); }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/60 transition-colors border-b border-border/40 ${isActive ? "bg-primary/5 border-l-2 border-l-primary" : ""}`}>
-                    <div className="relative shrink-0">
-                      <Avatar className="h-10 w-10">
-                        <AvatarImage src={other?.profileImageUrl} />
-                        <AvatarFallback className="text-sm">{getInitials(other?.firstName, other?.lastName)}</AvatarFallback>
-                      </Avatar>
-                      {isOnline(other?.id) && (
-                        <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 border-2 border-background" />
-                      )}
-                      {conv.unreadCount > 0 && (
-                        <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary text-[10px] text-primary-foreground font-bold flex items-center justify-center">
-                          {conv.unreadCount > 9 ? "9+" : conv.unreadCount}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0 text-left">
-                      <div className="flex justify-between items-baseline gap-1">
-                        <p className={`text-sm truncate ${conv.unreadCount > 0 ? "font-bold" : "font-medium"}`}>
-                          {getFullName(other?.firstName, other?.lastName)}
-                        </p>
-                        <span className="text-[10px] text-muted-foreground shrink-0">
-                          {formatMsgTime(conv.createdAt)}
-                        </span>
+                  <div key={conv.id} className={`flex items-center border-b border-border/40 pr-2 hover:bg-muted/60 ${isActive ? "bg-primary/5 border-l-2 border-l-primary" : ""}`}>
+                    <button type="button" onClick={() => { setGroupId(""); setOtherId(other.id); navigate(`/messages/${other.id}`); }} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left">
+                      <div className="relative shrink-0">
+                        <Avatar className="h-10 w-10">
+                          <AvatarImage src={other?.profileImageUrl} />
+                          <AvatarFallback className="text-sm">{getInitials(other?.firstName, other?.lastName)}</AvatarFallback>
+                        </Avatar>
+                        {isOnline(other?.id) && <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 border-2 border-background" />}
+                        {conv.unreadCount > 0 && <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary text-[10px] text-primary-foreground font-bold flex items-center justify-center">{conv.unreadCount > 9 ? "9+" : conv.unreadCount}</span>}
                       </div>
-                      <p className={`text-xs truncate mt-0.5 ${conv.unreadCount > 0 ? "text-foreground font-medium" : "text-muted-foreground"}`}>
-                        {conv.senderId === user?.id ? "Tú: " : ""}{conv.content}
-                      </p>
-                    </div>
-                  </button>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex justify-between items-baseline gap-1">
+                          <p className={`text-sm truncate ${conv.unreadCount > 0 ? "font-bold" : "font-medium"}`}>{getFullName(other?.firstName, other?.lastName)}</p>
+                          <span className="text-[10px] text-muted-foreground shrink-0">{formatMsgTime(conv.createdAt)}</span>
+                        </div>
+                        <p className={`text-xs truncate mt-0.5 ${conv.unreadCount > 0 ? "text-foreground font-medium" : "text-muted-foreground"}`}>{conv.senderId === user?.id ? "Tú: " : ""}{conv.content}</p>
+                      </div>
+                    </button>
+                    <Button type="button" size="icon" variant="ghost" className="shrink-0" aria-label={isPinned ? "Desfijar conversación" : "Fijar conversación"} title={isPinned ? "Desfijar" : "Fijar"} aria-pressed={isPinned} onClick={() => togglePinnedConversation(`direct:${other?.id}`)}>
+                      <Star className={`h-4 w-4 ${isPinned ? "fill-current text-amber-500" : "text-muted-foreground"}`} />
+                    </Button>
+                  </div>
                 );
               })
             )}
@@ -586,6 +642,9 @@ export default function DirectMessages() {
                         <RoleChip role={activeUser.role} />
                       )}
                     </div>
+                    <Button variant="ghost" size="icon" aria-label="Buscar en esta conversación" title="Buscar en esta conversación" onClick={() => { setShowMessageSearch((shown) => !shown); setMessageSearch(""); }}>
+                      <Search className="h-4 w-4" />
+                    </Button>
                     <CallButtons targetUser={activeUser} />
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -615,12 +674,21 @@ export default function DirectMessages() {
                       <p className="font-semibold text-sm">{activeGroup.name}</p>
                       <p className="text-xs text-muted-foreground">Grupo privado</p>
                     </div>
+                    <Button variant="ghost" size="icon" aria-label="Buscar en este grupo" title="Buscar en este grupo" onClick={() => { setShowMessageSearch((shown) => !shown); setMessageSearch(""); }}>
+                      <Search className="h-4 w-4" />
+                    </Button>
                     <Button variant="ghost" size="icon" onClick={() => setShowGroupSettings(true)}>
                       <Settings2 className="h-4 w-4" />
                     </Button>
                   </>
                 )}
               </div>
+
+              {showMessageSearch && (
+                <div className="border-b px-4 py-2">
+                  <Input autoFocus aria-label="Buscar texto en los mensajes" placeholder="Buscar texto en los mensajes..." value={messageSearch} onChange={(event) => setMessageSearch(event.target.value)} />
+                </div>
+              )}
 
               {/* Aviso de perfil bloqueado */}
               {activeType === "direct" && activeUser && isBlockedByMe(activeUser.id) && (
@@ -635,10 +703,10 @@ export default function DirectMessages() {
                   <div className="space-y-3">
                     {[1,2,3].map(i => <Skeleton key={i} className="h-10 w-48" />)}
                   </div>
-                ) : (messages as any[]).length === 0 ? (
+                ) : visibleMessages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground">
                     <MessageCircle className="h-10 w-10 opacity-20" />
-                    <p className="text-sm">Sé el primero en escribir algo</p>
+                    <p className="text-sm">{messageSearch.trim() ? "No hay mensajes que coincidan con la búsqueda." : "Sé el primero en escribir algo"}</p>
                   </div>
                 ) : (
                   groupedMessages.map(({ date, msgs }) => (

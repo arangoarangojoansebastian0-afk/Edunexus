@@ -30,6 +30,7 @@ export function FileViewer({ urls, label = "Archivos" }: { urls: string[]; label
   if (!urls || urls.length === 0) return null;
 
   const fileType = selected ? getFileType(selected) : null;
+  const isPrivateMedia = selected?.startsWith("/api/media/") ?? false;
 
   return (
     <>
@@ -37,6 +38,7 @@ export function FileViewer({ urls, label = "Archivos" }: { urls: string[]; label
         {urls.map((url, i) => (
           <button
             key={i}
+            type="button"
             onClick={() => setSelected(url)}
             className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted hover:bg-muted/80 text-xs font-medium transition-colors"
           >
@@ -73,17 +75,19 @@ export function FileViewer({ urls, label = "Archivos" }: { urls: string[]; label
                 title="PDF viewer"
               />
             )}
-            {fileType === "office" && (
+            {fileType === "office" && !isPrivateMedia && (
               <iframe
                 src={`https://docs.google.com/viewer?url=${encodeURIComponent(selected!)}&embedded=true`}
                 className="w-full h-full"
                 title="Document viewer"
               />
             )}
-            {fileType === "other" && (
+            {fileType === "other" || (fileType === "office" && isPrivateMedia) ? (
               <div className="flex flex-col items-center justify-center h-full gap-4">
                 <File className="h-16 w-16 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">Vista previa no disponible</p>
+                <p className="text-sm text-muted-foreground">
+                  {fileType === "office" ? "Descarga este documento para abrirlo de forma segura." : "Vista previa no disponible"}
+                </p>
                 <a href={selected!} download target="_blank" rel="noopener noreferrer">
                   <Button>
                     <Download className="h-4 w-4 mr-2" />
@@ -91,7 +95,7 @@ export function FileViewer({ urls, label = "Archivos" }: { urls: string[]; label
                   </Button>
                 </a>
               </div>
-            )}
+            ) : null}
           </div>
         </DialogContent>
       </Dialog>

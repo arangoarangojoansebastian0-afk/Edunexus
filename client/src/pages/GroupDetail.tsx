@@ -308,7 +308,7 @@ export default function GroupDetail() {
                 <TabsContent value="forum" className="space-y-4 mt-4">
                   {isMember && user?.verified && (
                     <CreatePostCard
-                      onSubmit={(content, files) => createPostMutation.mutate({ content, files })}
+                      onSubmit={(content, files) => createPostMutation.mutateAsync({ content, files })}
                       isSubmitting={createPostMutation.isPending}
                       placeholder="¿Qué quieres compartir con el grupo?"
                     />
