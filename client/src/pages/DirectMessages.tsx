@@ -22,8 +22,11 @@ import { useAuth } from "@/hooks/useAuth";
 import { getFullName, getInitials } from "@/lib/authUtils";
 import { format, isToday, isYesterday } from "date-fns";
 import { es } from "date-fns/locale";
-import { Send, Search, MessageCircle, ArrowLeft, Check, CheckCheck, Phone, Video, Users, UserPlus2, Lock, Clock, X as XIcon, MoreVertical, ShieldOff, Shield, Settings2, LogOut, Crown, Trash2, PhoneCall } from "lucide-react";
+import { Search, MessageCircle, ArrowLeft, Check, CheckCheck, Phone, Video, Users, UserPlus2, Lock, Clock, X as XIcon, MoreVertical, ShieldOff, Shield, Settings2, LogOut, Crown, Trash2, PhoneCall } from "lucide-react";
 import { useCall } from "@/context/CallContext";
+import { MediaComposer } from "@/components/media/MediaComposer";
+import { MediaViewer } from "@/components/media/MediaViewer";
+import { startMultipartUpload } from "@/lib/multipartUpload";
 
 function formatMsgTime(date: string) {
   const d = new Date(date);
@@ -80,6 +83,9 @@ export default function DirectMessages() {
   const [otherId, setOtherId] = useState(params.userId || "");
   const [groupId, setGroupId] = useState(params.groupId || "");
   const [text, setText] = useState("");
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const uploadRequest = useRef<{ abort: () => void } | null>(null);
   const [search, setSearch] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -212,28 +218,23 @@ export default function DirectMessages() {
 
   const send = useMutation({
     mutationFn: async () => {
-      if (activeType === "group") {
-        return apiRequest("POST", `/api/chat-groups/${groupId}/messages`, { content: text });
+      const form = new FormData();
+      form.append("content", text);
+      if (mediaFile) form.append("media", mediaFile);
+      const endpoint = activeType === "group" ? `/api/chat-groups/${groupId}/messages` : `/api/direct-messages/${otherId}`;
+      const upload = startMultipartUpload(endpoint, form, setUploadProgress);
+      uploadRequest.current = { abort: upload.abort };
+      const response = await upload.promise.finally(() => { uploadRequest.current = null; setUploadProgress(0); });
+      if (response.status === 403 && response.data?.requiresRequest && activeType === "direct") {
+        if (mediaFile) throw new Error("Primero debes enviar una solicitud de chat sin adjuntos.");
+        return apiRequest("POST", `/api/message-requests/${otherId}`, { content: text }).then(() => ({ isRequest: true }));
       }
-      const res = await fetch(`/api/direct-messages/${otherId}`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: text }),
-      });
-      if (res.status === 403) {
-        const data = await res.json().catch(() => ({}));
-        if (data.requiresRequest) {
-          // Perfil privado sin conversación previa: mandamos una solicitud en vez del mensaje directo
-          return apiRequest("POST", `/api/message-requests/${otherId}`, { content: text }).then(() => ({ isRequest: true }));
-        }
-        throw new Error(data.message || "No se pudo enviar el mensaje");
-      }
-      if (!res.ok) throw new Error("No se pudo enviar el mensaje");
-      return res.json();
+      if (response.status < 200 || response.status >= 300) throw new Error(response.data?.message || "No se pudo enviar el mensaje");
+      return response.data;
     },
     onSuccess: (data: any) => {
       setText("");
+      setMediaFile(null);
       if (activeType === "group") {
         queryClient.invalidateQueries({ queryKey: ["/api/chat-groups", groupId, "messages"] });
       } else if (data?.isRequest) {
@@ -355,7 +356,7 @@ export default function DirectMessages() {
   }, [params.userId, params.groupId]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey && text.trim()) {
+    if (e.key === "Enter" && !e.shiftKey && (text.trim() || mediaFile)) {
       e.preventDefault();
       send.mutate();
     }
@@ -665,7 +666,8 @@ export default function DirectMessages() {
                                     {getFullName(msg.senderFirstName, msg.senderLastName)}
                                   </p>
                                 )}
-                                <p className="whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
+                                {msg.content && <p className="whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>}
+                                {msg.mediaUrl && <MediaViewer url={msg.mediaUrl} type={msg.mediaType} name={msg.mediaFileName} />}
                                 <div className={`flex items-center gap-1 mt-1 ${isMe ? "justify-end" : "justify-start"}`}>
                                   <span className={`text-[10px] ${isMe ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
                                     {format(new Date(msg.createdAt), "HH:mm")}
@@ -694,10 +696,11 @@ export default function DirectMessages() {
                   Ya le enviaste una solicitud de chat. Te avisaremos cuando la responda.
                 </div>
               ) : (
-                <div className="border-t p-3 flex gap-2 items-end bg-background">
+                <div className="border-t p-3 bg-background">
+                  <div className="flex gap-2 items-end">
                   <Input
                     ref={inputRef}
-                    className="flex-1 resize-none rounded-full bg-muted border-0 px-4 text-sm"
+                    className="min-w-0 flex-1 resize-none rounded-full bg-muted border-0 px-4 text-sm"
                     placeholder={
                       activeType === "direct" && activeUser?.isPrivate && (messages as any[]).length === 0
                         ? "Este perfil es privado — tu mensaje se enviará como solicitud..."
@@ -707,14 +710,8 @@ export default function DirectMessages() {
                     onChange={e => setText(e.target.value)}
                     onKeyDown={handleKeyDown}
                   />
-                  <Button
-                    size="icon"
-                    className="rounded-full shrink-0 h-9 w-9"
-                    onClick={() => send.mutate()}
-                    disabled={!text.trim() || send.isPending}
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
+                  <MediaComposer value={mediaFile} onChange={setMediaFile} onSend={() => send.mutate()} canSend={!!text.trim() || !!mediaFile} disabled={send.isPending} uploading={send.isPending && !!mediaFile} progress={uploadProgress} onCancelUpload={() => uploadRequest.current?.abort()} />
+                  </div>
                 </div>
               )}
             </>

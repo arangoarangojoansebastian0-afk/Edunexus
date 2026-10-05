@@ -53,7 +53,7 @@ import {
   Phone,
   Video,
 } from "lucide-react";
-import type { PostWithAuthor, FileWithUploader, Badge as BadgeType, UserBadge } from "@shared/schema";
+import type { PostWithAuthor, FileWithUploader, Badge as BadgeType, UserBadge, User } from "@shared/schema";
 import { ParentLinkRequests } from "@/components/ParentLinkRequests";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -122,7 +122,7 @@ export default function Profile() {
   const isOwnProfile = !params.id || params.id === authUser?.id;
   const [isEditOpen, setIsEditOpen] = useState(false);
 
-  const { data: profileUser } = useQuery({
+  const { data: profileUser } = useQuery<User>({
     queryKey: ["/api/users", profileUserId],
     enabled: !!profileUserId,
   });
@@ -299,7 +299,7 @@ export default function Profile() {
                             {isOwnProfile && (
                               <Button
                                 type="button"
-                                variant="link"
+                                variant="ghost"
                                 size="sm"
                                 className="h-auto p-0 text-xs"
                                 disabled={resendVerificationMutation.isPending}

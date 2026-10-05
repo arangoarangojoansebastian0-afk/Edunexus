@@ -36,6 +36,9 @@ import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 import { Link } from "wouter";
 import { useEffect, useRef } from "react";
+import { MediaComposer } from "@/components/media/MediaComposer";
+import { MediaViewer } from "@/components/media/MediaViewer";
+import { startMultipartUpload } from "@/lib/multipartUpload";
 
 export default function GroupDetail() {
   const params = useParams<{ id: string }>();
@@ -44,12 +47,10 @@ export default function GroupDetail() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("forum");
   const [chatMessage, setChatMessage] = useState("");
-  const [isRecording, setIsRecording] = useState(false);
+  const [chatFile, setChatFile] = useState<File | null>(null);
+  const [chatUploadProgress, setChatUploadProgress] = useState(0);
+  const chatUpload = useRef<{ abort: () => void } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const imageInputRef = useRef<HTMLInputElement>(null);
-  const documentInputRef = useRef<HTMLInputElement>(null);
 
   const { data: group, isLoading: groupLoading } = useQuery<GroupWithMembers>({
     queryKey: ["/api/groups", groupId],
@@ -65,58 +66,6 @@ export default function GroupDetail() {
     enabled: !!groupId && activeTab === "chat",
     refetchInterval: activeTab === "chat" ? 3000 : false,
   });
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      audioChunksRef.current = [];
-      
-      mediaRecorder.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
-      };
-      
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        const formData = new FormData();
-        formData.append("content", "[Nota de voz]");
-        formData.append("media", audioBlob, "voice.webm");
-        
-        try {
-          const response = await fetch(`/api/groups/${groupId}/messages`, {
-            method: "POST",
-            credentials: "include",
-            body: formData,
-          });
-          if (response.ok) {
-            queryClient.invalidateQueries({ queryKey: ["/api/groups", groupId, "messages"] });
-          }
-        } catch (error) {
-          console.error("Error uploading voice:", error);
-        }
-        
-        stream.getTracks().forEach(track => track.stop());
-      };
-      
-      mediaRecorder.start();
-      mediaRecorderRef.current = mediaRecorder;
-      setIsRecording(true);
-    } catch (error) {
-      console.error("Error starting recording:", error);
-      toast({
-        title: "Error",
-        description: "No se pudo acceder al micrófono.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
-  };
 
   const { data: members } = useQuery<(GroupMember & { user: User })[]>({
     queryKey: ["/api/groups", groupId, "members"],
@@ -165,12 +114,20 @@ export default function GroupDetail() {
   });
 
   const sendMessageMutation = useMutation({
-    mutationFn: async (content: string) => {
-      await apiRequest("POST", `/api/groups/${groupId}/messages`, { content });
+    mutationFn: async ({ content, file }: { content: string; file: File | null }) => {
+      const form = new FormData(); form.append("content", content); if (file) form.append("media", file);
+      const upload = startMultipartUpload(`/api/groups/${groupId}/messages`, form, setChatUploadProgress);
+      chatUpload.current = upload;
+      try {
+        const response = await upload.promise;
+        if (response.status < 200 || response.status >= 300) throw new Error(response.data?.message || "No se pudo enviar el mensaje");
+        return response.data;
+      } finally { chatUpload.current = null; setChatUploadProgress(0); }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/groups", groupId, "messages"] });
       setChatMessage("");
+      setChatFile(null);
     },
     onError: () => {
       toast({
@@ -225,30 +182,8 @@ export default function GroupDetail() {
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatMessage.trim()) return;
-    sendMessageMutation.mutate(chatMessage.trim());
-  };
-
-  const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    const formData = new FormData();
-    formData.append("content", `[${file.type.includes("audio") ? "Nota de voz" : file.type.includes("image") ? "Imagen" : "Documento"}]`);
-    formData.append("media", file);
-    
-    try {
-      const response = await fetch(`/api/groups/${groupId}/messages`, {
-        method: "POST",
-        credentials: "include",
-        body: formData,
-      });
-      if (response.ok) {
-        queryClient.invalidateQueries({ queryKey: ["/api/groups", groupId, "messages"] });
-      }
-    } catch (error) {
-      console.error("Error uploading media:", error);
-    }
+    if (!chatMessage.trim() && !chatFile) return;
+    sendMessageMutation.mutate({ content: chatMessage.trim(), file: chatFile });
   };
 
   const handleDeleteMessage = async (messageId: string) => {
@@ -458,24 +393,8 @@ export default function GroupDetail() {
                                         : "bg-muted"
                                     }`}
                                   >
-                                    <p className="text-sm">{message.content}</p>
-                                    {message.mediaUrl && (
-                                      <div className="mt-2">
-                                        {message.mediaType === "image" && (
-                                          <img src={message.mediaUrl} alt="shared" className="max-w-xs rounded-lg" />
-                                        )}
-                                        {message.mediaType === "voice" && (
-                                          <audio controls className="max-w-xs">
-                                            <source src={message.mediaUrl} />
-                                          </audio>
-                                        )}
-                                        {message.mediaType === "document" && (
-                                          <a href={message.mediaUrl} target="_blank" className="text-blue-400 underline">
-                                            Descargar documento
-                                          </a>
-                                        )}
-                                      </div>
-                                    )}
+                                    {message.content && <p className="text-sm">{message.content}</p>}
+                                    {message.mediaUrl && <MediaViewer url={message.mediaUrl} type={message.mediaType} />}
                                   </div>
                                   {(isOwn || user?.role === "teacher" || user?.role === "admin") && (
                                     <Button
@@ -508,48 +427,6 @@ export default function GroupDetail() {
                       )}
                     </ScrollArea>
                     <div className="p-4 border-t space-y-2 shrink-0">
-                      <div className="flex gap-1 flex-wrap">
-                        <Button 
-                          size="sm" 
-                          variant={isRecording ? "destructive" : "outline"} 
-                          className="gap-1" 
-                          onClick={isRecording ? stopRecording : startRecording}
-                        >
-                          {isRecording ? (
-                            <>
-                              <Square className="h-3 w-3" />
-                              Detener
-                            </>
-                          ) : (
-                            <>
-                              <Mic className="h-4 w-4" />
-                              Grabar Voz
-                            </>
-                          )}
-                        </Button>
-                        <Button size="sm" variant="outline" className="gap-1" onClick={() => imageInputRef.current?.click()}>
-                          <ImageIcon className="h-4 w-4" />
-                          Imagen
-                        </Button>
-                        <Button size="sm" variant="outline" className="gap-1" onClick={() => documentInputRef.current?.click()}>
-                          <Paperclip className="h-4 w-4" />
-                          Documento
-                        </Button>
-                        <input
-                          ref={imageInputRef}
-                          type="file"
-                          onChange={handleMediaUpload}
-                          className="hidden"
-                          accept="image/*"
-                        />
-                        <input
-                          ref={documentInputRef}
-                          type="file"
-                          onChange={handleMediaUpload}
-                          className="hidden"
-                          accept=".pdf,.doc,.docx"
-                        />
-                      </div>
                       <form onSubmit={handleSendMessage} className="flex gap-2">
                         <Input
                           placeholder="Escribe un mensaje..."
@@ -558,14 +435,7 @@ export default function GroupDetail() {
                           disabled={sendMessageMutation.isPending}
                           data-testid="input-chat-message"
                         />
-                        <Button
-                          type="submit"
-                          size="icon"
-                          disabled={!chatMessage.trim() || sendMessageMutation.isPending}
-                          data-testid="button-send-message"
-                        >
-                          <Send className="h-4 w-4" />
-                        </Button>
+                        <MediaComposer value={chatFile} onChange={setChatFile} onSend={() => sendMessageMutation.mutate({ content: chatMessage.trim(), file: chatFile })} disabled={sendMessageMutation.isPending || (!chatMessage.trim() && !chatFile)} uploading={sendMessageMutation.isPending && !!chatFile} progress={chatUploadProgress} onCancelUpload={() => chatUpload.current?.abort()} />
                       </form>
                     </div>
                   </Card>

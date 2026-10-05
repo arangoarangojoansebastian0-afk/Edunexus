@@ -138,11 +138,11 @@ export function CreateRecognitionCard({ users, onSuccess }: CreateRecognitionCar
         {selectedUser && (
           <div className="flex items-center gap-2 p-2 rounded bg-muted/50">
             <Avatar className="h-8 w-8">
-              <AvatarImage src={selectedUser.profileImageUrl || undefined} alt={selectedUser.firstName} />
+              <AvatarImage src={selectedUser.profileImageUrl || undefined} alt={selectedUser.firstName || ""} />
               <AvatarFallback>{selectedUser.firstName?.[0]}{selectedUser.lastName?.[0]}</AvatarFallback>
             </Avatar>
             <span className="text-sm font-medium">
-              @{(selectedUser.firstName + selectedUser.lastName).toLowerCase().replace(/\s/g, "")}
+              @{((selectedUser.firstName || "") + (selectedUser.lastName || "")).toLowerCase().replace(/\s/g, "")}
             </span>
           </div>
         )}

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { storage } from "./storage";
 import { db } from "./db";
 import { users, authTokens } from "@shared/schema";
-import { eq, sql, and } from "drizzle-orm";
+import { eq, sql, and, or } from "drizzle-orm";
 import crypto from "crypto";
 import { loginLimiter, registerLimiter, passwordResetLimiter } from "./rateLimit";
 import { sendEmail, passwordResetEmailHtml, verificationEmailHtml } from "./email";
@@ -15,8 +15,10 @@ const VERIFY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 horas
 
 async function createAuthToken(userId: string, type: "password_reset" | "email_verification", ttlMs: number) {
   const token = crypto.randomBytes(32).toString("hex");
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  await db.update(authTokens).set({ usedAt: new Date() }).where(and(eq(authTokens.userId, userId), eq(authTokens.type, type), sql`${authTokens.usedAt} IS NULL`));
   await db.insert(authTokens).values({
-    userId, token, type,
+    userId, token: tokenHash, type,
     expiresAt: new Date(Date.now() + ttlMs),
   });
   return token;
@@ -209,7 +211,7 @@ export function setupAuthRoutes(app: Express) {
       }).parse(req.body);
 
       const [row] = await db.select().from(authTokens)
-        .where(and(eq(authTokens.token, token), eq(authTokens.type, "password_reset")))
+        .where(and(or(eq(authTokens.token, crypto.createHash("sha256").update(token).digest("hex")), eq(authTokens.token, token)), eq(authTokens.type, "password_reset")))
         .limit(1);
 
       if (!row || row.usedAt || new Date(row.expiresAt) < new Date()) {
@@ -251,7 +253,7 @@ export function setupAuthRoutes(app: Express) {
       if (!token) return res.status(400).json({ error: "Token requerido" });
 
       const [row] = await db.select().from(authTokens)
-        .where(and(eq(authTokens.token, token), eq(authTokens.type, "email_verification")))
+        .where(and(or(eq(authTokens.token, crypto.createHash("sha256").update(token).digest("hex")), eq(authTokens.token, token)), eq(authTokens.type, "email_verification")))
         .limit(1);
 
       if (!row || row.usedAt || new Date(row.expiresAt) < new Date()) {

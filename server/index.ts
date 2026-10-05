@@ -119,8 +119,10 @@ app.use((req, res, next) => {
   console.log("[server] routes registered");
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+    const status = err.status || err.statusCode || (err.code === "LIMIT_FILE_SIZE" ? 413 : err.message?.startsWith("Formato de archivo no permitido") ? 415 : 500);
+    const message = err.code === "LIMIT_FILE_SIZE"
+      ? "El archivo supera el límite de 50 MB"
+      : err.message || "Error interno del servidor";
 
     // OJO: antes había un "throw err;" aquí después de responder. Eso lanza
     // una excepción por fuera de cualquier try/catch (el error-handler de

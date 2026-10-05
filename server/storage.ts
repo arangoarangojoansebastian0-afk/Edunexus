@@ -1611,7 +1611,7 @@ async getInstitutionByCode(code: string) {
   async gradeSubmission(id: string, grade: number, feedback: string, gradedBy: string): Promise<Submission> {
     const [updated] = await db
       .update(submissions)
-      .set({ grade, feedback, gradedBy, gradedAt: new Date(), status: "graded" })
+      .set({ grade: String(grade), feedback, gradedBy, gradedAt: new Date(), status: "graded" })
       .where(eq(submissions.id, id))
       .returning();
     return updated;
@@ -1800,7 +1800,7 @@ async getInstitutionByCode(code: string) {
   // Consolidado de boletín por grupo: estudiantes x materias, con nota y promedio
   async getReportCardsByGroup(institutionId: string, groupId: string, academicPeriodId?: string): Promise<{
     subjects: { id: string; name: string }[];
-    students: { id: string; firstName: string; lastName: string; grades: Record<string, number>; average: number | null }[];
+    students: { id: string; firstName: string; lastName: string; grades: Record<string, string>; average: number | null }[];
   }> {
     const enrolledStudents = await db
       .select({ student: users })
@@ -2188,12 +2188,14 @@ async getInstitutionByCode(code: string) {
 
   async getDirectMessages(userId: string, otherId: string, institutionId: string): Promise<any[]> {
     try {
-      const { directMessages, users } = await import("@shared/schema");
+      const { directMessages, users, files } = await import("@shared/schema");
       const { or, eq, and, asc } = await import("drizzle-orm");
       const sender = aliasedTable(users, "dm_s");
       const receiver = aliasedTable(users, "dm_r");
       const rows = await db.select({
         id: directMessages.id, content: directMessages.content,
+        mediaUrl: directMessages.mediaUrl, mediaType: directMessages.mediaType,
+        mediaFileName: files.fileName,
         createdAt: directMessages.createdAt, readAt: directMessages.readAt,
         senderId: directMessages.senderId, receiverId: directMessages.receiverId,
         senderFirst: sender.firstName, senderLast: sender.lastName,
@@ -2202,6 +2204,7 @@ async getInstitutionByCode(code: string) {
       }).from(directMessages)
         .leftJoin(sender, eq(directMessages.senderId, sender.id))
         .leftJoin(receiver, eq(directMessages.receiverId, receiver.id))
+        .leftJoin(files, eq(directMessages.mediaUrl, files.fileUrl))
         .where(and(
           eq(directMessages.institutionId, institutionId),
           or(
@@ -2215,9 +2218,11 @@ async getInstitutionByCode(code: string) {
     } catch { return []; }
   }
 
-  async sendDirectMessage(data: { senderId: string; receiverId: string; institutionId: string; content: string }): Promise<any> {
+  async sendDirectMessage(data: { senderId: string; receiverId: string; institutionId: string; content?: string | null; mediaUrl?: string | null; mediaType?: string | null }): Promise<any> {
     const { directMessages } = await import("@shared/schema");
-    const [msg] = await db.insert(directMessages).values(data).returning();
+    // Attachment-only messages must persist an empty string, since the existing
+    // database column is NOT NULL and this project does not need a migration.
+    const [msg] = await db.insert(directMessages).values({ ...data, content: data.content?.trim() ?? "" }).returning();
     return msg;
   }
 
@@ -2352,12 +2357,14 @@ async getInstitutionByCode(code: string) {
       content: chatGroupMessages.content,
       mediaUrl: chatGroupMessages.mediaUrl,
       mediaType: chatGroupMessages.mediaType,
+      mediaFileName: files.fileName,
       createdAt: chatGroupMessages.createdAt,
       senderFirstName: users.firstName,
       senderLastName: users.lastName,
       senderAvatar: users.profileImageUrl,
     }).from(chatGroupMessages)
       .innerJoin(users, eq(users.id, chatGroupMessages.senderId))
+      .leftJoin(files, eq(chatGroupMessages.mediaUrl, files.fileUrl))
       .where(eq(chatGroupMessages.groupId, groupId))
       .orderBy(chatGroupMessages.createdAt);
   }
@@ -2447,7 +2454,7 @@ async getInstitutionByCode(code: string) {
       senderId: reqRow.senderId,
       receiverId: reqRow.receiverId,
       institutionId: reqRow.institutionId,
-      content: reqRow.content,
+      content: reqRow.content ?? "",
     }).returning();
 
     await db.update(messageRequests)
@@ -3241,18 +3248,16 @@ async getInstitutionByCode(code: string) {
   }
 
   async getStudentEnrollments(institutionId: string, academicYearId?: string) {
-    const query = db
+    const conditions = [eq(studentEnrollments.institutionId, institutionId)];
+    if (academicYearId) conditions.push(eq(studentEnrollments.academicYearId, academicYearId));
+    return db
       .select({
         enrollment: studentEnrollments,
         student: users,
       })
       .from(studentEnrollments)
       .innerJoin(users, eq(studentEnrollments.studentId, users.id))
-      .where(eq(studentEnrollments.institutionId, institutionId));
-    if (academicYearId) {
-      return query.where(eq(studentEnrollments.academicYearId, academicYearId));
-    }
-    return query;
+      .where(and(...conditions));
   }
 
   async createStudentEnrollment(data: any) {

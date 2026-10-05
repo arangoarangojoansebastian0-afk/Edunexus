@@ -1,12 +1,14 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Paperclip, Send, X, FileText, Image as ImageIcon, File as FileIcon } from "lucide-react";
+import { Send, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { getFullName, getInitials } from "@/lib/authUtils";
 import { cn } from "@/lib/utils";
+import { MediaFileList } from "@/components/media/MediaFileList";
+import { MediaComposer } from "@/components/media/MediaComposer";
 
 interface CreatePostCardProps {
   // BUG CORREGIDO: antes `onSubmit` solo recibía el texto — el botón
@@ -21,12 +23,6 @@ interface CreatePostCardProps {
 
 const MAX_FILES = 5;
 
-function pickIcon(file: File) {
-  if (file.type.startsWith("image/")) return ImageIcon;
-  if (file.type === "application/pdf") return FileText;
-  return FileIcon;
-}
-
 export function CreatePostCard({
   onSubmit,
   placeholder = "¿Qué quieres compartir con la comunidad?",
@@ -36,13 +32,15 @@ export function CreatePostCard({
   const [content, setContent] = useState("");
   const [isFocused, setIsFocused] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [draftFile, setDraftFile] = useState<File | null>(null);
 
   const handleSubmit = () => {
-    if (!content.trim() && files.length === 0) return;
-    onSubmit(content.trim(), files.length > 0 ? files : undefined);
+    const completeFiles = [...files, ...(draftFile ? [draftFile] : [])];
+    if (!content.trim() && completeFiles.length === 0) return;
+    onSubmit(content.trim(), completeFiles.length > 0 ? completeFiles : undefined);
     setContent("");
     setFiles([]);
+    setDraftFile(null);
     setIsFocused(false);
   };
 
@@ -50,14 +48,6 @@ export function CreatePostCard({
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       handleSubmit();
     }
-  };
-
-  const handleFilesSelected = (selected: FileList | null) => {
-    if (!selected) return;
-    const incoming = Array.from(selected);
-    setFiles((prev) => [...prev, ...incoming].slice(0, MAX_FILES));
-    setIsFocused(true);
-    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const removeFile = (idx: number) => {
@@ -106,55 +96,15 @@ export function CreatePostCard({
 
             {files.length > 0 && (
               <div className="flex flex-wrap gap-2">
-                {files.map((file, idx) => {
-                  const Icon = pickIcon(file);
-                  return (
-                    <div
-                      key={idx}
-                      className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-md bg-muted text-xs font-medium"
-                      data-testid={`attachment-preview-${idx}`}
-                    >
-                      <Icon className="h-3.5 w-3.5 shrink-0" />
-                      <span className="max-w-[140px] truncate">{file.name}</span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-5 w-5 shrink-0"
-                        onClick={() => removeFile(idx)}
-                        data-testid={`button-remove-attachment-${idx}`}
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  );
-                })}
+                <MediaFileList files={files} onRemove={removeFile} />
               </div>
             )}
 
-            {(isFocused || content || files.length > 0) && (
+            {(isFocused || content || files.length > 0 || draftFile) && (
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => handleFilesSelected(e.target.files)}
-                    data-testid="input-file-attachment"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="gap-2"
-                    disabled={files.length >= MAX_FILES}
-                    onClick={() => fileInputRef.current?.click()}
-                    data-testid="button-add-media"
-                  >
-                    <Paperclip className="h-4 w-4" />
-                    <span className="hidden sm:inline">Adjuntar</span>
-                  </Button>
+                  <MediaComposer value={draftFile} onChange={(file) => { setDraftFile(file); setIsFocused(true); }} onSend={() => {}} showSendButton={false} disabled={isSubmitting || files.length >= MAX_FILES} />
+                  {draftFile && <Button type="button" variant="outline" size="sm" disabled={isSubmitting || files.length >= MAX_FILES} onClick={() => { setFiles((prev) => [...prev, draftFile]); setDraftFile(null); }}>Agregar ({files.length + 1}/{MAX_FILES})</Button>}
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -164,6 +114,7 @@ export function CreatePostCard({
                     onClick={() => {
                       setContent("");
                       setFiles([]);
+                      setDraftFile(null);
                       setIsFocused(false);
                     }}
                     data-testid="button-cancel-post"
@@ -172,7 +123,7 @@ export function CreatePostCard({
                   </Button>
                   <Button
                     onClick={handleSubmit}
-                    disabled={(!content.trim() && files.length === 0) || isSubmitting}
+                    disabled={(!content.trim() && files.length === 0 && !draftFile) || isSubmitting}
                     size="sm"
                     className="gap-2"
                     data-testid="button-submit-post"

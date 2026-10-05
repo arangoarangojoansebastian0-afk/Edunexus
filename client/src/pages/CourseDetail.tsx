@@ -1,5 +1,5 @@
 import { FileViewer } from "@/components/FileViewer";
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -37,22 +37,10 @@ import {
 import { format, isPast } from "date-fns";
 import { es } from "date-fns/locale";
 import type { CourseWithTeacher, Activity, SubmissionWithStudent, AttendanceWithStudent } from "@shared/schema";
+import { MediaFileList } from "@/components/media/MediaFileList";
+import { MediaComposer } from "@/components/media/MediaComposer";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function FileChip({ name, onRemove }: { name: string; onRemove?: () => void }) {
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted text-xs font-medium max-w-xs">
-      <Paperclip className="h-3 w-3 shrink-0" />
-      <span className="truncate">{name}</span>
-      {onRemove && (
-        <button type="button" onClick={onRemove} className="shrink-0 hover:text-destructive">
-          <X className="h-3 w-3" />
-        </button>
-      )}
-    </span>
-  );
-}
+// ─── Create Activity ──────────────────────────────────────────────────────────
 
 // ─── Create Activity ──────────────────────────────────────────────────────────
 
@@ -84,7 +72,7 @@ function CreateActivityDialog({
 }) {
   const { toast } = useToast();
   const [attachments, setAttachments] = useState<File[]>([]);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [draftFile, setDraftFile] = useState<File | null>(null);
 
   const form = useForm<CreateActivityForm>({
     resolver: zodResolver(createActivitySchema),
@@ -107,7 +95,7 @@ function CreateActivityDialog({
       formData.append("isPublished", String(data.isPublished));
       if (data.description) formData.append("description", data.description);
       if (data.dueDate) formData.append("dueDate", new Date(data.dueDate).toISOString());
-      attachments.forEach((f) => formData.append("attachments", f));
+      [...attachments, ...(draftFile ? [draftFile] : [])].forEach((f) => formData.append("attachments", f));
 
       const res = await fetch(`/api/classroom/courses/${courseId}/activities`, {
         method: "POST",
@@ -122,15 +110,11 @@ function CreateActivityDialog({
       toast({ title: "Actividad creada" });
       form.reset();
       setAttachments([]);
+      setDraftFile(null);
       onClose();
     },
     onError: () => toast({ title: "Error al crear actividad", variant: "destructive" }),
   });
-
-  const addFiles = (files: FileList | null) => {
-    if (!files) return;
-    setAttachments((prev) => [...prev, ...Array.from(files)]);
-  };
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -212,33 +196,10 @@ function CreateActivityDialog({
               <FormLabel>Archivos adjuntos (opcional)</FormLabel>
               <div className="mt-1.5 space-y-2">
                 {attachments.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {attachments.map((f, i) => (
-                      <FileChip
-                        key={i}
-                        name={f.name}
-                        onRemove={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
-                      />
-                    ))}
-                  </div>
+                  <MediaFileList files={attachments} onRemove={(index) => setAttachments((prev) => prev.filter((_, i) => i !== index))} />
                 )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => fileRef.current?.click()}
-                >
-                  <Paperclip className="h-3.5 w-3.5 mr-1.5" />
-                  Adjuntar archivos
-                </Button>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                  onChange={(e) => addFiles(e.target.files)}
-                />
+                <MediaComposer value={draftFile} onChange={setDraftFile} onSend={() => {}} showSendButton={false} disabled={mutation.isPending || attachments.length >= 5} />
+                {draftFile && <Button type="button" variant="outline" size="sm" disabled={mutation.isPending || attachments.length >= 5} onClick={() => { setAttachments((prev) => [...prev, draftFile]); setDraftFile(null); }}>Agregar archivo a la actividad</Button>}
               </div>
             </div>
 
@@ -271,13 +232,13 @@ function SubmitDialog({
   const { user } = useAuth();
   const [content, setContent] = useState("");
   const [files, setFiles] = useState<File[]>([]);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [draftFile, setDraftFile] = useState<File | null>(null);
 
   const mutation = useMutation({
     mutationFn: async () => {
       const formData = new FormData();
       formData.append("content", content);
-      files.forEach((f) => formData.append("attachments", f));
+      [...files, ...(draftFile ? [draftFile] : [])].forEach((f) => formData.append("attachments", f));
 
       const res = await fetch(`/api/classroom/activities/${activity!.id}/submit`, {
         method: "POST",
@@ -292,15 +253,11 @@ function SubmitDialog({
       toast({ title: "Entrega realizada correctamente" });
       setContent("");
       setFiles([]);
+      setDraftFile(null);
       onClose();
     },
     onError: () => toast({ title: "Error al entregar", variant: "destructive" }),
   });
-
-  const addFiles = (fl: FileList | null) => {
-    if (!fl) return;
-    setFiles((prev) => [...prev, ...Array.from(fl)]);
-  };
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -342,33 +299,10 @@ function SubmitDialog({
           <div>
             <p className="text-xs font-medium mb-1.5">Adjuntar archivos (opcional)</p>
             {files.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {files.map((f, i) => (
-                  <FileChip
-                    key={i}
-                    name={f.name}
-                    onRemove={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
-                  />
-                ))}
-              </div>
+              <div className="mb-2"><MediaFileList files={files} onRemove={(index) => setFiles((prev) => prev.filter((_, i) => i !== index))} /></div>
             )}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => fileRef.current?.click()}
-            >
-              <Paperclip className="h-3.5 w-3.5 mr-1.5" />
-              Adjuntar
-            </Button>
-            <input
-              ref={fileRef}
-              type="file"
-              multiple
-              className="hidden"
-              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-              onChange={(e) => addFiles(e.target.files)}
-            />
+            <MediaComposer value={draftFile} onChange={setDraftFile} onSend={() => {}} showSendButton={false} disabled={mutation.isPending || files.length >= 5} />
+            {draftFile && <Button type="button" variant="outline" size="sm" disabled={mutation.isPending || files.length >= 5} onClick={() => { setFiles((prev) => [...prev, draftFile]); setDraftFile(null); }}>Agregar archivo a la entrega</Button>}
           </div>
         </div>
 
@@ -382,7 +316,7 @@ function SubmitDialog({
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || (!content.trim() && files.length === 0)}
+            disabled={mutation.isPending || (!content.trim() && files.length === 0 && !draftFile)}
           >
             {mutation.isPending ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />

@@ -24,8 +24,10 @@ import type { User } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
 import path from "path";
+import { randomUUID } from "crypto";
 import session from "express-session";
 import { supabase } from "./supabase";
+import { db } from "./db";
 import { sendPushToUser, getVapidPublicKey, pushEnabled } from "./push";
 import { hashPassword } from "./authSimple";
 import { messagingLimiter } from "./rateLimit";
@@ -38,6 +40,18 @@ interface Request extends ExpressRequest {
   user?: User;
 }
 
+class MediaUploadError extends Error {
+  constructor(message: string, readonly statusCode: number) { super(message); }
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: User;
+    }
+  }
+}
+
 declare module "express-session" {
   interface SessionData {
     userId: string;
@@ -48,14 +62,19 @@ declare module "express-session" {
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024, files: 5 },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = [".pdf", ".docx", ".doc", ".jpg", ".jpeg", ".png"];
+    // Extension is checked here for a quick rejection; endpoint-level checks
+    // also validate MIME and destination permissions before storing anything.
+    const allowedTypes = [
+      ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".zip", ".txt",
+      ".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".webm", ".mov", ".mp3", ".wav", ".m4a", ".ogg", ".oga", ".webm",
+    ];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowedTypes.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error("Invalid file type"));
+      cb(new Error("Formato de archivo no permitido"));
     }
   },
 });
@@ -115,12 +134,40 @@ function requireParent(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+const allowedMimeByExtension: Record<string, string[]> = {
+  ".jpg": ["image/jpeg"], ".jpeg": ["image/jpeg"], ".png": ["image/png"], ".webp": ["image/webp"], ".gif": ["image/gif"],
+  ".mp4": ["video/mp4"], ".webm": ["video/webm", "audio/webm"], ".mov": ["video/quicktime"],
+  ".mp3": ["audio/mpeg"], ".wav": ["audio/wav", "audio/x-wav"], ".m4a": ["audio/mp4", "audio/x-m4a"], ".ogg": ["audio/ogg", "application/ogg"], ".oga": ["audio/ogg"],
+  ".pdf": ["application/pdf"], ".doc": ["application/msword"], ".docx": ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+  ".xls": ["application/vnd.ms-excel"], ".xlsx": ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+  ".ppt": ["application/vnd.ms-powerpoint"], ".pptx": ["application/vnd.openxmlformats-officedocument.presentationml.presentation"],
+  ".zip": ["application/zip", "application/x-zip-compressed"], ".txt": ["text/plain"],
+};
+
+function validateMediaFile(file: Express.Multer.File) {
+  const extension = path.extname(file.originalname).toLowerCase();
+  const mimeType = file.mimetype.toLowerCase().split(";")[0].trim();
+  if (file.size <= 0 || file.size > 50 * 1024 * 1024) throw new MediaUploadError("El archivo debe pesar entre 1 byte y 50 MB", 413);
+  if (!allowedMimeByExtension[extension] || !allowedMimeByExtension[extension].includes(mimeType)) {
+    throw new MediaUploadError("El tipo MIME no coincide con la extensión del archivo", 415);
+  }
+  return mimeType;
+}
+
+function handleMediaError(res: Response, error: unknown, fallback: string) {
+  if (error instanceof MediaUploadError) return res.status(error.statusCode).json({ message: error.message });
+  if (error instanceof Error && error.message.startsWith("Formato de archivo no permitido")) return res.status(415).json({ message: error.message });
+  return res.status(500).json({ message: fallback });
+}
+
 const uploadToSupabase = async (file: Express.Multer.File, folder: string): Promise<string> => {
-  const fileName = `${folder}/${Date.now()}-${file.originalname.replace(/\s/g, "_")}`;
+  const mimeType = validateMediaFile(file);
+  const safeName = path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, "_").slice(-180);
+  const fileName = `${folder}/${Date.now()}-${randomUUID()}-${safeName}`;
   const { data, error } = await supabase.storage
     .from("loyola-files")
     .upload(fileName, file.buffer, {
-      contentType: file.mimetype,
+      contentType: mimeType,
       upsert: false,
     });
 
@@ -131,6 +178,25 @@ const uploadToSupabase = async (file: Express.Multer.File, folder: string): Prom
     .getPublicUrl(fileName);
 
   return urlData.publicUrl;
+};
+
+const savePrivateMedia = async (file: Express.Multer.File, user: User) => {
+  const mimeType = validateMediaFile(file);
+  const id = randomUUID();
+  const cleanName = path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, "_").slice(-180);
+  const storageKey = `institutions/${user.institutionId}/users/${user.id}/messages/${id}-${cleanName}`;
+  const { error } = await supabase.storage.from("loyola-files").upload(storageKey, file.buffer, { contentType: mimeType, upsert: false });
+  if (error) throw new Error("No se pudo guardar el archivo multimedia");
+  const mediaType = mimeType.startsWith("image/") ? "image" : mimeType.startsWith("video/") ? "video" : mimeType.startsWith("audio/") ? "audio" : "file";
+  const mediaUrl = `/api/media/${id}/${encodeURIComponent(path.basename(file.originalname))}`;
+  try {
+    const { files } = await import("@shared/schema");
+    await db.insert(files).values({ id, institutionId: user.institutionId, uploaderId: user.id, fileName: path.basename(file.originalname).slice(0, 255), fileUrl: mediaUrl, storageKey, fileType: mimeType, fileSize: file.size, visibility: "private", approved: false });
+  } catch (error) {
+    await supabase.storage.from("loyola-files").remove([storageKey]).catch(() => {});
+    throw error;
+  }
+  return { mediaUrl, mediaType };
 };
 
 // ─── REGISTRO PRINCIPAL DE RUTAS ─────────────────────────────────────
@@ -341,7 +407,7 @@ export async function registerRoutes(
       const userId = req.user!.id;
       const files = (req.files as Express.Multer.File[]) || [];
       const media = files.length > 0
-        ? await Promise.all(files.map((f) => uploadToSupabase(f, "posts")))
+        ? await Promise.all(files.map(async (f) => (await savePrivateMedia(f, req.user!)).mediaUrl))
         : undefined;
       const data = insertPostSchema.parse({ ...req.body, authorId: userId, ...(media ? { media } : {}) });
       const post = await storage.createPost(data);
@@ -364,7 +430,7 @@ export async function registerRoutes(
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid data", errors: error.errors });
       }
-      res.status(500).json({ message: "Failed to create post" });
+      handleMediaError(res, error, "No se pudo crear la publicación");
     }
   });
 
@@ -546,7 +612,7 @@ export async function registerRoutes(
       }
       const files = (req.files as Express.Multer.File[]) || [];
       const media = files.length > 0
-        ? await Promise.all(files.map((f) => uploadToSupabase(f, "posts")))
+        ? await Promise.all(files.map(async (f) => (await savePrivateMedia(f, req.user!)).mediaUrl))
         : undefined;
       const data = insertPostSchema.parse({
         ...req.body,
@@ -557,7 +623,7 @@ export async function registerRoutes(
       const post = await storage.createPost(data);
       res.status(201).json(post);
     } catch (error) {
-      res.status(500).json({ message: "Failed to create post" });
+      handleMediaError(res, error, "No se pudo crear la publicación");
     }
   });
 
@@ -576,6 +642,69 @@ export async function registerRoutes(
     }
   });
 
+  // Los archivos de chat se sirven con enlaces firmados breves solo después
+  // de comprobar que el usuario participa en la conversación que los referencia.
+  app.get("/api/media/:fileId/:fileName?", requireAuth, async (req, res) => {
+    try {
+      const file = await storage.getFile(req.params.fileId);
+      if (!file || file.institutionId !== req.user!.institutionId || file.visibility !== "private") {
+        return res.status(404).json({ message: "Archivo no encontrado" });
+      }
+      const mediaUrl = file.fileUrl;
+      const { directMessages, chatGroupMessages, messages, posts, activities, submissions, courses } = await import("@shared/schema");
+      const { eq, arrayContains } = await import("drizzle-orm");
+      const userId = req.user!.id;
+      const direct = await db.select({ senderId: directMessages.senderId, receiverId: directMessages.receiverId }).from(directMessages).where(eq(directMessages.mediaUrl, mediaUrl)).limit(1);
+      let allowed = direct.some((message) => message.senderId === userId || message.receiverId === userId);
+      if (!allowed) {
+        const privateGroup = await db.select({ groupId: chatGroupMessages.groupId }).from(chatGroupMessages).where(eq(chatGroupMessages.mediaUrl, mediaUrl)).limit(1);
+        if (privateGroup[0]) {
+          const { chatGroups } = await import("@shared/schema");
+          const [group] = await db.select({ institutionId: chatGroups.institutionId }).from(chatGroups).where(eq(chatGroups.id, privateGroup[0].groupId)).limit(1);
+          allowed = group?.institutionId === req.user!.institutionId && await storage.isChatGroupMember(privateGroup[0].groupId, userId);
+        }
+      }
+      if (!allowed) {
+        const academicGroup = await db.select({ groupId: messages.groupId }).from(messages).where(eq(messages.mediaUrl, mediaUrl)).limit(1);
+        if (academicGroup[0]) {
+          const group = await storage.getGroup(academicGroup[0].groupId);
+          allowed = group?.institutionId === req.user!.institutionId && await storage.isGroupMember(academicGroup[0].groupId, userId);
+        }
+      }
+      if (!allowed) {
+        const [post] = await db.select().from(posts).where(arrayContains(posts.media, [mediaUrl])).limit(1);
+        if (post) {
+          const author = await storage.getUser(post.authorId);
+          if (post.groupId) {
+            const group = await storage.getGroup(post.groupId);
+            allowed = group?.institutionId === req.user!.institutionId && await storage.isGroupMember(post.groupId, userId);
+            if (!allowed) {
+              const [course] = await db.select().from(courses).where(eq(courses.groupId, post.groupId)).limit(1);
+              if (course) allowed = await canAccessCourseBoard(course, req.user!);
+            }
+          } else allowed = author?.institutionId === req.user!.institutionId;
+        }
+      }
+      if (!allowed) {
+        const [activity] = await db.select({ id: activities.id }).from(activities).where(arrayContains(activities.attachments, [mediaUrl])).limit(1);
+        if (activity) allowed = (await canAccessActivity(activity.id, req.user!)).ok;
+      }
+      if (!allowed) {
+        const [submission] = await db.select({ studentId: submissions.studentId, activityId: submissions.activityId }).from(submissions).where(arrayContains(submissions.attachments, [mediaUrl])).limit(1);
+        if (submission) {
+          const access = await canAccessActivity(submission.activityId, req.user!);
+          allowed = access.ok && (submission.studentId === userId || access.course?.teacherId === userId || FULL_ACCESS_ROLES.includes(req.user!.role));
+        }
+      }
+      if (!allowed) return res.status(403).json({ message: "No tienes acceso a este archivo" });
+      const { data, error } = await supabase.storage.from("loyola-files").createSignedUrl(file.storageKey, 120);
+      if (error || !data?.signedUrl) return res.status(404).json({ message: "No se pudo abrir el archivo" });
+      res.redirect(data.signedUrl);
+    } catch {
+      res.status(500).json({ message: "No se pudo abrir el archivo" });
+    }
+  });
+
   app.post("/api/groups/:id/messages", requireAuth, messagingLimiter, upload.single("media"), async (req, res) => {
     try {
       const userId = req.user!.id;
@@ -585,19 +714,17 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Not a group member" });
       }
       
+      const content = typeof req.body.content === "string" ? req.body.content.trim() : "";
       let mediaUrl: string | undefined;
       let mediaType: string | undefined;
       
       if (req.file) {
-        mediaUrl = `/uploads/${req.file.filename}`;
-        const ext = path.extname(req.file.originalname).slice(1).toLowerCase();
-        if (["mp3", "wav", "m4a", "ogg"].includes(ext)) mediaType = "voice";
-        else if (["jpg", "jpeg", "png", "gif"].includes(ext)) mediaType = "image";
-        else if (["pdf", "doc", "docx"].includes(ext)) mediaType = "document";
+        ({ mediaUrl, mediaType } = await savePrivateMedia(req.file, req.user!));
       }
+      if (!content && !req.file) return res.status(400).json({ message: "Escribe un mensaje o adjunta un archivo" });
       
       const data = insertMessageSchema.parse({
-        ...req.body,
+        content,
         groupId,
         senderId: userId,
         mediaUrl,
@@ -620,7 +747,7 @@ export async function registerRoutes(
       }
       res.status(201).json(message);
     } catch (error) {
-      res.status(500).json({ message: "Failed to send message" });
+      handleMediaError(res, error, "No se pudo enviar el mensaje");
     }
   });
 
@@ -1975,7 +2102,7 @@ export async function registerRoutes(
   // curso (ver storage.getOrCreateCourseGroup). Los permisos NO se basan
   // en membresía de grupo genérica, sino directamente en la inscripción
   // al curso — así no hay que mantener sincronizados dos sistemas.
-  async function canAccessCourseBoard(course: any, user: Express.User): Promise<boolean> {
+  async function canAccessCourseBoard(course: any, user: User): Promise<boolean> {
     if (!course || course.institutionId !== user.institutionId) return false;
     const staffRoles = ["admin", "super_admin", "director", "coordinator", "secretary"];
     if (staffRoles.includes(user.role)) return true;
@@ -2009,7 +2136,7 @@ export async function registerRoutes(
       const groupId = await storage.getOrCreateCourseGroup(req.params.id);
       const files = (req.files as Express.Multer.File[]) || [];
       const media = files.length > 0
-        ? await Promise.all(files.map((f) => uploadToSupabase(f, "posts")))
+        ? await Promise.all(files.map(async (f) => (await savePrivateMedia(f, req.user!)).mediaUrl))
         : undefined;
       const data = insertPostSchema.parse({
         ...req.body,
@@ -2031,6 +2158,11 @@ export async function registerRoutes(
             relatedId: post.id,
             read: false,
           });
+          sendPushToUser(e.studentId, {
+            title: `Nuevo anuncio en ${course!.name}`,
+            body: `${user.firstName || "Tu profesor"} publicó algo nuevo en el curso.`,
+            url: `/classroom/${course!.id}`,
+          }).catch(() => {});
         }
       }
 
@@ -2083,7 +2215,7 @@ export async function registerRoutes(
         // multipart/form-data llega como strings: hay que coercionar antes de validar con Zod
         const files = (req.files as Express.Multer.File[]) || [];
         const attachmentUrls = await Promise.all(
-          files.map((f) => uploadToSupabase(f, "activities"))
+          files.map(async (f) => (await savePrivateMedia(f, req.user!)).mediaUrl)
         );
 
         const body: Record<string, any> = { ...req.body, courseId: req.params.id };
@@ -2093,6 +2225,14 @@ export async function registerRoutes(
 
         const data = insertActivitySchema.parse(body);
         const activity = await storage.createActivity(data);
+        if (activity.isPublished) {
+          const enrollments = await storage.getEnrollments(course.id);
+          await Promise.all(enrollments.map((enrollment) => sendPushToUser(enrollment.studentId, {
+            title: `Nueva tarea en ${course.name}`,
+            body: activity.title,
+            url: `/classroom/${course.id}`,
+          })));
+        }
         res.status(201).json(activity);
       } catch (err: any) {
         console.error("Error creating activity:", err);
@@ -2100,7 +2240,7 @@ export async function registerRoutes(
           // Error de validación Zod: devolver detalle para depurar en frontend
           return res.status(400).json({ message: "Datos inválidos", issues: err.issues });
         }
-        res.status(500).json({ message: "Failed to create activity" });
+        handleMediaError(res, err, "No se pudo crear la actividad");
       }
     }
   );
@@ -2231,11 +2371,17 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.post("/api/classroom/activities/:id/submit", requireAuth, upload.array("attachments", 5), async (req, res) => {
+  app.post("/api/classroom/activities/:id/submit", requireAuth, requireVerified, upload.array("attachments", 5), async (req, res) => {
     try {
+      const activity = await storage.getActivity(req.params.id);
+      if (!activity) return res.status(404).json({ message: "Actividad no encontrada" });
+      const course = await storage.getCourse(activity.courseId);
+      if (!course || course.institutionId !== req.user!.institutionId) return res.status(404).json({ message: "Actividad no encontrada" });
+      const enrolled = await storage.isEnrolled(course.id, req.user!.id);
+      if (req.user!.role !== "student" || !enrolled) return res.status(403).json({ message: "Solo estudiantes matriculados pueden entregar esta actividad" });
       const files = (req.files as Express.Multer.File[]) || [];
       const attachmentUrls = await Promise.all(
-        files.map((f) => uploadToSupabase(f, "submissions"))
+        files.map(async (f) => (await savePrivateMedia(f, req.user!)).mediaUrl)
       );
       
       const data = insertSubmissionSchema.parse({
@@ -2246,9 +2392,14 @@ export async function registerRoutes(
         attachments: attachmentUrls,
       });
       const submission = await storage.createSubmission(data);
+      sendPushToUser(course.teacherId, {
+        title: "Nueva entrega",
+        body: `Un estudiante entregó: ${activity.title}`,
+        url: `/classroom/${course.id}`,
+      }).catch(() => {});
       res.status(201).json(submission);
     } catch (err) {
-      res.status(500).json({ message: "Failed to submit" });
+      handleMediaError(res, err, "No se pudo enviar la entrega");
     }
   });
 
@@ -2258,7 +2409,7 @@ export async function registerRoutes(
   // curso. "Comentarios privados": un hilo 1 a 1 entre CADA estudiante y el
   // docente — ningún otro estudiante lo ve, ni siquiera otros docentes del
   // curso a menos que sean el mismo docente o directivos.
-  async function canAccessActivity(activityId: string, user: Express.User): Promise<{ ok: boolean; course?: any }> {
+  async function canAccessActivity(activityId: string, user: User): Promise<{ ok: boolean; course?: any }> {
     const activity = await storage.getActivity(activityId);
     if (!activity) return { ok: false };
     const course = await storage.getCourse(activity.courseId);
@@ -2752,7 +2903,7 @@ export async function registerRoutes(
   });
 
   // Enviar mensaje directo
-  app.post("/api/direct-messages/:receiverId", requireAuth, messagingLimiter, async (req, res) => {
+  app.post("/api/direct-messages/:receiverId", requireAuth, messagingLimiter, upload.single("media"), async (req, res) => {
     try {
       const senderId = req.user!.id;
       const receiverId = req.params.receiverId;
@@ -2777,11 +2928,22 @@ export async function registerRoutes(
         }
       }
 
+      if (!receiver || receiver.institutionId !== req.user!.institutionId) {
+        return res.status(404).json({ message: "Usuario no encontrado en tu institución" });
+      }
+      const file = req.file;
+      const content = typeof req.body.content === "string" ? req.body.content.trim() : "";
+      if (!content && !file) return res.status(400).json({ message: "Escribe un mensaje o adjunta un archivo" });
+      let mediaUrl: string | null = null;
+      let mediaType: string | null = null;
+      if (file) ({ mediaUrl, mediaType } = await savePrivateMedia(file, req.user!));
       const msg = await storage.sendDirectMessage({
         senderId,
         receiverId,
         institutionId: req.user!.institutionId!,
-        content: req.body.content,
+        content,
+        mediaUrl,
+        mediaType,
       });
       res.status(201).json(msg);
       sendPushToUser(receiverId, {
@@ -2789,7 +2951,7 @@ export async function registerRoutes(
         body: req.body.content?.slice(0, 120) || "Nuevo mensaje",
         url: `/messages/${senderId}`,
       }).catch(() => {});
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+    } catch (e: any) { handleMediaError(res, e, "No se pudo enviar el mensaje"); }
   });
 
   // ── Bloquear / desbloquear usuarios ─────────────────────────────────────
@@ -3087,20 +3249,25 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/chat-groups/:id/messages", requireAuth, messagingLimiter, async (req, res) => {
+  app.post("/api/chat-groups/:id/messages", requireAuth, messagingLimiter, upload.single("media"), async (req, res) => {
     try {
       const isMember = await storage.isChatGroupMember(req.params.id, req.user!.id);
       if (!isMember) return res.status(403).json({ message: "No perteneces a este grupo" });
 
-      const { content } = req.body as { content?: string };
-      if (!content || !content.trim()) {
-        return res.status(400).json({ message: "El mensaje no puede estar vacío" });
-      }
+      const content = typeof req.body.content === "string" ? req.body.content.trim() : "";
+      if (!content && !req.file) return res.status(400).json({ message: "Escribe un mensaje o adjunta un archivo" });
+      const sender = req.user!;
+      const file = req.file;
+      let mediaUrl: string | null = null;
+      let mediaType: string | null = null;
+      if (file) ({ mediaUrl, mediaType } = await savePrivateMedia(file, sender));
 
       const msg = await storage.sendChatGroupMessage({
         groupId: req.params.id,
         senderId: req.user!.id,
-        content: content.trim(),
+        content,
+        mediaUrl,
+        mediaType,
       });
       res.status(201).json(msg);
 
@@ -3118,7 +3285,7 @@ export async function registerRoutes(
         ).catch(() => {});
       }).catch(() => {});
     } catch (e: any) {
-      res.status(500).json({ message: e.message });
+      handleMediaError(res, e, "No se pudo enviar el mensaje");
     }
   });
 

@@ -3,9 +3,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Download, FileText, Image, File } from "lucide-react";
 
-function getFileType(url: string): "image" | "pdf" | "office" | "other" {
-  const ext = url.split(".").pop()?.toLowerCase().split("?")[0];
+function getFileType(url: string): "image" | "video" | "audio" | "pdf" | "office" | "other" {
+  const ext = url.split("/").pop()?.split("?")[0].split("-").pop()?.split(".").pop()?.toLowerCase();
   if (["jpg", "jpeg", "png", "gif", "webp"].includes(ext || "")) return "image";
+  if (["mp4", "webm", "mov"].includes(ext || "")) return "video";
+  if (["mp3", "wav", "m4a", "ogg", "oga"].includes(ext || "")) return "audio";
   if (ext === "pdf") return "pdf";
   if (["doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp"].includes(ext || "")) return "office";
   return "other";
@@ -60,12 +62,10 @@ export function FileViewer({ urls, label = "Archivos" }: { urls: string[]; label
 
           <div className="flex-1 overflow-hidden rounded-md border bg-muted/20">
             {fileType === "image" && (
-              <img
-                src={selected!}
-                alt="archivo"
-                className="w-full h-full object-contain"
-              />
+              <img src={selected!} alt="archivo" className="w-full h-full object-contain" />
             )}
+            {fileType === "video" && <video src={selected!} controls className="w-full h-full object-contain" />}
+            {fileType === "audio" && <div className="flex h-full items-center justify-center p-8"><audio src={selected!} controls className="w-full" /></div>}
             {fileType === "pdf" && (
               <iframe
                 src={selected!}

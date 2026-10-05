@@ -1355,10 +1355,10 @@ export type InsertCourseAnnouncement = z.infer<typeof insertCourseAnnouncementSc
 export type AnnouncementComment = typeof announcementComments.$inferSelect;
 export type InsertAnnouncementComment = z.infer<typeof insertAnnouncementCommentSchema>;
 export type AnnouncementCommentWithAuthor = AnnouncementComment & {
-  author: { id: string; firstName: string; lastName: string; profileImageUrl?: string | null; role: string };
+  author: { id: string; firstName: string | null; lastName: string | null; profileImageUrl?: string | null; role: string };
 };
 export type CourseAnnouncementWithAuthor = CourseAnnouncement & {
-  author: { id: string; firstName: string; lastName: string; profileImageUrl?: string | null; role: string };
+  author: { id: string; firstName: string | null; lastName: string | null; profileImageUrl?: string | null; role: string };
   commentCount: number;
 };
 export type Submission = typeof submissions.$inferSelect;
@@ -1377,7 +1377,7 @@ export type EventWithHost = Event & { host: User; participants?: EventParticipan
 export type MessageWithSender = Message & { sender: User };
 export type UserWithBadges = User & { userBadges?: (UserBadge & { badge: Badge })[] };
 export type QuestionWithAnswers = Question & { author: User; answers: (Answer & { author: User })[]; _count?: { answers: number } };
-export type RecognitionWithUsers = Recognition & { createdBy: User; recipient: User };
+export type RecognitionWithUsers = Omit<Recognition, "createdBy" | "recipientId"> & { createdBy: User; recipient: User };
 export type CourseWithTeacher = Course & { teacher: User; _count?: { students: number; activities: number } };
 export type ActivityWithSubmission = Activity & { mySubmission?: Submission; _count?: { submissions: number } };
 export type SubmissionWithStudent = Submission & { student: User };

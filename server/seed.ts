@@ -357,8 +357,8 @@ async function seed() {
     hostId: teacherUser.id,
     startTime: new Date(Date.now() + 86400000), // Tomorrow
     endTime: new Date(Date.now() + 90000000),
-    capacity: 5,
-    videoUrl: "https://meet.google.com/abc-xyz",
+    maxParticipants: 5,
+    locationUrl: "https://meet.google.com/abc-xyz",
   }).returning().then(r => r[0]);
 
   const event2 = await db.insert(events).values({
@@ -367,8 +367,8 @@ async function seed() {
     hostId: student1.id,
     startTime: new Date(Date.now() + 172800000), // Day after tomorrow
     endTime: new Date(Date.now() + 176400000),
-    capacity: 3,
-    videoUrl: "https://meet.google.com/def-uvw",
+    maxParticipants: 3,
+    locationUrl: "https://meet.google.com/def-uvw",
   }).returning().then(r => r[0]);
 
   console.log("✅ Eventos creados");
