@@ -190,6 +190,7 @@ export interface IStorage {
   hasUserReacted(postId: string, userId: string): Promise<boolean>;
   getFile(id: string): Promise<FileWithUploader | undefined>;
   getAllFiles(approved?: boolean, institutionId?: string, publicOnly?: boolean): Promise<FileWithUploader[]>;
+  getFilesPage(options: { approved?: boolean; institutionId?: string; publicOnly?: boolean; limit: number; offset: number }): Promise<{ items: FileWithUploader[]; total: number }>;
   getFilesByUser(userId: string, institutionId?: string, publicOnly?: boolean): Promise<FileWithUploader[]>;
   getPendingFiles(): Promise<FileWithUploader[]>;
   createFile(file: InsertFile): Promise<File>;
@@ -870,6 +871,18 @@ async getInstitutionByCode(code: string) {
       .orderBy(desc(files.createdAt));
 
     return allFiles.map((f) => ({ ...f.files, uploader: f.users }));
+  }
+
+  async getFilesPage({ approved = true, institutionId, publicOnly = false, limit, offset }: { approved?: boolean; institutionId?: string; publicOnly?: boolean; limit: number; offset: number }): Promise<{ items: FileWithUploader[]; total: number }> {
+    const conditions = [eq(files.approved, approved)];
+    if (institutionId) conditions.push(eq(files.institutionId, institutionId));
+    if (publicOnly) conditions.push(eq(files.visibility, "public"));
+    const where = and(...conditions);
+    const [rows, [{ total }]] = await Promise.all([
+      db.select().from(files).where(where).innerJoin(users, eq(files.uploaderId, users.id)).orderBy(desc(files.createdAt)).limit(limit).offset(offset),
+      db.select({ total: sql<number>`count(*)` }).from(files).where(where),
+    ]);
+    return { items: rows.map((f) => ({ ...f.files, uploader: f.users })), total: Number(total || 0) };
   }
 
   async getFilesByUser(userId: string, institutionId?: string, publicOnly = false): Promise<FileWithUploader[]> {

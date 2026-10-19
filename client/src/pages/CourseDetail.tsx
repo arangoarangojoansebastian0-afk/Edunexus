@@ -1140,14 +1140,22 @@ export default function CourseDetail() {
 
   const { data: course, isLoading } = useQuery<CourseWithTeacher>({
     queryKey: ["/api/classroom/courses", id],
-    queryFn: () =>
-      fetch(`/api/classroom/courses/${id}`, { credentials: "include" }).then((r) => r.json()),
+    queryFn: async () => {
+      const response = await fetch(`/api/classroom/courses/${id}`, { credentials: "include" });
+      if (!response.ok) throw new Error("No se pudo cargar el curso");
+      return response.json();
+    },
+    enabled: !!id,
   });
 
   const { data: activityList } = useQuery<Activity[]>({
     queryKey: ["/api/classroom/courses", id, "activities"],
-    queryFn: () =>
-      fetch(`/api/classroom/courses/${id}/activities`, { credentials: "include" }).then((r) => r.json()),
+    queryFn: async () => {
+      const response = await fetch(`/api/classroom/courses/${id}/activities`, { credentials: "include" });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return Array.isArray(data) ? data : [];
+    },
     enabled: !!id,
   });
 
@@ -1167,7 +1175,8 @@ export default function CourseDetail() {
 
   const activityStatusById = new Map(myActivities.map((activity) => [activity.id, activity.submissionStatus]));
   const normalizedActivitySearch = activitySearch.trim().toLocaleLowerCase();
-  const filteredActivityList = (activityList || []).filter((activity) => {
+  const normalizedActivityList = Array.isArray(activityList) ? activityList : [];
+  const filteredActivityList = normalizedActivityList.filter((activity) => {
     const matchesSearch = !normalizedActivitySearch || `${activity.title} ${activity.description || ""} ${ACTIVITY_LABELS[activity.type] || activity.type}`
       .toLocaleLowerCase().includes(normalizedActivitySearch);
     if (!matchesSearch) return false;
@@ -1181,17 +1190,25 @@ export default function CourseDetail() {
 
   const { data: students } = useQuery<{ id: string; student: { id: string; firstName: string | null; lastName: string | null; profileImageUrl: string | null } }[]>({
     queryKey: ["/api/classroom/courses", id, "students"],
-    queryFn: () =>
-      fetch(`/api/classroom/courses/${id}/students`, { credentials: "include" }).then((r) => r.json()),
+    queryFn: async () => {
+      const response = await fetch(`/api/classroom/courses/${id}/students`, { credentials: "include" });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return Array.isArray(data) ? data : [];
+    },
     enabled: !!id,
   });
 
   const { data: activitySubmissions } = useQuery<SubmissionWithStudent[]>({
     queryKey: ["/api/classroom/activities", selectedSubmissions, "submissions"],
-    queryFn: () =>
-      fetch(`/api/classroom/activities/${selectedSubmissions}/submissions`, {
+    queryFn: async () => {
+      const response = await fetch(`/api/classroom/activities/${selectedSubmissions}/submissions`, {
         credentials: "include",
-      }).then((r) => r.json()),
+      });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return Array.isArray(data) ? data : [];
+    },
     enabled: !!selectedSubmissions,
   });
 
@@ -1207,8 +1224,12 @@ export default function CourseDetail() {
   // ─── Tablón de publicaciones del curso ───────────────────────────────
   const { data: boardPosts, isLoading: boardLoading } = useQuery<PostWithAuthor[]>({
     queryKey: ["/api/classroom/courses", id, "board"],
-    queryFn: () =>
-      fetch(`/api/classroom/courses/${id}/board`, { credentials: "include" }).then((r) => r.json()),
+    queryFn: async () => {
+      const response = await fetch(`/api/classroom/courses/${id}/board`, { credentials: "include" });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return Array.isArray(data) ? data : [];
+    },
     enabled: !!id,
   });
 
@@ -1300,7 +1321,11 @@ export default function CourseDetail() {
               <h2 className="text-2xl font-bold">{course.name}</h2>
               <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
                 <GraduationCap className="h-4 w-4" />
-                <span>{course.teacher.firstName} {course.teacher.lastName}</span>
+                <span>
+                  {course.teacher
+                    ? `${course.teacher.firstName || ""} ${course.teacher.lastName || ""}`.trim() || "Docente no asignado"
+                    : "Docente no asignado"}
+                </span>
                 {course._count && (
                   <>
                     <span>·</span>
@@ -1426,7 +1451,7 @@ export default function CourseDetail() {
                 </Select>
               )}
             </div>
-            {!activityList || activityList.length === 0 ? (
+            {normalizedActivityList.length === 0 ? (
               <div className="text-center py-12">
                 <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
                 <p className="font-medium">No hay actividades aún</p>
@@ -1621,7 +1646,7 @@ export default function CourseDetail() {
           {/* Grades Tab (teacher only) */}
           {isTeacher && (
             <TabsContent value="grades" className="mt-4">
-              {!activityList || activityList.length === 0 ? (
+              {normalizedActivityList.length === 0 ? (
                 <div className="text-center py-12">
                   <BarChart3 className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
                   <p className="font-medium">No hay actividades para calificar</p>
@@ -1636,7 +1661,7 @@ export default function CourseDetail() {
                     <thead>
                       <tr className="border-b">
                         <th className="text-left p-2 font-semibold">Estudiante</th>
-                        {activityList.map((a) => (
+                        {normalizedActivityList.map((a) => (
                           <th key={a.id} className="text-center p-2 font-semibold min-w-24">
                             <div className="truncate max-w-24" title={a.title}>
                               {a.title}
@@ -1664,7 +1689,7 @@ export default function CourseDetail() {
                         });
                         const latestStudentSubs = Array.from(latestSubmissionByActivity.values());
                         const numericPercentages = institution?.evaluationType === "qualitative" ? [] : latestStudentSubs.flatMap((submission) => {
-                          const activity = activityList.find((candidate) => candidate.id === submission.activityId);
+                          const activity = normalizedActivityList.find((candidate) => candidate.id === submission.activityId);
                           const grade = parseNumericGrade(submission.grade);
                           const maxScore = Number(activity?.maxScore);
                           return grade !== null && Number.isFinite(maxScore) && maxScore > 0 ? [grade / maxScore * 100] : [];
@@ -1686,7 +1711,7 @@ export default function CourseDetail() {
                                 </span>
                               </div>
                             </td>
-                            {activityList.map((a) => {
+                            {normalizedActivityList.map((a) => {
                               const sub = latestSubmissionByActivity.get(a.id);
                               const g = sub?.grade;
                               const numeric = institution?.evaluationType === "qualitative" ? null : parseNumericGrade(g);

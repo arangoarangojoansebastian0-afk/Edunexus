@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/EmptyState";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/hooks/useAuth";
 import { useInstitutionSettings } from "@/hooks/useInstitutionSettings";
@@ -31,7 +32,7 @@ import {
   Users, UserCheck, ClipboardList, Calendar, Key, BarChart2,
   Clock, Eye, BookMarked, Plus, Trash2, Edit, CheckCircle,
   XCircle, Save, RefreshCw, AlertTriangle, TrendingUp,
-  UserX, FileText, Bell, Layers, Monitor, Award, Shield, Link2,
+  UserX, FileText, Bell, Layers, Monitor, Award, Shield, Link2, Activity, CalendarDays,
 } from "lucide-react";
 import type { User } from "@shared/schema";
  
@@ -114,10 +115,20 @@ function StatCard({
 // ─── DASHBOARD ───────────────────────────────────────────────────────────────
  
 function TabDashboard() {
-  const { data: stats, isLoading } = useQuery<any>({
+  const { data: stats, isLoading, isError, refetch } = useQuery<any>({
     queryKey: ["/api/admin/institutional-stats"],
   });
+  const { data: usage } = useQuery<{ periodDays: number; auditEvents: number; activeActors: number; topActions: { action: string; count: number }[] }>({
+    queryKey: ["/api/admin/usage-analytics"],
+    staleTime: 60_000,
+  });
   const [openPanel, setOpenPanel] = useState<null | "attendance" | "performance" | "atrisk" | "activity">(null);
+
+  if (isError) {
+    return (
+      <EmptyState icon={AlertTriangle} title="No se pudo cargar el panel institucional" description="Comprueba la conexión y vuelve a intentarlo." action={{ label: "Reintentar", onClick: () => void refetch() }} />
+    );
+  }
 
   if (isLoading) {
     return (
@@ -185,6 +196,32 @@ function TabDashboard() {
           ))}
         </div>
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Uso de EduNexus · últimos 30 días</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatCard icon={Activity} label="Eventos auditados" value={usage?.auditEvents ?? "—"} color="text-blue-600" />
+            <StatCard icon={Users} label="Usuarios activos" value={usage?.activeActors ?? "—"} color="text-green-600" />
+            <StatCard icon={BarChart2} label="Acciones principales" value={usage?.topActions?.length ?? "—"} color="text-purple-600" />
+            <StatCard icon={CalendarDays} label="Periodo" value="30 días" color="text-orange-600" />
+          </div>
+          {usage?.topActions?.length ? (
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {usage.topActions.map((item) => (
+                <div key={item.action} className="rounded-lg border p-3">
+                  <p className="truncate text-xs text-muted-foreground" title={item.action}>{item.action}</p>
+                  <p className="mt-1 text-lg font-semibold">{item.count}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-muted-foreground">Todavía no hay suficiente actividad auditada para mostrar tendencias.</p>
+          )}
+        </CardContent>
+      </Card>
 
       <div>
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">

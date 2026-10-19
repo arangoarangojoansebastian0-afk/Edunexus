@@ -21,6 +21,10 @@ type NotificationItem = {
   relatedId?: string | null;
   read: boolean;
   createdAt: string;
+  sourceType?: "course" | "event" | "community" | "general";
+  sourceId?: string | null;
+  sourceLabel?: string | null;
+  sourceDescription?: string | null;
 };
 
 const tabs = [
@@ -129,7 +133,13 @@ export default function Notifications() {
               <button type="button" onClick={() => openNotification(item)} className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md">
                 <span className="flex flex-wrap items-center gap-2"><span className="font-medium">{item.title}</span>{!item.read && <span className="h-2 w-2 rounded-full bg-primary" aria-label="Sin leer" />}</span>
                 <span className="mt-1 block text-sm text-muted-foreground">{item.message}</span>
-                <span className="mt-2 block text-xs text-muted-foreground">{formatDistanceToNow(new Date(item.createdAt), { addSuffix: true, locale: es })}</span>
+                {item.sourceLabel && (
+                  <span className="mt-2 block text-xs font-medium text-primary">
+                    {item.sourceType === "course" ? "Clase: " : "Origen: "}{item.sourceLabel}
+                    {item.sourceDescription ? ` · ${item.sourceDescription}` : ""}
+                  </span>
+                )}
+                <span className="mt-1 block text-xs text-muted-foreground">{formatDistanceToNow(new Date(item.createdAt), { addSuffix: true, locale: es })}</span>
               </button>
               {!item.read && <Button type="button" variant="ghost" size="icon" onClick={() => markRead.mutate(item.id)} disabled={markRead.isPending} aria-label="Marcar como leída"><CheckCheck className="h-4 w-4" /></Button>}
               <Button type="button" variant="ghost" size="icon" onClick={() => deleteNotification.mutate(item.id)} disabled={deleteNotification.isPending} aria-label={`Eliminar notificación: ${item.title}`} title="Eliminar notificación"><Trash2 className="h-4 w-4" /></Button>

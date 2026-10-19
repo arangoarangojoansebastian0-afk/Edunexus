@@ -1294,6 +1294,32 @@ export async function registerRoutes(
     catch { res.status(500).json({ message: "Error" }); }
   });
 
+  app.get("/api/admin/usage-analytics", requireAuth, requireStaff, async (req, res) => {
+    try {
+      if (!req.user?.institutionId) return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
+      const logs = await getAuditLogs(req.user.institutionId, 1000);
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      const recent = logs.filter((log: any) => new Date(log.createdAt).getTime() >= cutoff);
+      const byAction = new Map<string, number>();
+      const byDay = new Map<string, number>();
+      for (const log of recent as any[]) {
+        byAction.set(log.action, (byAction.get(log.action) || 0) + 1);
+        const day = new Date(log.createdAt).toISOString().slice(0, 10);
+        byDay.set(day, (byDay.get(day) || 0) + 1);
+      }
+      res.json({
+        periodDays: 30,
+        auditEvents: recent.length,
+        activeActors: new Set(recent.map((log: any) => log.actorId).filter(Boolean)).size,
+        topActions: [...byAction.entries()].sort((a,b) => b[1]-a[1]).slice(0, 8).map(([action,count]) => ({ action, count })),
+        daily: [...byDay.entries()].sort((a,b) => a[0].localeCompare(b[0])).map(([date,count]) => ({ date, count })),
+      });
+    } catch (e) {
+      console.error("[usage-analytics]", e);
+      res.status(500).json({ message: "No se pudieron calcular las métricas de uso" });
+    }
+  });
+
   app.get("/api/admin/institutional-stats", requireAuth, requireStaff, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
@@ -1900,11 +1926,16 @@ export async function registerRoutes(
 
   app.get("/api/files", requireAuth, async (req, res) => {
     try {
-      if (!req.user!.institutionId) return res.json([]);
-      const files = await storage.getAllFiles(true, req.user!.institutionId, true);
-      res.json(files);
+      if (!req.user!.institutionId) return res.json({ items: [], total: 0 });
+      const parsedLimit = Number.parseInt(String(req.query.limit ?? "50"), 10);
+      const parsedOffset = Number.parseInt(String(req.query.offset ?? "0"), 10);
+      const limit = Math.min(100, Math.max(1, Number.isFinite(parsedLimit) ? parsedLimit : 50));
+      const offset = Math.max(0, Number.isFinite(parsedOffset) ? parsedOffset : 0);
+      const result = await storage.getFilesPage({ approved: true, institutionId: req.user!.institutionId, publicOnly: true, limit, offset });
+      res.json(result);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch files" });
+      console.error("[files:list]", error);
+      res.status(500).json({ message: "No se pudieron cargar los archivos" });
     }
   });
 
@@ -2117,10 +2148,97 @@ export async function registerRoutes(
 
   app.get("/api/notifications", requireAuth, async (req, res) => {
     try {
-      const userId = req.user!.id;
-      const notifications = await storage.getNotifications(userId, 50);
-      res.json(notifications);
+      const user = req.user!;
+      const rawNotifications = await storage.getNotifications(user.id, 100);
+
+      // Las notificaciones relacionadas con un aula solo son válidas para
+      // participantes reales de ese curso. Esto también limpia notificaciones
+      // antiguas que hayan quedado guardadas por una lógica anterior.
+      const courseNotificationTypes = new Set([
+        "course_post",
+        "comment",
+        "activity",
+        "submission",
+        "grade",
+      ]);
+
+      const courseIds = [...new Set(
+        rawNotifications
+          .filter((notification) => courseNotificationTypes.has(notification.type) && notification.relatedId)
+          .map((notification) => notification.relatedId as string)
+      )];
+
+      const courseRows = await Promise.all(courseIds.map(async (courseId) => {
+        const course = await storage.getCourse(courseId);
+        if (!course || course.institutionId !== user.institutionId) return null;
+
+        const isParticipant =
+          course.teacherId === user.id ||
+          (user.role === "student" && await storage.isEnrolled(course.id, user.id));
+
+        if (!isParticipant) return null;
+        return [course.id, course] as const;
+      }));
+
+      const accessibleCourses = new Map(
+        courseRows.filter((entry): entry is readonly [string, any] => entry !== null)
+      );
+
+      const enrichedNotifications = rawNotifications
+        .filter((notification) => {
+          if (!courseNotificationTypes.has(notification.type)) return true;
+          return !!notification.relatedId && accessibleCourses.has(notification.relatedId);
+        })
+        .map((notification) => {
+          const course = notification.relatedId
+            ? accessibleCourses.get(notification.relatedId)
+            : undefined;
+
+          if (course) {
+            return {
+              ...notification,
+              sourceType: "course",
+              sourceId: course.id,
+              sourceLabel: course.name,
+              sourceDescription: course.subject || "Aula",
+            };
+          }
+
+          if (notification.type === "event") {
+            return {
+              ...notification,
+              sourceType: "event",
+              sourceId: notification.relatedId || null,
+              sourceLabel: "Eventos y asesorías",
+            };
+          }
+
+          if (notification.type === "message") {
+            return {
+              ...notification,
+              sourceType: "community",
+              sourceLabel: "Grupo de comunidad",
+            };
+          }
+
+          if (notification.type === "post") {
+            return {
+              ...notification,
+              sourceType: "community",
+              sourceLabel: "Comunidad",
+            };
+          }
+
+          return {
+            ...notification,
+            sourceType: "general",
+            sourceLabel: "EduNexus",
+          };
+        });
+
+      res.json(enrichedNotifications.slice(0, 50));
     } catch (error) {
+      console.error("[notifications]", error);
       res.status(500).json({ message: "Failed to fetch notifications" });
     }
   });

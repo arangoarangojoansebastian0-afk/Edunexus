@@ -87,10 +87,12 @@ export default function Library() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = usePersistentState("library-search", "");
   const [subjectFilter, setSubjectFilter] = usePersistentState<string>("library-subject", "all");
-  const [sortBy, setSortBy] = useState<"recent" | "name" | "size">("recent");
+  const [sortBy, setSortBy] = usePersistentState<"recent" | "name" | "size">("library-sort", "recent");
   const [typeFilter, setTypeFilter] = usePersistentState("library-type", "all");
   const [ownerFilter, setOwnerFilter] = usePersistentState<"all" | "mine">("library-owner", "all");
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [viewMode, setViewMode] = usePersistentState<"grid" | "list">("library-view", "grid");
+  const [page, setPage] = usePersistentState("library-page", 1);
+  const [pageSize, setPageSize] = usePersistentState("library-page-size", 20);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -103,10 +105,18 @@ export default function Library() {
     },
   });
 
-  const { data: files, isLoading, refetch: refetchFiles } = useQuery<FileWithUploader[]>({
-    queryKey: ["/api/files"],
+  const serverPage = 0;
+  const { data: filePage, isLoading, isError, refetch: refetchFiles } = useQuery<{ items: FileWithUploader[]; total: number }>({
+    queryKey: ["/api/files", page, pageSize],
+    queryFn: async () => {
+      const response = await fetch(`/api/files?limit=100&offset=${serverPage}`, { credentials: "include" });
+      if (!response.ok) throw new Error("No se pudieron cargar los archivos");
+      return response.json();
+    },
     refetchInterval: 120000,
+    placeholderData: (previous) => previous,
   });
+  const files = filePage?.items || [];
 
   const filteredFiles = files?.filter((file) => {
     if (searchQuery) {
@@ -122,6 +132,39 @@ export default function Library() {
     if (sortBy === "size") return b.fileSize - a.fileSize;
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
+
+  const totalPages = Math.max(1, Math.ceil((filteredFiles?.length || 0) / pageSize));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const paginatedFiles = (filteredFiles || []).slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  const exportCsv = () => {
+    const rows = (filteredFiles || []).map((file) => [
+      file.fileName, file.subject || "", `${file.uploader.firstName} ${file.uploader.lastName}`,
+      file.fileSize, new Date(file.createdAt).toISOString(), file.approved ? "Aprobado" : "Pendiente"
+    ]);
+    const csv = [["Archivo","Materia","Propietario","Bytes","Fecha","Estado"], ...rows]
+      .map((row) => row.map((value) => `"${String(value).replaceAll("\"", "\"\"")}"`).join(","))
+      .join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url; anchor.download = `edunexus-biblioteca-${new Date().toISOString().slice(0,10)}.csv`;
+    anchor.click(); URL.revokeObjectURL(url);
+  };
+
+  const updateFilter = <T,>(setter: (value: T) => void, value: T) => {
+    setter(value); setPage(1);
+  };
+
+  if (isError) {
+    return (
+      <AppLayout title="Biblioteca Académica">
+        <div className="mx-auto max-w-4xl p-4 md:p-6">
+          <EmptyState icon={AlertCircle} title="No se pudo cargar la biblioteca" description="Comprueba tu conexión e inténtalo nuevamente." action={{ label: "Reintentar", onClick: () => void refetchFiles() }} />
+        </div>
+      </AppLayout>
+    );
+  }
 
   const uploadMutation = useMutation({
     mutationFn: async (data: UploadForm) => {
@@ -415,12 +458,12 @@ export default function Library() {
                 type="search"
                 placeholder="Buscar archivos..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => updateFilter(setSearchQuery, e.target.value)}
                 className="pl-9"
                 data-testid="input-search-files"
               />
             </div>
-            <Select value={subjectFilter} onValueChange={setSubjectFilter}>
+            <Select value={subjectFilter} onValueChange={(value) => updateFilter(setSubjectFilter, value)}>
               <SelectTrigger className="w-full sm:w-48" data-testid="select-subject-filter">
                 <SelectValue placeholder="Todas las materias" />
               </SelectTrigger>
@@ -433,7 +476,7 @@ export default function Library() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={sortBy} onValueChange={(value: "recent" | "name" | "size") => setSortBy(value)}>
+            <Select value={sortBy} onValueChange={(value: "recent" | "name" | "size") => updateFilter(setSortBy, value)}>
               <SelectTrigger className="w-full sm:w-48" aria-label="Ordenar archivos">
                 <SelectValue placeholder="Ordenar por" />
               </SelectTrigger>
@@ -443,7 +486,7 @@ export default function Library() {
                 <SelectItem value="size">Mayor tamaño</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <Select value={typeFilter} onValueChange={(value) => updateFilter(setTypeFilter, value)}>
               <SelectTrigger className="w-full sm:w-36" aria-label="Filtrar por tipo de archivo">
                 <SelectValue placeholder="Tipo" />
               </SelectTrigger>
@@ -454,7 +497,7 @@ export default function Library() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={ownerFilter} onValueChange={(value: "all" | "mine") => setOwnerFilter(value)}>
+            <Select value={ownerFilter} onValueChange={(value: "all" | "mine") => updateFilter(setOwnerFilter, value)}>
               <SelectTrigger className="w-full sm:w-36" aria-label="Filtrar por propietario">
                 <SelectValue placeholder="Propietario" />
               </SelectTrigger>
@@ -463,6 +506,9 @@ export default function Library() {
                 <SelectItem value="mine">Mis archivos</SelectItem>
               </SelectContent>
             </Select>
+            <Button type="button" variant="outline" className="shrink-0 gap-2" onClick={exportCsv} disabled={!filteredFiles?.length} aria-label="Exportar resultados de biblioteca a CSV">
+              <Download className="h-4 w-4" /> Exportar
+            </Button>
             <div className="flex shrink-0 rounded-md border p-1" role="group" aria-label="Vista de archivos">
               <Button type="button" size="icon" variant={viewMode === "grid" ? "secondary" : "ghost"} aria-label="Vista de cuadrícula" aria-pressed={viewMode === "grid"} onClick={() => setViewMode("grid")}>
                 <LayoutGrid className="h-4 w-4" />
@@ -483,7 +529,7 @@ export default function Library() {
           ) : filteredFiles && filteredFiles.length > 0 ? (
             viewMode === "grid" ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {filteredFiles.map((file) => (
+                {paginatedFiles.map((file) => (
                   <FileCard
                     key={file.id}
                     file={file}
@@ -503,7 +549,7 @@ export default function Library() {
                     <tr><th className="p-3 font-medium">Archivo</th><th className="p-3 font-medium">Materia</th><th className="p-3 font-medium">Propietario</th><th className="p-3 font-medium">Tamaño</th><th className="p-3 font-medium">Fecha</th><th className="p-3 text-right font-medium">Acciones</th></tr>
                   </thead>
                   <tbody>
-                    {filteredFiles.map((file) => (
+                    {paginatedFiles.map((file) => (
                       <tr key={file.id} className="border-t hover:bg-muted/30">
                         <td className="max-w-[280px] p-3"><button type="button" className="truncate text-left font-medium hover:underline" title={file.fileName} onClick={() => file.fileUrl && setPreviewUrls([file.fileUrl])}>{file.fileName}</button></td>
                         <td className="p-3">{file.subject || "—"}</td>
@@ -539,6 +585,24 @@ export default function Library() {
               }
             />
           )}
+
+          {filteredFiles && filteredFiles.length > 0 && (
+            <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-muted-foreground">
+                Mostrando {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, filteredFiles.length)} de {filteredFiles.length} archivos
+              </p>
+              <div className="flex items-center gap-2">
+                <Select value={String(pageSize)} onValueChange={(value) => { setPageSize(Number(value)); setPage(1); }}>
+                  <SelectTrigger className="w-28" aria-label="Archivos por página"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="10">10 / página</SelectItem><SelectItem value="20">20 / página</SelectItem><SelectItem value="50">50 / página</SelectItem></SelectContent>
+                </Select>
+                <Button variant="outline" size="sm" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>Anterior</Button>
+                <span className="min-w-16 text-center text-sm" aria-live="polite">{safePage} / {totalPages}</span>
+                <Button variant="outline" size="sm" disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)}>Siguiente</Button>
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
       {/* Visor de archivo directo - se abre automáticamente al hacer click en Ver */}

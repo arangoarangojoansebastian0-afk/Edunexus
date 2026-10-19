@@ -10,7 +10,11 @@
     "build": "tsx script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "audit:security": "node scripts/audit-security.mjs",
+    "audit:accessibility": "node scripts/audit-accessibility.mjs",
+    "audit:performance": "node scripts/audit-performance.mjs",
+    "smoke": "node scripts/smoke-routes.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
