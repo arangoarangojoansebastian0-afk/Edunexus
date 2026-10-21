@@ -4078,7 +4078,7 @@ export default function InstitutionalAdmin() {
  
   return (
     <AppLayout>
-      <div className="flex min-h-[calc(100vh-4rem)]">
+      <div className="flex min-h-[calc(100vh-4rem)] min-w-0 flex-col lg:flex-row">
         {/* Sidebar */}
         <aside className="hidden lg:flex flex-col w-56 border-r bg-card/50 py-4 px-2 flex-shrink-0">
           {/* Institution header */}
@@ -4150,7 +4150,7 @@ export default function InstitutionalAdmin() {
         </div>
  
         {/* Main content */}
-        <main className="flex-1 p-4 lg:p-6 overflow-auto">
+        <main className="min-w-0 w-full flex-1 p-4 lg:p-6 lg:overflow-auto">
           {/* Page header */}
           <div className="mb-6">
             <h1 className="text-xl font-bold flex items-center gap-2">
