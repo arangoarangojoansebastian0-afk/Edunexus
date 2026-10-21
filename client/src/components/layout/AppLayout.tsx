@@ -204,7 +204,7 @@ export function AppLayout({ children, title }: AppLayoutProps) {
 
   return (
     <SidebarProvider style={style as React.CSSProperties}>
-      <div className="edunexus-app-shell flex min-h-screen w-full">
+      <div className="edunexus-app-shell flex min-h-dvh w-full min-w-0">
         <AppSidebar />
         <SidebarInset className="flex flex-col flex-1 min-w-0">
           <header className="edunexus-topbar sticky top-0 z-40 flex items-center justify-between gap-3 h-16 px-3 sm:px-5 lg:px-7 border-b bg-background/85 backdrop-blur-xl">
@@ -221,11 +221,11 @@ export function AppLayout({ children, title }: AppLayoutProps) {
               <UserMenu />
             </div>
           </header>
-          <main className="edunexus-main flex-1 overflow-auto pb-16 sm:pb-0">
+          <main className="edunexus-main min-w-0 flex-1 overflow-auto pb-[calc(3.5rem+env(safe-area-inset-bottom))] sm:pb-0">
             {!online && <div role="status" className="mx-auto max-w-7xl px-4 pt-3 sm:px-6"><div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"><WifiOff className="h-4 w-4 shrink-0" /> Sin conexión. Los cambios que requieran servidor esperarán hasta recuperar internet.</div></div>}
             <div key={location} className="edunexus-page-enter">{children}</div>
           </main>
-          <nav aria-label="Navegación móvil" className="fixed inset-x-0 bottom-0 z-50 border-t bg-background/95 backdrop-blur-xl sm:hidden">
+          <nav aria-label="Navegación móvil" className="fixed inset-x-0 bottom-0 z-50 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl sm:hidden">
             <div className="grid grid-cols-5">
               {[
                 { href: "/", label: "Inicio", Icon: Home },
