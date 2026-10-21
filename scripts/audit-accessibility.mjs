@@ -25,5 +25,5 @@ for (const file of files) {
   }
 }
 const report = `# Accessibility static audit\n\nGenerated: ${new Date().toISOString()}\n\nFiles scanned: ${files.length}\nPotential findings: ${findings.length}\n\n${findings.length ? findings.map(x => `- ${x}`).join('\n') : 'No heuristic findings.'}\n\nManual keyboard, screen-reader, contrast and focus testing is still required.\n`;
-fs.writeFileSync('docs/ACCESSIBILITY_STATIC_AUDIT.md', report);
+fs.writeFileSync('docs/audits/ACCESSIBILITY_STATIC_AUDIT.md', report);
 console.log(report);

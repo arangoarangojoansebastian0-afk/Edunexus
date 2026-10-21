@@ -60,6 +60,7 @@ const ACTIVITY_LABELS: Record<string, string> = {
   quiz: "Quiz",
   exam: "Examen",
 };
+const COURSE_DATA_STAFF_ROLES = ["admin", "director", "super_admin"];
 
 function parseNumericGrade(value: unknown): number | null {
   if (typeof value !== "string" && typeof value !== "number") return null;
@@ -497,10 +498,12 @@ function AttendanceTab({
   courseId,
   isTeacher,
   students,
+  studentId,
 }: {
   courseId: string;
   isTeacher: boolean;
   students: { student: { id: string; firstName: string | null; lastName: string | null; profileImageUrl: string | null } }[];
+  studentId?: string;
 }) {
   const { toast } = useToast();
   const today = new Date().toISOString().split("T")[0];
@@ -508,12 +511,17 @@ function AttendanceTab({
   const [selectedTime, setSelectedTime] = useState("07:00");
   const [attendanceMap, setAttendanceMap] = useState<Record<string, string>>({});
 
-  const { data: records } = useQuery<AttendanceWithStudent[]>({
+  const { data: records, isError: attendanceError } = useQuery<AttendanceWithStudent[]>({
     queryKey: ["/api/classroom/courses", courseId, "attendance", selectedDate],
     queryFn: () =>
       fetch(`/api/classroom/courses/${courseId}/attendance?date=${selectedDate}`, {
         credentials: "include",
-      }).then((r) => r.json()),
+      }).then(async (response) => {
+        if (!response.ok) throw new Error("No se pudo cargar la asistencia");
+        const data = await response.json();
+        if (!Array.isArray(data)) throw new Error("La respuesta de asistencia no tiene el formato esperado");
+        return data;
+      }),
   });
 
   const saveMutation = useMutation({
@@ -619,7 +627,24 @@ function AttendanceTab({
         </div>
       )}
 
-      {students.length === 0 ? (
+      {attendanceError ? (
+        <EmptyState icon={AlertCircle} title="No se pudo cargar la asistencia" description="Verifica tus permisos o vuelve a intentarlo." />
+      ) : studentId ? (
+        records && records.length > 0 ? (
+          <div className="space-y-2">
+            {records.map((record) => (
+              <div key={record.id} className="flex items-center justify-between rounded-md border p-3">
+                <span className="text-sm">Registro de asistencia</span>
+                <Badge className={`text-xs no-default-active-elevate ${statusColor[record.status] || ""}`}>
+                  {statusLabel[record.status] || record.status}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="py-8 text-center text-sm text-muted-foreground">No hay registro de asistencia para esta fecha.</p>
+        )
+      ) : students.length === 0 ? (
         <p className="text-sm text-muted-foreground py-8 text-center">
           No hay estudiantes inscritos en este curso
         </p>
@@ -688,11 +713,28 @@ function StudentsTab({ courseId, students, canManage }: {
 }) {
   const { toast } = useToast();
   const [selectedGroupId, setSelectedGroupId] = useState("");
+  const [selectedStudentId, setSelectedStudentId] = useState("");
   const [enrolling, setEnrolling] = useState(false);
 
   const { data: academicGroups = [] } = useQuery<any[]>({
     queryKey: ["/api/admin/academic-groups"],
     enabled: canManage,
+  });
+  const { data: directory = [] } = useQuery<any[]>({
+    queryKey: ["/api/users"],
+    enabled: canManage,
+  });
+  const enrolledStudentIds = new Set(students.map((entry) => entry.student?.id));
+  const availableStudents = directory.filter((person) => person.role === "student" && !enrolledStudentIds.has(person.id));
+
+  const enrollStudent = useMutation({
+    mutationFn: (studentId: string) => apiRequest("POST", `/api/classroom/courses/${courseId}/students`, { studentId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/classroom/courses", courseId, "students"] });
+      setSelectedStudentId("");
+      toast({ title: "Estudiante asignado al aula" });
+    },
+    onError: () => toast({ title: "Error al asignar estudiante", variant: "destructive" }),
   });
 
   const enrollGroup = async () => {
@@ -739,6 +781,27 @@ function StudentsTab({ courseId, students, canManage }: {
       {canManage && (
         <Card className="border-dashed">
           <CardContent className="p-4">
+            <p className="text-sm font-semibold mb-3 flex items-center gap-2">
+              <UserCheck className="h-4 w-4 text-primary" />
+              Asignar estudiante
+            </p>
+            <div className="flex gap-2 mb-5">
+              <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="Selecciona un estudiante..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableStudents.map((student: any) => (
+                    <SelectItem key={student.id} value={student.id}>{student.firstName} {student.lastName}</SelectItem>
+                  ))}
+                  {availableStudents.length === 0 && <SelectItem value="none" disabled>No hay estudiantes disponibles</SelectItem>}
+                </SelectContent>
+              </Select>
+              <Button onClick={() => enrollStudent.mutate(selectedStudentId)} disabled={!selectedStudentId || enrollStudent.isPending}>
+                {enrollStudent.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+                Añadir
+              </Button>
+            </div>
             <p className="text-sm font-semibold mb-3 flex items-center gap-2">
               <Users className="h-4 w-4 text-primary" />
               Añadir grupo completo al aula
@@ -1138,7 +1201,7 @@ export default function CourseDetail() {
   // siempre "/100" sin importar cómo esté configurado el colegio.
   const { data: institution } = useInstitutionSettings();
 
-  const { data: course, isLoading } = useQuery<CourseWithTeacher>({
+  const { data: course, isLoading, isError: courseError } = useQuery<CourseWithTeacher>({
     queryKey: ["/api/classroom/courses", id],
     queryFn: async () => {
       const response = await fetch(`/api/classroom/courses/${id}`, { credentials: "include" });
@@ -1148,18 +1211,19 @@ export default function CourseDetail() {
     enabled: !!id,
   });
 
-  const { data: activityList } = useQuery<Activity[]>({
+  const { data: activityList, isError: activitiesError } = useQuery<Activity[]>({
     queryKey: ["/api/classroom/courses", id, "activities"],
     queryFn: async () => {
       const response = await fetch(`/api/classroom/courses/${id}/activities`, { credentials: "include" });
-      if (!response.ok) return [];
+      if (!response.ok) throw new Error("No se pudieron cargar las actividades");
       const data = await response.json();
-      return Array.isArray(data) ? data : [];
+      if (!Array.isArray(data)) throw new Error("La respuesta de actividades no tiene el formato esperado");
+      return data;
     },
     enabled: !!id,
   });
 
-  const { data: myActivities = [] } = useQuery<Array<{
+  const { data: myActivities = [], isError: myActivitiesError } = useQuery<Array<{
     id: string;
     submissionStatus?: string;
     grade?: string | null;
@@ -1168,7 +1232,9 @@ export default function CourseDetail() {
     queryFn: async () => {
       const response = await fetch("/api/classroom/my-activities", { credentials: "include" });
       if (!response.ok) throw new Error("No se pudieron cargar los estados de entrega");
-      return response.json();
+      const data = await response.json();
+      if (!Array.isArray(data)) throw new Error("La respuesta de entregas no tiene el formato esperado");
+      return data;
     },
     enabled: user?.role === "student",
   });
@@ -1188,47 +1254,65 @@ export default function CourseDetail() {
     return submissionStatus === activityStatusFilter;
   });
 
-  const { data: students } = useQuery<{ id: string; student: { id: string; firstName: string | null; lastName: string | null; profileImageUrl: string | null } }[]>({
+  const canViewStudents = !!course && (
+    COURSE_DATA_STAFF_ROLES.includes(user?.role || "") || user?.role === "coordinator" ||
+    (user?.role === "teacher" && course.teacherId === user.id)
+  );
+  const canManageAttendance = !!course && (
+    COURSE_DATA_STAFF_ROLES.includes(user?.role || "") || user?.role === "coordinator" ||
+    (user?.role === "teacher" && course.teacherId === user.id)
+  );
+  const { data: students, isError: studentsError } = useQuery<{ id: string; student: { id: string; firstName: string | null; lastName: string | null; profileImageUrl: string | null } }[]>({
     queryKey: ["/api/classroom/courses", id, "students"],
     queryFn: async () => {
       const response = await fetch(`/api/classroom/courses/${id}/students`, { credentials: "include" });
-      if (!response.ok) return [];
+      if (!response.ok) throw new Error("No se pudo cargar la lista de estudiantes");
       const data = await response.json();
-      return Array.isArray(data) ? data : [];
+      if (!Array.isArray(data)) throw new Error("La respuesta de estudiantes no tiene el formato esperado");
+      return data;
     },
-    enabled: !!id,
+    enabled: !!id && canViewStudents,
   });
 
-  const { data: activitySubmissions } = useQuery<SubmissionWithStudent[]>({
+  const { data: activitySubmissions, isError: activitySubmissionsError } = useQuery<SubmissionWithStudent[]>({
     queryKey: ["/api/classroom/activities", selectedSubmissions, "submissions"],
     queryFn: async () => {
       const response = await fetch(`/api/classroom/activities/${selectedSubmissions}/submissions`, {
         credentials: "include",
       });
-      if (!response.ok) return [];
+      if (!response.ok) throw new Error("No se pudieron cargar las entregas");
       const data = await response.json();
-      return Array.isArray(data) ? data : [];
+      if (!Array.isArray(data)) throw new Error("La respuesta de entregas no tiene el formato esperado");
+      return data;
     },
     enabled: !!selectedSubmissions,
   });
 
   // Todas las entregas del curso para la matriz de calificaciones
-  const { data: allSubmissions = [] } = useQuery<SubmissionWithStudent[]>({
+  const { data: allSubmissions = [], isError: allSubmissionsError } = useQuery<SubmissionWithStudent[]>({
     queryKey: ["/api/classroom/courses", id, "all-submissions"],
-    queryFn: () =>
-      fetch(`/api/classroom/courses/${id}/submissions`, { credentials: "include" })
-        .then((r) => r.ok ? r.json() : []),
-    enabled: !!id && (user?.role === "teacher" || user?.role === "admin"),
+    queryFn: async () => {
+      const response = await fetch(`/api/classroom/courses/${id}/submissions`, { credentials: "include" });
+      if (!response.ok) throw new Error("No se pudieron cargar las calificaciones");
+      const data = await response.json();
+      if (!Array.isArray(data)) throw new Error("La respuesta de calificaciones no tiene el formato esperado");
+      return data;
+    },
+    enabled: !!id && !!course && (
+      (user?.role === "teacher" && course.teacherId === user.id) ||
+      COURSE_DATA_STAFF_ROLES.includes(user?.role || "") || user?.role === "coordinator"
+    ),
   });
 
   // ─── Tablón de publicaciones del curso ───────────────────────────────
-  const { data: boardPosts, isLoading: boardLoading } = useQuery<PostWithAuthor[]>({
+  const { data: boardPosts, isLoading: boardLoading, isError: boardError } = useQuery<PostWithAuthor[]>({
     queryKey: ["/api/classroom/courses", id, "board"],
     queryFn: async () => {
       const response = await fetch(`/api/classroom/courses/${id}/board`, { credentials: "include" });
-      if (!response.ok) return [];
+      if (!response.ok) throw new Error("No se pudo cargar el tablón");
       const data = await response.json();
-      return Array.isArray(data) ? data : [];
+      if (!Array.isArray(data)) throw new Error("La respuesta del tablón no tiene el formato esperado");
+      return data;
     },
     enabled: !!id,
   });
@@ -1291,7 +1375,8 @@ export default function CourseDetail() {
       <AppLayout>
         <div className="p-6 text-center py-20">
           <AlertCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-          <p className="font-medium">Curso no encontrado</p>
+          <p className="font-medium">{courseError ? "No se pudo cargar el curso" : "Curso no encontrado"}</p>
+          {courseError && <p className="mt-1 text-sm text-muted-foreground">Revisa tu conexión o tus permisos para consultar este curso.</p>}
           <Button variant="outline" className="mt-4" onClick={() => navigate("/classroom")}>
             Volver al aula
           </Button>
@@ -1384,7 +1469,9 @@ export default function CourseDetail() {
               placeholder={isTeacher ? "Publica un anuncio para tu clase..." : "Comparte algo con tu curso..."}
             />
 
-            {boardLoading ? (
+            {boardError ? (
+              <EmptyState icon={AlertCircle} title="No se pudo cargar el tablón" description="Actualiza la página o verifica que tengas acceso al curso." />
+            ) : boardLoading ? (
               Array.from({ length: 2 }).map((_, i) => (
                 <Card key={i}>
                   <CardContent className="p-4">
@@ -1426,6 +1513,12 @@ export default function CourseDetail() {
                   Nueva actividad
                 </Button>
               </div>
+            )}
+            {activitiesError ? (
+              <EmptyState icon={AlertCircle} title="No se pudieron cargar las actividades" description="Actualiza la página o verifica que tengas acceso al curso." />
+            ) : <>
+            {myActivitiesError && user?.role === "student" && (
+              <EmptyState icon={AlertCircle} title="No se pudo cargar el estado de tus entregas" description="Las actividades están disponibles, pero no se pudieron consultar sus estados." />
             )}
             <div className="flex flex-col gap-2 sm:flex-row">
               <Input
@@ -1549,6 +1642,9 @@ export default function CourseDetail() {
                         </div>
 
                         {/* Submissions panel (teacher) */}
+                        {canManage && selectedSubmissions === activity.id && activitySubmissionsError && (
+                          <EmptyState icon={AlertCircle} title="No se pudieron cargar las entregas" description="Verifica tus permisos o vuelve a intentarlo." />
+                        )}
                         {canManage &&
                           selectedSubmissions === activity.id &&
                           activitySubmissions && (
@@ -1632,21 +1728,28 @@ export default function CourseDetail() {
               </div>
               )
             )}
+            </>}
           </TabsContent>
 
           {/* Students Tab */}
-          <TabsContent value="students" className="mt-4">
+          {canViewStudents && <TabsContent value="students" className="mt-4">
+            {studentsError ? (
+              <EmptyState icon={AlertCircle} title="No se pudo cargar la lista" description="Verifica tus permisos para consultar las matrículas del curso." />
+            ) : (
             <StudentsTab
               courseId={id!}
               students={students || []}
               canManage={canManage}
             />
-          </TabsContent>
+            )}
+          </TabsContent>}
 
           {/* Grades Tab (teacher only) */}
           {isTeacher && (
             <TabsContent value="grades" className="mt-4">
-              {normalizedActivityList.length === 0 ? (
+              {allSubmissionsError ? (
+                <EmptyState icon={AlertCircle} title="No se pudieron cargar las calificaciones" description="Verifica tus permisos o vuelve a intentarlo." />
+              ) : normalizedActivityList.length === 0 ? (
                 <div className="text-center py-12">
                   <BarChart3 className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
                   <p className="font-medium">No hay actividades para calificar</p>
@@ -1753,8 +1856,9 @@ export default function CourseDetail() {
           <TabsContent value="attendance" className="mt-4">
             <AttendanceTab
               courseId={id!}
-              isTeacher={canManage}
+              isTeacher={canManageAttendance}
               students={students || []}
+              studentId={user?.role === "student" ? user.id : undefined}
             />
           </TabsContent>
         </Tabs>

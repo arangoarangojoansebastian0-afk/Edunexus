@@ -4,6 +4,7 @@ import type { Express, Request as ExpressRequest, Response, NextFunction } from 
 import { type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
+import { canAccessCourseContent, canManageCourseAttendance, canReviewCourseSubmissions, canViewCourseRoster } from "./course-access";
 import { setupAuthRoutes } from "./authRoutes";
 import { master2000Provider } from "./providers/master2000";
 import {
@@ -84,12 +85,8 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.session?.userId || !req.user) {
     return res.status(401).json({ message: "Unauthorized" });
   }
-  next();
-}
-
-function requireVerified(req: Request, res: Response, next: NextFunction) {
-  if (!req.user?.verified) {
-    return res.status(403).json({ message: "Account not verified" });
+  if (req.user.blocked) {
+    return res.status(403).json({ message: "La cuenta está desactivada. Comunícate con la institución." });
   }
   next();
 }
@@ -305,6 +302,7 @@ export async function registerRoutes(
       try {
         const user = await storage.getUser(req.session.userId);
         if (!user) return res.status(401).json({ error: "User not found" });
+        if (user.blocked) return res.status(403).json({ error: "La cuenta está desactivada. Comunícate con la institución." });
         const { passwordHash: _passwordHash, ...safeUser } = user;
         return res.json(safeUser);
       } catch (error) {
@@ -498,7 +496,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/posts", requireAuth, requireVerified, upload.array("attachments", 5), async (req, res) => {
+  app.post("/api/posts", requireAuth, upload.array("attachments", 5), async (req, res) => {
     try {
       const userId = req.user!.id;
       if (!req.user!.institutionId) return res.status(403).json({ message: "Debes pertenecer a una institución" });
@@ -597,7 +595,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/posts/:id/comments", requireAuth, requireVerified, async (req, res) => {
+  app.post("/api/posts/:id/comments", requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id;
       const post = await storage.getPost(req.params.id);
@@ -648,7 +646,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/groups", requireAuth, requireVerified, async (req, res) => {
+  app.post("/api/groups", requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id;
       const data = insertGroupSchema.parse({ ...req.body, createdBy: userId, institutionId: req.user!.institutionId });
@@ -715,7 +713,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/groups/:id/posts", requireAuth, requireVerified, upload.array("attachments", 5), async (req, res) => {
+  app.post("/api/groups/:id/posts", requireAuth, upload.array("attachments", 5), async (req, res) => {
     try {
       const userId = req.user!.id;
       const groupId = req.params.id;
@@ -744,6 +742,8 @@ export async function registerRoutes(
     try {
       const userId = req.user!.id;
       const groupId = req.params.id;
+      const group = await storage.getGroup(groupId);
+      if (!group || group.institutionId !== req.user!.institutionId) return res.status(404).json({ message: "Grupo no encontrado" });
       const isMember = await storage.isGroupMember(groupId, userId);
       if (!isMember) {
         return res.status(403).json({ message: "Not a group member" });
@@ -822,6 +822,8 @@ export async function registerRoutes(
     try {
       const userId = req.user!.id;
       const groupId = req.params.id;
+      const group = await storage.getGroup(groupId);
+      if (!group || group.institutionId !== req.user!.institutionId) return res.status(404).json({ message: "Grupo no encontrado" });
       const isMember = await storage.isGroupMember(groupId, userId);
       if (!isMember) {
         return res.status(403).json({ message: "Not a group member" });
@@ -847,7 +849,7 @@ export async function registerRoutes(
 
       const members = await storage.getGroupMembers(groupId);
       for (const member of members) {
-        if (member.userId !== userId) {
+        if (member.userId !== userId && member.user.institutionId === group.institutionId) {
           await storage.createNotification({
             userId: member.userId,
             type: "message",
@@ -1898,6 +1900,24 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/admin/users/:id/block", requireAuth, requireCoordinator, async (req, res) => {
+    try {
+      const actor = req.user!;
+      const target = await storage.getUser(req.params.id);
+      if (!target || target.institutionId !== actor.institutionId || target.role !== "teacher") {
+        return res.status(404).json({ message: "Docente no encontrado en tu institución" });
+      }
+      if (target.id === actor.id) return res.status(400).json({ message: "No puedes desactivar tu propia cuenta" });
+      if (typeof req.body?.blocked !== "boolean") return res.status(400).json({ message: "Indica si deseas activar o desactivar al docente" });
+
+      const updated = await storage.updateUser(target.id, { blocked: req.body.blocked });
+      if (!updated) return res.status(404).json({ message: "Docente no encontrado" });
+      res.json({ success: true, blocked: updated.blocked });
+    } catch (error) {
+      res.status(500).json({ message: "No se pudo cambiar el estado del docente" });
+    }
+  });
+
   app.get("/api/admin/library", requireAuth, requireSecretary, async (req, res) => {
     try {
       if (!req.user?.institutionId) {
@@ -1992,7 +2012,7 @@ export async function registerRoutes(
     return !!course && canAccessCourseBoard(course, user);
   }
 
-  app.post("/api/files", requireAuth, requireVerified, upload.single("file"), async (req, res) => {
+  app.post("/api/files", requireAuth, upload.single("file"), async (req, res) => {
     try {
       const userId = req.user!.id;
       const file = req.file;
@@ -2046,6 +2066,17 @@ export async function registerRoutes(
 
   // ─── EVENTS & ADVISORIES ─────────────────────────────────────────────
 
+  app.get("/api/events", requireAuth, async (req, res) => {
+    try {
+      const institutionId = req.user!.institutionId;
+      if (!institutionId) return res.json([]);
+      const events = await storage.getEventsByInstitution(institutionId);
+      res.json(events);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch events" });
+    }
+  });
+
   app.get("/api/events/my", requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id;
@@ -2066,7 +2097,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/events", requireAuth, requireVerified, async (req, res) => {
+  app.post("/api/events", requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id;
       const data = insertEventSchema.parse({ ...req.body, hostId: userId, institutionId: req.user!.institutionId });
@@ -2090,6 +2121,22 @@ export async function registerRoutes(
       res.status(201).json(event);
     } catch (error) {
       res.status(500).json({ message: "Failed to create event" });
+    }
+  });
+
+  app.delete("/api/events/:id", requireAuth, async (req, res) => {
+    try {
+      const event = await storage.getEvent(req.params.id);
+      if (!event || event.institutionId !== req.user!.institutionId) {
+        return res.status(404).json({ message: "Evento no encontrado" });
+      }
+      const canDelete = event.hostId === req.user!.id || FULL_ACCESS_ROLES.includes(req.user!.role);
+      if (!canDelete) return res.status(403).json({ message: "No tienes permiso para eliminar este evento" });
+
+      await storage.deleteEvent(event.id);
+      res.status(204).end();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete event" });
     }
   });
 
@@ -2168,73 +2215,105 @@ export async function registerRoutes(
           .map((notification) => notification.relatedId as string)
       )];
 
-      const courseRows = await Promise.all(courseIds.map(async (courseId) => {
-        const course = await storage.getCourse(courseId);
+      const courseRows = await Promise.all(courseIds.map(async (relatedId) => {
+        // Comentarios y avisos de actividad pueden apuntar a la actividad; los
+        // avisos de publicación apuntan directamente al curso. Resolver ambos
+        // formatos permite conservar notificaciones antiguas sin perder origen.
+        const activity = await storage.getActivity(relatedId);
+        const course = activity
+          ? await storage.getCourse(activity.courseId)
+          : await storage.getCourse(relatedId);
         if (!course || course.institutionId !== user.institutionId) return null;
 
         const isParticipant =
-          course.teacherId === user.id ||
+          ((user.role === "teacher" || user.role === "admin") && course.teacherId === user.id) ||
           (user.role === "student" && await storage.isEnrolled(course.id, user.id));
 
         if (!isParticipant) return null;
-        return [course.id, course] as const;
+        return [relatedId, { course, activity }] as const;
       }));
 
-      const accessibleCourses = new Map(
+      const accessibleCourseReferences = new Map(
         courseRows.filter((entry): entry is readonly [string, any] => entry !== null)
       );
 
-      const enrichedNotifications = rawNotifications
-        .filter((notification) => {
-          if (!courseNotificationTypes.has(notification.type)) return true;
-          return !!notification.relatedId && accessibleCourses.has(notification.relatedId);
-        })
-        .map((notification) => {
-          const course = notification.relatedId
-            ? accessibleCourses.get(notification.relatedId)
+      const enrichedNotifications = (await Promise.all(rawNotifications.map(async (notification) => {
+        if (courseNotificationTypes.has(notification.type)) {
+          const reference = notification.relatedId
+            ? accessibleCourseReferences.get(notification.relatedId)
             : undefined;
-
-          if (course) {
-            return {
-              ...notification,
-              sourceType: "course",
-              sourceId: course.id,
-              sourceLabel: course.name,
-              sourceDescription: course.subject || "Aula",
-            };
-          }
-
-          if (notification.type === "event") {
-            return {
-              ...notification,
-              sourceType: "event",
-              sourceId: notification.relatedId || null,
-              sourceLabel: "Eventos y asesorías",
-            };
-          }
-
-          if (notification.type === "message") {
-            return {
-              ...notification,
-              sourceType: "community",
-              sourceLabel: "Grupo de comunidad",
-            };
-          }
-
-          if (notification.type === "post") {
-            return {
-              ...notification,
-              sourceType: "community",
-              sourceLabel: "Comunidad",
-            };
-          }
-
+          if (!reference) return null;
           return {
             ...notification,
-            sourceType: "general",
-            sourceLabel: "EduNexus",
+            sourceType: "course",
+            sourceId: reference.course.id,
+            sourceLabel: reference.course.name,
+            sourceDescription: reference.course.subject || "Aula",
+            sourceResourceLabel: reference.activity?.title || null,
           };
-        });
+        }
+
+        if (notification.type === "message") {
+          if (!notification.relatedId) return null;
+          const group = await storage.getGroup(notification.relatedId);
+          if (!group || group.institutionId !== user.institutionId || !(await storage.isGroupMember(group.id, user.id))) {
+            return null;
+          }
+          return {
+            ...notification,
+            sourceType: "community",
+            sourceId: group.id,
+            sourceLabel: group.name,
+            sourceDescription: "Chat grupal",
+          };
+        }
+
+        if (notification.type === "direct_message") {
+          if (!notification.relatedId) return null;
+          const sender = await storage.getUser(notification.relatedId);
+          if (!sender || sender.institutionId !== user.institutionId ||
+            !(await storage.hasExistingConversation(user.id, sender.id)) ||
+            await storage.isBlockedEitherWay(user.id, sender.id)) {
+            return null;
+          }
+          const senderName = [sender.firstName, sender.lastName].filter(Boolean).join(" ").trim();
+          return {
+            ...notification,
+            sourceType: "direct_message",
+            sourceId: sender.id,
+            sourceLabel: senderName || "Chat individual",
+            sourceDescription: "Chat individual",
+          };
+        }
+
+        if (notification.type === "event") {
+          if (!notification.relatedId) return null;
+          const event = await storage.getEvent(notification.relatedId);
+          if (!event || event.institutionId !== user.institutionId) return null;
+          return {
+            ...notification,
+            sourceType: "event",
+            sourceId: event.id,
+            sourceLabel: event.title,
+            sourceDescription: event.subject || "Evento o asesoría",
+          };
+        }
+
+        if (notification.type === "post") {
+          if (!notification.relatedId) return null;
+          const post = await storage.getPost(notification.relatedId);
+          if (!post || post.groupId || post.author?.institutionId !== user.institutionId) return null;
+          return {
+            ...notification,
+            sourceType: "community",
+            sourceId: post.id,
+            sourceLabel: "Comunidad",
+            sourceDescription: "Anuncio institucional",
+          };
+        }
+
+        return { ...notification, sourceType: "general", sourceLabel: "EduNexus" };
+      }))).filter((notification) => notification !== null);
 
       res.json(enrichedNotifications.slice(0, 50));
     } catch (error) {
@@ -2362,7 +2441,7 @@ export async function registerRoutes(
 
   // ─── QUESTIONS & ANSWERS (Q&A) ───────────────────────────────────────
 
-  app.post("/api/groups/:id/questions", requireAuth, requireVerified, async (req, res) => {
+  app.post("/api/groups/:id/questions", requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id;
       const data = insertQuestionSchema.parse({
@@ -2386,7 +2465,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/questions/:id/answers", requireAuth, requireVerified, async (req, res) => {
+  app.post("/api/questions/:id/answers", requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id;
       const data = insertAnswerSchema.parse({
@@ -2415,9 +2494,10 @@ export async function registerRoutes(
   app.get("/api/classroom/courses", requireAuth, async (req, res) => {
     try {
       const user = req.user!;
-      const data = user.role === "teacher" || user.role === "admin" 
-        ? await storage.getCoursesByTeacher(user.id) 
-        : await storage.getEnrolledCourses(user.id);
+      if (!user.institutionId) return res.json([]);
+      const data = user.role === "teacher" || user.role === "admin"
+        ? await storage.getCoursesByTeacher(user.id, user.institutionId || undefined)
+        : await storage.getEnrolledCourses(user.id, user.institutionId || undefined);
       res.json(data);
     } catch (err) {
       res.status(500).json({ message: "Failed to get courses" });
@@ -2469,10 +2549,7 @@ export async function registerRoutes(
       if (!course) return res.status(404).json({ message: "Course not found" });
       const user = req.user!;
       const canView = course.institutionId === user.institutionId && (
-        FULL_ACCESS_ROLES.includes(user.role)
-        || (user.role === "coordinator" || user.role === "secretary")
-        || (user.role === "teacher" && course.teacherId === user.id)
-        || (user.role === "student" && await storage.isEnrolled(course.id, user.id))
+        await canAccessCourseContent(course, user, user.role === "student" && await storage.isEnrolled(course.id, user.id))
       );
       if (!canView) return res.status(404).json({ message: "Course not found" });
       res.json(course);
@@ -2489,28 +2566,66 @@ export async function registerRoutes(
       }
 
       const { db } = await import("./db");
-      const { courses, academicGroups, academicPeriods } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
+      const { courses, courseEnrollments, academicGroups, academicPeriods, users } = await import("@shared/schema");
+      const { and, eq, inArray } = await import("drizzle-orm");
 
       const {
         name, subject, description, grade, semester, academicYear,
         teacherId, groupId, academicGroupId, academicPeriodId,
         evaluationType, qualitativeScale, gradeScale,
+        groupIds: rawGroupIds, studentIds: rawStudentIds,
       } = req.body;
+
+      if (!user.institutionId) return res.status(400).json({ message: "El docente no pertenece a una institución" });
+      if ((rawGroupIds !== undefined && !Array.isArray(rawGroupIds)) || (rawStudentIds !== undefined && !Array.isArray(rawStudentIds))) {
+        return res.status(400).json({ message: "La selección de destinatarios no es válida" });
+      }
+      const groupIds: string[] = [...new Set<string>((rawGroupIds || []).filter((id: unknown): id is string => typeof id === "string" && id.length > 0))];
+      const requestedStudentIds: string[] = [...new Set<string>((rawStudentIds || []).filter((id: unknown): id is string => typeof id === "string" && id.length > 0))];
+      if (groupIds.length !== (rawGroupIds || []).length || requestedStudentIds.length !== (rawStudentIds || []).length) {
+        return res.status(400).json({ message: "La selección de destinatarios no es válida" });
+      }
 
       if (user.role === "teacher" && teacherId && teacherId !== user.id) {
         return res.status(403).json({ message: "Un docente solo puede crear un curso a su nombre" });
       }
       if (teacherId) {
         const assignedTeacher = await storage.getUser(teacherId);
-        if (!assignedTeacher || assignedTeacher.institutionId !== user.institutionId) {
-          return res.status(400).json({ message: "El docente debe pertenecer a tu institución" });
+        const validTeacher = assignedTeacher?.role === "teacher" || (user.role === "admin" && teacherId === user.id);
+        if (!assignedTeacher || assignedTeacher.institutionId !== user.institutionId || !validTeacher) {
+          return res.status(400).json({ message: "El docente debe tener un rol autorizado y pertenecer a tu institución" });
         }
       }
 
       if (!name || !subject) {
         return res.status(400).json({ message: "Nombre y materia son obligatorios" });
       }
+
+      if (groupIds.length > 0) {
+        const validGroups = await db.select({ id: academicGroups.id }).from(academicGroups)
+          .where(and(inArray(academicGroups.id, groupIds), eq(academicGroups.institutionId, user.institutionId)));
+        if (validGroups.length !== groupIds.length) return res.status(400).json({ message: "Uno o más grupos no pertenecen a tu institución" });
+      }
+      if (requestedStudentIds.length > 0) {
+        const validStudents = await db.select({ id: users.id }).from(users).where(and(
+          inArray(users.id, requestedStudentIds),
+          eq(users.institutionId, user.institutionId),
+          eq(users.role, "student"),
+          eq(users.blocked, false),
+        ));
+        if (validStudents.length !== requestedStudentIds.length) return res.status(400).json({ message: "Uno o más estudiantes no pertenecen a tu institución o no están disponibles" });
+      }
+
+      const groupStudentIds = new Set<string>();
+      for (const selectedGroupId of groupIds) {
+        const roster = await storage.getGroupRoster(selectedGroupId);
+        for (const entry of roster) {
+          if (entry.student.role === "student" && entry.student.institutionId === user.institutionId && !entry.student.blocked) {
+            groupStudentIds.add(entry.student.id);
+          }
+        }
+      }
+      const studentIdsToEnroll: string[] = [...new Set<string>([...groupStudentIds, ...requestedStudentIds])];
 
       // Resolver nombres legibles para groupName y periodName
       let resolvedGrade = grade || null;
@@ -2527,21 +2642,27 @@ export async function registerRoutes(
         if (per) resolvedSemester = per.name;
       }
 
-      const [created] = await db.insert(courses).values({
-        institutionId: user.institutionId!,
-        name,
-        subject,
-        description: description || null,
-        teacherId: teacherId || user.id,
-        grade: resolvedGrade,
-        semester: resolvedSemester,
-        academicYear: academicYear || null,
-        academicGroupId: academicGroupId || null,
-        academicPeriodId: academicPeriodId || null,
-        isActive: true,
-      }).returning();
+      const created = await db.transaction(async (tx) => {
+        const [course] = await tx.insert(courses).values({
+          institutionId: user.institutionId!,
+          name,
+          subject,
+          description: description || null,
+          teacherId: teacherId || user.id,
+          grade: resolvedGrade,
+          semester: resolvedSemester,
+          academicYear: academicYear || null,
+          academicGroupId: groupIds.length === 1 ? groupIds[0] : academicGroupId || null,
+          academicPeriodId: academicPeriodId || null,
+          isActive: true,
+        }).returning();
+        if (studentIdsToEnroll.length > 0) {
+          await tx.insert(courseEnrollments).values(studentIdsToEnroll.map((studentId) => ({ courseId: course.id, studentId })));
+        }
+        return course;
+      });
 
-      res.status(201).json(created);
+      res.status(201).json({ ...created, assignedStudents: studentIdsToEnroll.length });
     } catch (err: any) {
       console.error("[create course]", err.message);
       res.status(500).json({ message: err.message || "Error al crear el aula" });
@@ -2553,8 +2674,7 @@ export async function registerRoutes(
       const course = await storage.getCourse(req.params.id);
       if (!course || course.institutionId !== req.user!.institutionId) return res.status(404).json({ message: "Curso no encontrado" });
       if (req.user!.role !== "student") return res.status(403).json({ message: "Solo estudiantes pueden inscribirse" });
-      const enrollment = await storage.enrollStudent(req.params.id, req.user!.id);
-      res.status(201).json(enrollment);
+      return res.status(403).json({ message: "Solicita al docente que te asigne a esta aula" });
     } catch (err) {
       res.status(500).json({ message: "Failed to enroll" });
     }
@@ -2585,12 +2705,15 @@ export async function registerRoutes(
       if (course.institutionId !== user.institutionId) {
         return res.status(403).json({ message: "No autorizado" });
       }
-      const staffRoles = ["admin", "super_admin", "director", "coordinator", "secretary"];
       if (user.role === "teacher" && course.teacherId !== user.id) {
         return res.status(403).json({ message: "No eres el docente de este curso" });
       }
-      if (user.role !== "teacher" && !staffRoles.includes(user.role)) {
+      if (!canViewCourseRoster(course, user)) {
         return res.status(403).json({ message: "No autorizado" });
+      }
+      const group = await storage.getGroup(req.body?.groupId);
+      if (!group || group.institutionId !== course.institutionId) {
+        return res.status(404).json({ message: "Grupo académico no encontrado" });
       }
 
       const { groupId } = req.body as { groupId: string };
@@ -2600,6 +2723,7 @@ export async function registerRoutes(
       let enrolled = 0;
       let skipped = 0;
       for (const entry of roster) {
+        if (entry.student.institutionId !== course.institutionId || entry.student.role !== "student") continue;
         const already = await storage.isEnrolled(req.params.id, entry.student.id);
         if (already) {
           skipped++;
@@ -2614,18 +2738,58 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/classroom/courses/:id/students", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      const course = await storage.getCourse(req.params.id);
+      if (!course || course.institutionId !== user.institutionId) return res.status(404).json({ message: "Curso no encontrado" });
+      if (!canViewCourseRoster(course, user)) return res.status(403).json({ message: "No tienes permiso para administrar los estudiantes de esta aula" });
+      const studentId = req.body?.studentId;
+      if (typeof studentId !== "string" || !studentId) return res.status(400).json({ message: "Selecciona un estudiante" });
+      const student = await storage.getUser(studentId);
+      if (!student || student.institutionId !== course.institutionId || student.role !== "student" || student.blocked) {
+        return res.status(404).json({ message: "Estudiante no encontrado" });
+      }
+      const enrollment = await storage.enrollStudent(course.id, student.id);
+      res.status(201).json(enrollment);
+    } catch {
+      res.status(500).json({ message: "No se pudo asignar el estudiante al aula" });
+    }
+  });
+
   app.get("/api/classroom/courses/:id/students", requireAuth, async (req, res) => {
     try {
       const course = await storage.getCourse(req.params.id);
-      const canManage = !!course && course.institutionId === req.user!.institutionId && (
-        FULL_ACCESS_ROLES.includes(req.user!.role) || req.user!.role === "coordinator"
-        || (req.user!.role === "teacher" && course.teacherId === req.user!.id)
-      );
+      const canManage = canViewCourseRoster(course, req.user!);
       if (!canManage) return res.status(403).json({ message: "No tienes permisos para consultar la lista del curso" });
       const enrollments = await storage.getEnrollments(req.params.id);
       res.json(enrollments);
     } catch (err) {
       res.status(500).json({ message: "Failed to get students" });
+    }
+  });
+
+  app.delete("/api/classroom/courses/:id/students/:studentId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      const course = await storage.getCourse(req.params.id);
+      if (!course || course.institutionId !== user.institutionId) {
+        return res.status(404).json({ message: "Curso no encontrado" });
+      }
+      if (!canViewCourseRoster(course, user)) {
+        return res.status(403).json({ message: "No tienes permisos para gestionar la matrícula" });
+      }
+      const student = await storage.getUser(req.params.studentId);
+      if (!student || student.institutionId !== course.institutionId || student.role !== "student") {
+        return res.status(404).json({ message: "Estudiante no encontrado en el curso" });
+      }
+      if (!(await storage.isEnrolled(course.id, student.id))) {
+        return res.status(404).json({ message: "El estudiante no está matriculado en el curso" });
+      }
+      await storage.unenrollStudent(course.id, student.id);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ message: "No se pudo retirar al estudiante del curso" });
     }
   });
 
@@ -2636,12 +2800,8 @@ export async function registerRoutes(
   // en membresía de grupo genérica, sino directamente en la inscripción
   // al curso — así no hay que mantener sincronizados dos sistemas.
   async function canAccessCourseBoard(course: any, user: User): Promise<boolean> {
-    if (!course || course.institutionId !== user.institutionId) return false;
-    const staffRoles = ["admin", "super_admin", "director", "coordinator", "secretary"];
-    if (staffRoles.includes(user.role)) return true;
-    if (user.role === "teacher" && course.teacherId === user.id) return true;
-    if (user.role === "student") return storage.isEnrolled(course.id, user.id);
-    return false;
+    const isActiveStudent = !!course && user.role === "student" && await storage.isEnrolled(course.id, user.id);
+    return canAccessCourseContent(course, user, isActiveStudent);
   }
 
   app.get("/api/classroom/courses/:id/board", requireAuth, async (req, res) => {
@@ -2659,7 +2819,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/classroom/courses/:id/board", requireAuth, requireVerified, upload.array("attachments", 5), async (req, res) => {
+  app.post("/api/classroom/courses/:id/board", requireAuth, upload.array("attachments", 5), async (req, res) => {
     try {
       const user = req.user!;
       const course = await storage.getCourse(req.params.id);
@@ -2682,7 +2842,7 @@ export async function registerRoutes(
       // Notificar a los estudiantes inscritos (no al autor) de la nueva publicación
       const enrollments = await storage.getEnrollments(req.params.id);
       for (const e of enrollments) {
-        if (e.studentId !== user.id) {
+        if (e.studentId !== user.id && e.student.role === "student" && e.student.institutionId === course!.institutionId) {
           await storage.createNotification({
             userId: e.studentId,
             type: "course_post",
@@ -2812,12 +2972,7 @@ export async function registerRoutes(
       if (!course || course.institutionId !== user.institutionId) {
         return res.status(403).json({ message: "Not authorized" });
       }
-      // Solo el docente dueño del curso o un admin pueden ver las entregas de todos;
-      // un estudiante solo vería las suyas (filtradas del lado del cliente si aplica).
-      if (user.role === "teacher" && course.teacherId !== user.id) {
-        return res.status(403).json({ message: "No eres el docente de este curso" });
-      }
-      if (user.role === "student") {
+      if (!canReviewCourseSubmissions(course, user)) {
         return res.status(403).json({ message: "Not authorized" });
       }
       const subs = await storage.getSubmissions(req.params.id);
@@ -2833,10 +2988,7 @@ export async function registerRoutes(
       if (!course || course.institutionId !== user.institutionId) {
         return res.status(403).json({ message: "Not authorized" });
       }
-      if (user.role === "teacher" && course.teacherId !== user.id) {
-        return res.status(403).json({ message: "No eres el docente de este curso" });
-      }
-      if (user.role === "student" || (!FULL_ACCESS_ROLES.includes(user.role) && user.role !== "teacher")) {
+      if (!canReviewCourseSubmissions(course, user)) {
         return res.status(403).json({ message: "Not authorized" });
       }
 
@@ -2894,17 +3046,19 @@ export async function registerRoutes(
         .returning();
 
       // Nivel 4.10: avisar al estudiante de que su entrega ya fue calificada.
-      sendPushToUser(sub.studentId, {
-        title: "Actividad calificada",
-        body: `"${activity.title}" fue calificada con ${req.body.grade}.`,
-        url: `/classroom/${activity.courseId}`,
-      }, "pushNewAnswer").catch(() => {});
+      if (await storage.isEnrolled(course.id, sub.studentId)) {
+        sendPushToUser(sub.studentId, {
+          title: "Actividad calificada",
+          body: `"${activity.title}" fue calificada con ${req.body.grade}.`,
+          url: `/classroom/${activity.courseId}`,
+        }, "pushNewAnswer").catch(() => {});
+      }
 
       res.json(updated);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.post("/api/classroom/activities/:id/submit", requireAuth, requireVerified, upload.array("attachments", 5), async (req, res) => {
+  app.post("/api/classroom/activities/:id/submit", requireAuth, upload.array("attachments", 5), async (req, res) => {
     try {
       const activity = await storage.getActivity(req.params.id);
       if (!activity) return res.status(404).json({ message: "Actividad no encontrada" });
@@ -2947,11 +3101,8 @@ export async function registerRoutes(
     if (!activity) return { ok: false };
     const course = await storage.getCourse(activity.courseId);
     if (!course || course.institutionId !== user.institutionId) return { ok: false };
-    const staffRoles = ["admin", "super_admin", "director", "coordinator", "secretary"];
-    if (staffRoles.includes(user.role)) return { ok: true, course };
-    if (user.role === "teacher" && course.teacherId === user.id) return { ok: true, course };
-    if (user.role === "student" && (await storage.isEnrolled(course.id, user.id))) return { ok: true, course };
-    return { ok: false };
+    const isActiveStudent = user.role === "student" && await storage.isEnrolled(course.id, user.id);
+    return { ok: canAccessCourseContent(course, user, isActiveStudent), course };
   }
 
   app.get("/api/classroom/activities/:id/comments", requireAuth, async (req, res) => {
@@ -2967,6 +3118,12 @@ export async function registerRoutes(
 
       // Privados: un estudiante solo ve SU propio hilo; un docente/staff
       // necesita indicar de qué estudiante quiere ver el hilo.
+      const canReviewPrivateThreads =
+        (user.role === "teacher" && course?.teacherId === user.id) ||
+        FULL_ACCESS_ROLES.includes(user.role) || user.role === "coordinator";
+      if (user.role !== "student" && !canReviewPrivateThreads) {
+        return res.status(403).json({ message: "No tienes permiso para consultar comentarios privados" });
+      }
       let studentId = req.query.studentId as string | undefined;
       if (user.role === "student") {
         studentId = user.id;
@@ -2979,7 +3136,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/classroom/activities/:id/comments", requireAuth, requireVerified, async (req, res) => {
+  app.post("/api/classroom/activities/:id/comments", requireAuth, async (req, res) => {
     try {
       const user = req.user!;
       const { ok, course } = await canAccessActivity(req.params.id, user);
@@ -2997,6 +3154,18 @@ export async function registerRoutes(
         // respondiendo.
         studentId = user.role === "student" ? user.id : (bodyStudentId || null);
         if (!studentId) return res.status(400).json({ message: "studentId requerido para comentario privado" });
+        const canWritePrivateThread =
+          (user.role === "teacher" && course!.teacherId === user.id) ||
+          FULL_ACCESS_ROLES.includes(user.role) || user.role === "coordinator" ||
+          (user.role === "student" && studentId === user.id);
+        if (!canWritePrivateThread) return res.status(403).json({ message: "No tienes permiso para responder en privado" });
+        if (!(await storage.isEnrolled(course!.id, studentId))) {
+          return res.status(403).json({ message: "El estudiante no está matriculado en este curso" });
+        }
+        const recipient = await storage.getUser(studentId);
+        if (!recipient || recipient.institutionId !== course!.institutionId || recipient.role !== "student") {
+          return res.status(403).json({ message: "Destinatario no autorizado para este curso" });
+        }
       }
 
       const comment = await storage.createActivityComment({
@@ -3013,19 +3182,22 @@ export async function registerRoutes(
           userId: studentId,
           type: "comment",
           title: "Nuevo comentario privado",
-          message: `${user.firstName} te dejó un comentario privado en una tarea`,
-          relatedId: course!.id,
+          message: `${user.firstName} te dejó un comentario privado en “${(await storage.getActivity(req.params.id))?.title || "una actividad"}`,
+          relatedId: req.params.id,
           read: false,
         });
-      } else if (visibility === "public" && course) {
+      } else if (visibility === "public" && course?.teacherId && course.teacherId !== user.id) {
+        const teacher = await storage.getUser(course.teacherId);
+        if (teacher && teacher.institutionId === course.institutionId && ["teacher", "admin"].includes(teacher.role)) {
         await storage.createNotification({
           userId: course.teacherId,
           type: "comment",
           title: "Nuevo comentario en tarea",
-          message: `${user.firstName} comentó en el tablón de la tarea`,
-          relatedId: course.id,
+          message: `${user.firstName} comentó en “${(await storage.getActivity(req.params.id))?.title || "una actividad"}`,
+          relatedId: req.params.id,
           read: false,
-        }).catch(() => {}); // si el autor es el propio docente, no pasa nada grave si falla
+        }).catch(() => undefined);
+        }
       }
 
       res.status(201).json(comment);
@@ -3040,10 +3212,21 @@ export async function registerRoutes(
   // de que el usuario alcanzara siquiera a guardar nada.
   app.get("/api/classroom/courses/:id/attendance", requireAuth, async (req, res) => {
     try {
+      const user = req.user!;
+      const course = await storage.getCourse(req.params.id);
+      if (!course || course.institutionId !== user.institutionId) {
+        return res.status(404).json({ message: "Curso no encontrado" });
+      }
+      const canManageAttendance = canManageCourseAttendance(course, user);
+      const isEnrolledStudent = user.role === "student" && await storage.isEnrolled(course.id, user.id);
+      if (!canManageAttendance && !isEnrolledStudent) {
+        return res.status(404).json({ message: "Curso no encontrado" });
+      }
       const dateParam = req.query.date as string | undefined;
       const date = dateParam ? new Date(`${dateParam}T00:00:00`) : undefined;
-      const records = await storage.getAttendance(req.params.id, date);
-      res.json(records);
+      if (date && Number.isNaN(date.getTime())) return res.status(400).json({ message: "Fecha inválida" });
+      const records = await storage.getAttendance(course.id, date);
+      res.json(canManageAttendance ? records : records.filter((record) => record.studentId === user.id));
     } catch (err) {
       res.status(500).json({ message: "Failed to get attendance" });
     }
@@ -3052,13 +3235,31 @@ export async function registerRoutes(
   app.post("/api/classroom/courses/:id/attendance", requireAuth, async (req, res) => {
     try {
       const user = req.user!;
-      const staffRoles = ["admin", "director", "super_admin", "coordinator"];
-      if (user.role !== "teacher" && !staffRoles.includes(user.role)) {
-        return res.status(403).json({ message: "Only teachers can record attendance" });
+      const course = await storage.getCourse(req.params.id);
+      if (!course || course.institutionId !== user.institutionId) {
+        return res.status(404).json({ message: "Curso no encontrado" });
+      }
+      const canManageAttendance = canManageCourseAttendance(course, user);
+      if (!canManageAttendance) {
+        return res.status(403).json({ message: "Solo el docente asignado al curso o personal académico autorizado puede guardar asistencia" });
       }
       const { records } = req.body;
-      if (!Array.isArray(records)) {
+      if (!Array.isArray(records) || records.length === 0) {
         return res.status(400).json({ message: "records array required" });
+      }
+      for (const record of records) {
+        if (!record || typeof record.studentId !== "string" ||
+          !["present", "absent", "late", "excused"].includes(record.status) ||
+          !Number.isFinite(new Date(record.date).getTime())) {
+          return res.status(400).json({ message: "Registro de asistencia inválido" });
+        }
+        if (!(await storage.isEnrolled(course.id, record.studentId))) {
+          return res.status(403).json({ message: "El estudiante no está matriculado en este curso" });
+        }
+        const student = await storage.getUser(record.studentId);
+        if (!student || student.institutionId !== course.institutionId || student.role !== "student") {
+          return res.status(403).json({ message: "Estudiante no autorizado para este curso" });
+        }
       }
       // BUG CORREGIDO: `recordedBy` es NOT NULL en el esquema de `attendance`,
       // pero nunca se estaba enviando desde aquí — cada guardado fallaba con
@@ -3068,13 +3269,13 @@ export async function registerRoutes(
       const saved = await Promise.all(
         records.map((r: { studentId: string; status: string; date: string; notes?: string }) => 
           storage.recordAttendance({
-            courseId: req.params.id,
+            courseId: course.id,
             studentId: r.studentId,
             status: r.status,
             date: new Date(r.date),
             notes: r.notes || null,
             recordedBy: user.id,
-            institutionId: user.institutionId,
+            institutionId: course.institutionId,
           })
         )
       );
@@ -3478,6 +3679,14 @@ export async function registerRoutes(
         mediaUrl,
         mediaType,
       });
+      await storage.createNotification({
+        userId: receiverId,
+        type: "direct_message",
+        title: "Nuevo mensaje",
+        message: `${req.user!.firstName || "Alguien"} te escribió`,
+        relatedId: senderId,
+        read: false,
+      }).catch(() => undefined);
       res.status(201).json(msg);
       sendPushToUser(receiverId, {
         title: `${req.user!.firstName} ${req.user!.lastName}`,

@@ -306,7 +306,7 @@ export default function GroupDetail() {
                 </TabsList>
 
                 <TabsContent value="forum" className="space-y-4 mt-4">
-                  {isMember && user?.verified && (
+                  {isMember && (
                     <CreatePostCard
                       onSubmit={(content, files) => createPostMutation.mutateAsync({ content, files })}
                       isSubmitting={createPostMutation.isPending}

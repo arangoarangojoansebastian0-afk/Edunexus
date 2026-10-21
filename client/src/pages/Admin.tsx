@@ -35,7 +35,7 @@ import {
   UserX, FileText, Bell, Layers, Monitor, Award, Shield, Link2, Activity, CalendarDays,
 } from "lucide-react";
 import type { User } from "@shared/schema";
- 
+
 // ─── ERROR BOUNDARY ──────────────────────────────────────────────────────────
 class TabErrorBoundary extends Component<
   { children: ReactNode; tabId: string },
@@ -1582,11 +1582,15 @@ function TabDocentes() {
   });
  
   const deactivate = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/admin/users/${id}/block`, {}),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
-      toast({ title: "Docente desactivado" });
+    mutationFn: async ({ id, blocked }: { id: string; blocked: boolean }) => {
+      const response = await apiRequest("POST", `/api/admin/users/${id}/block`, { blocked });
+      return response.json();
     },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({ title: result.blocked ? "Docente desactivado" : "Docente activado" });
+    },
+    onError: (error: any) => toast({ title: "No se pudo cambiar el estado", description: error?.message, variant: "destructive" }),
   });
  
   const assign = useMutation({
@@ -1647,9 +1651,14 @@ function TabDocentes() {
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">{u.email}</TableCell>
                   <TableCell>
-                    <Badge variant={(u as any).blocked ? "destructive" : "default"}>
-                      {(u as any).blocked ? "Inactivo" : "Activo"}
-                    </Badge>
+                    <div className="space-y-1">
+                      <Badge variant={(u as any).blocked ? "destructive" : "default"}>
+                        {(u as any).blocked ? "Inactivo" : "Activo"}
+                      </Badge>
+                      <p className="text-xs text-muted-foreground">
+                        {(u as any).verified ? "Correo verificado" : "Correo pendiente"}
+                      </p>
+                    </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
@@ -1666,10 +1675,13 @@ function TabDocentes() {
                       <Button
                         size="icon"
                         variant="ghost"
-                        title="Desactivar"
-                        onClick={() => deactivate.mutate(u.id)}
+                        title={(u as any).blocked ? "Activar" : "Desactivar"}
+                        disabled={deactivate.isPending}
+                        onClick={() => deactivate.mutate({ id: u.id, blocked: !(u as any).blocked })}
                       >
-                        <UserX className="h-4 w-4 text-amber-500" />
+                        {(u as any).blocked
+                          ? <UserCheck className="h-4 w-4 text-green-600" />
+                          : <UserX className="h-4 w-4 text-amber-500" />}
                       </Button>
                     </div>
                   </TableCell>
@@ -4168,4 +4180,3 @@ export default function InstitutionalAdmin() {
     </AppLayout>
   );
 }
- 

@@ -8,3 +8,4 @@ vite.config.ts.*
 commit.bat
 sync-downloads.bat
 sync-downloads-v2.cjs
+scripts/local-tools/

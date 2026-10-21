@@ -190,7 +190,7 @@ export default function Groups() {
                 Únete a grupos de tu curso o descubre clubes de interés
               </p>
             </div>
-            {user?.verified && (
+            {user && (
               <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
                 <DialogTrigger asChild>
                   <Button className="gap-2" data-testid="button-create-group">
@@ -406,12 +406,10 @@ export default function Groups() {
                       : "Sé el primero en crear un grupo para la comunidad."
                   }
                   action={
-                    user?.verified
-                      ? {
-                          label: "Crear Grupo",
-                          onClick: () => setIsCreateOpen(true),
-                        }
-                      : undefined
+                    {
+                      label: "Crear Grupo",
+                      onClick: () => setIsCreateOpen(true),
+                    }
                   }
                 />
               )}

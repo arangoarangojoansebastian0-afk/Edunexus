@@ -22,6 +22,6 @@ for (let i = 0; i < lines.length; i++) {
   }
 }
 const report = `# Security static audit\n\nGenerated: ${new Date().toISOString()}\n\n- Routes detected: ${routeCount}\n- Potentially unprotected routes: ${findings.length}\n\n${findings.length ? findings.map(f => `- Line ${f.line}: ${f.method} ${f.route} — ${f.reason}`).join('\n') : 'No potentially unprotected application routes were detected by this static heuristic.'}\n\nThis is a static heuristic, not a substitute for authenticated IDOR/cross-institution penetration testing.\n`;
-fs.writeFileSync('docs/SECURITY_STATIC_AUDIT.md', report);
+fs.writeFileSync('docs/audits/SECURITY_STATIC_AUDIT.md', report);
 console.log(report);
 process.exitCode = findings.length ? 1 : 0;

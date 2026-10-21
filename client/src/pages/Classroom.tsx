@@ -32,6 +32,8 @@ const createCourseSchema = z.object({
   grade: z.string().min(1, "El grado es requerido"),
   semester: z.string().optional(),
   academicYear: z.string().optional(),
+  groupIds: z.array(z.string()).default([]),
+  studentIds: z.array(z.string()).default([]),
 });
 type CreateCourseForm = z.infer<typeof createCourseSchema>;
 
@@ -39,6 +41,16 @@ const GRADES = ["6°", "7°", "8°", "9°", "10°", "11°", "Todos"];
 
 function CreateCourseDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { toast } = useToast();
+  const [studentSearch, setStudentSearch] = useState("");
+
+  const { data: academicGroups = [] } = useQuery<any[]>({
+    queryKey: ["/api/admin/academic-groups"],
+    enabled: open,
+  });
+  const { data: directory = [] } = useQuery<any[]>({
+    queryKey: ["/api/users"],
+    enabled: open,
+  });
 
   // Consulta para obtener las asignaturas creadas dinámicamente en el panel de administración
   const { data: subjects, isLoading: loadingSubjects } = useQuery<any[]>({
@@ -57,6 +69,8 @@ function CreateCourseDialog({ open, onClose }: { open: boolean; onClose: () => v
       grade: "",
       semester: "",
       academicYear: new Date().getFullYear().toString(),
+      groupIds: [],
+      studentIds: [],
     },
   });
 
@@ -68,6 +82,7 @@ function CreateCourseDialog({ open, onClose }: { open: boolean; onClose: () => v
       queryClient.invalidateQueries({ queryKey: ["/api/classroom/courses/all"] });
       toast({ title: "Curso creado correctamente" });
       form.reset();
+      setStudentSearch("");
       onClose();
     },
     onError: () => {
@@ -77,6 +92,12 @@ function CreateCourseDialog({ open, onClose }: { open: boolean; onClose: () => v
 
   // Filtrar solo las materias que estén activadas por el administrador
   const activeSubjects = subjects?.filter((s) => s.active) || [];
+  const students = directory.filter((person) => person.role === "student");
+  const selectedGroupIds = form.watch("groupIds") || [];
+  const selectedStudentIds = form.watch("studentIds") || [];
+  const filteredStudents = students.filter((student) =>
+    `${student.firstName} ${student.lastName}`.toLocaleLowerCase("es").includes(studentSearch.trim().toLocaleLowerCase("es"))
+  );
 
   // BUG CORREGIDO: esto leía `institution?.maxGrade`, un campo que NUNCA
   // existió en el esquema (el campo real es `gradeScale`, un texto libre
@@ -95,7 +116,7 @@ function CreateCourseDialog({ open, onClose }: { open: boolean; onClose: () => v
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Crear nuevo curso</DialogTitle>
         </DialogHeader>
@@ -208,6 +229,80 @@ function CreateCourseDialog({ open, onClose }: { open: boolean; onClose: () => v
               />
             </div>
 
+            <section className="rounded-2xl border bg-muted/20 p-4 sm:p-5 space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <Users className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm font-semibold">Acceso al aula</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">Elige grupos completos, estudiantes específicos o combina ambas opciones.</p>
+                </div>
+                <Badge variant="secondary" className="shrink-0">
+                  {selectedGroupIds.length + selectedStudentIds.length} selecciones
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="rounded-xl border bg-background p-3 sm:p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium">Grupos</p>
+                      <p className="text-xs text-muted-foreground">Inscribe a todos sus alumnos</p>
+                    </div>
+                    <Badge variant="outline">{selectedGroupIds.length}/{academicGroups.length}</Badge>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto pr-1 space-y-2">
+                    {academicGroups.length === 0 ? (
+                      <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">No hay grupos académicos disponibles.</p>
+                    ) : academicGroups.map((group: any) => {
+                      const selected = selectedGroupIds.includes(group.id);
+                      return (
+                        <label key={group.id} className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm cursor-pointer transition-colors ${selected ? "border-primary bg-primary/5" : "hover:bg-muted/60"}`}>
+                          <input className="h-4 w-4 shrink-0 accent-primary" type="checkbox" checked={selected} onChange={(event) => {
+                            const current = form.getValues("groupIds");
+                            form.setValue("groupIds", event.target.checked ? [...current, group.id] : current.filter((id) => id !== group.id), { shouldDirty: true });
+                          }} />
+                          <span className="font-medium">{group.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border bg-background p-3 sm:p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium">Estudiantes</p>
+                      <p className="text-xs text-muted-foreground">Añade personas puntuales</p>
+                    </div>
+                    <Badge variant="outline">{selectedStudentIds.length} elegidos</Badge>
+                  </div>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input className="pl-9" value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} placeholder="Buscar por nombre..." aria-label="Buscar estudiante" />
+                  </div>
+                  <div className="max-h-48 overflow-y-auto pr-1 space-y-1">
+                    {filteredStudents.length === 0 ? (
+                      <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground text-center">No se encontraron estudiantes.</p>
+                    ) : filteredStudents.map((student: any) => {
+                      const selected = selectedStudentIds.includes(student.id);
+                      return (
+                        <label key={student.id} className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm cursor-pointer transition-colors ${selected ? "bg-primary/5 text-foreground" : "hover:bg-muted/60"}`}>
+                          <input className="h-4 w-4 shrink-0 accent-primary" type="checkbox" checked={selected} onChange={(event) => {
+                            const current = form.getValues("studentIds");
+                            form.setValue("studentIds", event.target.checked ? [...current, student.id] : current.filter((id) => id !== student.id), { shouldDirty: true });
+                          }} />
+                          <span className="min-w-0 flex-1 truncate font-medium">{student.firstName} {student.lastName}</span>
+                          {student.grade && <span className="text-xs text-muted-foreground shrink-0">{student.grade}</span>}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </section>
+
             {/* Banner Informativo del Sistema Evaluativo Institucional */}
             <div className="bg-muted/60 rounded-lg p-3 text-xs text-muted-foreground border">
               <span className="font-semibold block text-foreground mb-0.5">
@@ -238,13 +333,9 @@ function CreateCourseDialog({ open, onClose }: { open: boolean; onClose: () => v
 function CourseCard({
   course,
   enrolled,
-  onEnroll,
-  enrollPending,
 }: {
   course: CourseWithTeacher;
   enrolled?: boolean;
-  onEnroll?: () => void;
-  enrollPending?: boolean;
 }) {
   const { user } = useAuth();
   const isOwner = course.teacherId === user?.id;
@@ -310,17 +401,6 @@ function CourseCard({
             <ChevronRight className="h-3.5 w-3.5 ml-1" />
           </Link>
         </Button>
-        {!enrolled && onEnroll && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onEnroll}
-            disabled={enrollPending}
-            data-testid={`button-enroll-${course.id}`}
-          >
-            {enrollPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Inscribirse"}
-          </Button>
-        )}
         {enrolled && !isOwner && (
           <Badge variant="secondary" className="text-xs gap-1 no-default-active-elevate">
             <CheckCircle2 className="h-3 w-3" />
@@ -339,10 +419,8 @@ function CourseCard({
 
 export default function Classroom() {
   const { user } = useAuth();
-  const { toast } = useToast();
   const [showCreate, setShowCreate] = useState(false);
   const [view, setView] = useState<"mine" | "all">("mine");
-  const [enrollingId, setEnrollingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = usePersistentState("classroom-search", "");
 
   const isTeacher = user?.role === "teacher" || user?.role === "admin";
@@ -354,20 +432,6 @@ export default function Classroom() {
   const { data: allCourses, isLoading: allLoading, isError: allCoursesError, refetch: refetchAllCourses } = useQuery<CourseWithTeacher[]>({
     queryKey: ["/api/classroom/courses/all"],
     enabled: view === "all",
-  });
-
-  const enrollMutation = useMutation({
-    mutationFn: (courseId: string) =>
-      apiRequest("POST", `/api/classroom/courses/${courseId}/enroll`, {}),
-    onMutate: (courseId) => setEnrollingId(courseId),
-    onSettled: () => setEnrollingId(null),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/classroom/courses"] });
-      toast({ title: "Te inscribiste al curso" });
-    },
-    onError: () => {
-      toast({ title: "Error al inscribirse", variant: "destructive" });
-    },
   });
 
   const enrolledIds = new Set(myCourses?.map((c) => c.id));
@@ -397,7 +461,7 @@ export default function Classroom() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {!isTeacher && (
+            {!isTeacher && user?.role !== "student" && (
               <>
                 <Button
                   variant={view === "mine" ? "default" : "outline"}
@@ -474,12 +538,6 @@ export default function Classroom() {
                   key={course.id}
                   course={course}
                   enrolled={enrolledIds.has(course.id)}
-                  onEnroll={
-                    view === "all" && !enrolledIds.has(course.id) && course.teacherId !== user?.id
-                      ? () => enrollMutation.mutate(course.id)
-                      : undefined
-                  }
-                  enrollPending={enrollingId === course.id}
                 />
               ))}
             </div>

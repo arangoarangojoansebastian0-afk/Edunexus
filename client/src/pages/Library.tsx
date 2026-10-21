@@ -313,7 +313,7 @@ export default function Library() {
                 Recursos educativos compartidos por la comunidad
               </p>
             </div>
-            {user?.verified && (
+            {user && (
               <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
                 <DialogTrigger asChild>
                   <Button className="gap-2" data-testid="button-upload-file">
@@ -576,12 +576,10 @@ export default function Library() {
                   : "Sé el primero en compartir recursos con la comunidad."
               }
               action={
-                user?.verified
-                  ? {
-                      label: "Subir Archivo",
-                      onClick: () => setIsUploadOpen(true),
-                    }
-                  : undefined
+                {
+                  label: "Subir Archivo",
+                  onClick: () => setIsUploadOpen(true),
+                }
               }
             />
           )}

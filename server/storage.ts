@@ -199,6 +199,7 @@ export interface IStorage {
   incrementDownloadCount(id: string): Promise<void>;
   getEvent(id: string): Promise<EventWithHost | undefined>;
   getAllEvents(): Promise<EventWithHost[]>;
+  getEventsByInstitution(institutionId: string): Promise<EventWithHost[]>;
   getEventsByHost(hostId: string): Promise<EventWithHost[]>;
   getBookedEvents(userId: string): Promise<EventWithHost[]>;
   createEvent(event: InsertEvent): Promise<Event>;
@@ -233,8 +234,8 @@ export interface IStorage {
   getAdminStats(): Promise<{ totalUsers: number; pendingVerifications: number; totalPosts: number; pendingReports: number; pendingFiles: number; }>;
   getCourse(id: string): Promise<CourseWithTeacher | undefined>;
   getAllCourses(): Promise<CourseWithTeacher[]>;
-  getCoursesByTeacher(teacherId: string): Promise<CourseWithTeacher[]>;
-  getEnrolledCourses(studentId: string): Promise<CourseWithTeacher[]>;
+  getCoursesByTeacher(teacherId: string, institutionId?: string): Promise<CourseWithTeacher[]>;
+  getEnrolledCourses(studentId: string, institutionId?: string): Promise<CourseWithTeacher[]>;
   createCourse(course: InsertCourse): Promise<Course>;
   updateCourse(id: string, data: Partial<InsertCourse>): Promise<Course | undefined>;
   deleteCourse(id: string): Promise<void>;
@@ -984,6 +985,30 @@ async getInstitutionByCode(code: string) {
     return result;
   }
 
+  async getEventsByInstitution(institutionId: string): Promise<EventWithHost[]> {
+    const institutionEvents = await db
+      .select()
+      .from(events)
+      .innerJoin(users, eq(events.hostId, users.id))
+      .where(eq(events.institutionId, institutionId))
+      .orderBy(desc(events.startTime));
+
+    const result: EventWithHost[] = [];
+    for (const event of institutionEvents) {
+      const [participantCount] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(eventParticipants)
+        .where(eq(eventParticipants.eventId, event.events.id));
+
+      result.push({
+        ...event.events,
+        host: event.users,
+        _count: { participants: Number(participantCount?.count || 0) },
+      });
+    }
+    return result;
+  }
+
   async getEventsByHost(hostId: string): Promise<EventWithHost[]> {
     await this.deleteExpiredEvents();
     const hostEvents = await db
@@ -1419,26 +1444,30 @@ async getInstitutionByCode(code: string) {
     return Promise.all(all.map((c) => this.enrichCourse(c)));
   }
 
-  async getCoursesByTeacher(teacherId: string): Promise<CourseWithTeacher[]> {
+  async getCoursesByTeacher(teacherId: string, institutionId?: string): Promise<CourseWithTeacher[]> {
+    const filters = [eq(courses.teacherId, teacherId)];
+    if (institutionId) filters.push(eq(courses.institutionId, institutionId));
     const all = await db
       .select()
       .from(courses)
-      .where(eq(courses.teacherId, teacherId))
+      .where(and(...filters))
       .orderBy(desc(courses.createdAt));
     return Promise.all(all.map((c) => this.enrichCourse(c)));
   }
 
-  async getEnrolledCourses(studentId: string): Promise<CourseWithTeacher[]> {
+  async getEnrolledCourses(studentId: string, institutionId?: string): Promise<CourseWithTeacher[]> {
     const enrolled = await db
       .select({ courseId: courseEnrollments.courseId })
       .from(courseEnrollments)
       .where(and(eq(courseEnrollments.studentId, studentId), eq(courseEnrollments.status, "active")));
     if (enrolled.length === 0) return [];
     const courseIds = enrolled.map((e) => e.courseId);
+    const filters = [sql`${courses.id} = ANY(${courseIds})`, eq(courses.isActive, true)];
+    if (institutionId) filters.push(eq(courses.institutionId, institutionId));
     const all = await db
       .select()
       .from(courses)
-      .where(and(sql`${courses.id} = ANY(${courseIds})`, eq(courses.isActive, true)));
+      .where(and(...filters));
     return Promise.all(all.map((c) => this.enrichCourse(c)));
   }
 
@@ -1468,7 +1497,14 @@ async getInstitutionByCode(code: string) {
       .select()
       .from(courseEnrollments)
       .where(and(eq(courseEnrollments.courseId, courseId), eq(courseEnrollments.studentId, studentId)));
-    if (existing) return existing;
+    if (existing) {
+      if (existing.status === "active") return existing;
+      const [reactivated] = await db.update(courseEnrollments)
+        .set({ status: "active" })
+        .where(eq(courseEnrollments.id, existing.id))
+        .returning();
+      return reactivated;
+    }
     const [enrollment] = await db
       .insert(courseEnrollments)
       .values({ id: randomUUID(), courseId, studentId, status: "active" })
@@ -1496,7 +1532,11 @@ async getInstitutionByCode(code: string) {
     const [enrollment] = await db
       .select()
       .from(courseEnrollments)
-      .where(and(eq(courseEnrollments.courseId, courseId), eq(courseEnrollments.studentId, studentId)));
+      .where(and(
+        eq(courseEnrollments.courseId, courseId),
+        eq(courseEnrollments.studentId, studentId),
+        eq(courseEnrollments.status, "active"),
+      ));
     return !!enrollment;
   }
 

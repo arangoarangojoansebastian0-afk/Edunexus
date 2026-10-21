@@ -41,8 +41,8 @@ const registerSchema = z.object({
   // estudiante quedaba registrado sin ninguna matrícula real, por lo que
   // nunca aparecía en el roster de su director de grupo ni en ningún
   // reporte que dependiera de `student_enrollments`.
-  gradeId: z.string().optional(),
-  groupId: z.string().optional(),
+  gradeId: z.string().nullish(),
+  groupId: z.string().nullish(),
   // Correo del hijo/a — solo aplica cuando role === "parent". Queda pendiente
   // de aprobación por el estudiante (o un admin) antes de ver cualquier dato.
   studentEmail: z.string().email().optional(),
@@ -66,8 +66,8 @@ export function setupAuthRoutes(app: Express) {
         data.role,
         data.accessCode,
         data.institutionId,  // <-- FIX: pasamos el institutionId
-        data.gradeId,
-        data.groupId
+        data.gradeId ?? undefined,
+        data.groupId ?? undefined
       );
 
       req.session.userId = user.id;

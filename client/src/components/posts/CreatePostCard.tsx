@@ -58,18 +58,6 @@ export function CreatePostCard({
     setFiles((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  if (!user?.verified) {
-    return (
-      <Card>
-        <CardContent className="p-4">
-          <p className="text-sm text-muted-foreground text-center">
-            Tu cuenta está pendiente de verificación. Una vez verificada podrás crear publicaciones.
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
     <Card data-testid="create-post-card">
       <CardContent className="p-4">

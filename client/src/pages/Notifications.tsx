@@ -21,16 +21,18 @@ type NotificationItem = {
   relatedId?: string | null;
   read: boolean;
   createdAt: string;
-  sourceType?: "course" | "event" | "community" | "general";
   sourceId?: string | null;
+  sourceType?: "course" | "event" | "community" | "direct_message" | "general";
   sourceLabel?: string | null;
   sourceDescription?: string | null;
+  sourceResourceLabel?: string | null;
 };
 
 const tabs = [
   { value: "all", label: "Todas" },
   { value: "unread", label: "Sin leer" },
   { value: "message", label: "Mensajes" },
+  { value: "direct_message", label: "Chats individuales" },
   { value: "post", label: "Anuncios" },
   { value: "course_post", label: "Publicaciones de cursos" },
   { value: "comment", label: "Comentarios" },
@@ -42,7 +44,7 @@ const tabs = [
 ];
 
 function iconForType(type: string) {
-  if (type === "message") return MessageCircle;
+  if (type === "message" || type === "direct_message") return MessageCircle;
   if (type === "comment") return MessageSquareText;
   if (type === "event") return CalendarDays;
   if (type === "post" || type === "course_post" || type === "activity" || type === "submission" || type === "grade") return BookOpen;
@@ -50,11 +52,14 @@ function iconForType(type: string) {
 }
 
 function hrefForNotification(item: NotificationItem) {
-  if (item.type === "message" && item.relatedId) return `/messages/group/${encodeURIComponent(item.relatedId)}`;
+  if ((item.type === "message" || item.type === "direct_message") && (item.sourceId || item.relatedId)) {
+    const id = encodeURIComponent(item.sourceId || item.relatedId!);
+    return item.type === "direct_message" ? `/messages/${id}` : `/messages/group/${id}`;
+  }
   if (item.type === "event" && item.relatedId) return `/calendar?event=${encodeURIComponent(item.relatedId)}`;
-  if (item.type === "course_post" && item.relatedId) return `/classroom/${encodeURIComponent(item.relatedId)}`;
-  if ((item.type === "activity" || item.type === "submission" || item.type === "grade") && item.relatedId) return `/classroom/${encodeURIComponent(item.relatedId)}`;
-  if (item.type === "comment" && item.relatedId) return `/classroom/${encodeURIComponent(item.relatedId)}`;
+  if (item.type === "course_post" && (item.sourceId || item.relatedId)) return `/classroom/${encodeURIComponent(item.sourceId || item.relatedId!)}`;
+  if ((item.type === "activity" || item.type === "submission" || item.type === "grade") && (item.sourceId || item.relatedId)) return `/classroom/${encodeURIComponent(item.sourceId || item.relatedId!)}`;
+  if (item.type === "comment" && (item.sourceId || item.relatedId)) return `/classroom/${encodeURIComponent(item.sourceId || item.relatedId!)}`;
   if (item.type === "activity" || item.type === "submission" || item.type === "grade") return "/classroom";
   return "/";
 }
@@ -137,6 +142,7 @@ export default function Notifications() {
                   <span className="mt-2 block text-xs font-medium text-primary">
                     {item.sourceType === "course" ? "Clase: " : "Origen: "}{item.sourceLabel}
                     {item.sourceDescription ? ` · ${item.sourceDescription}` : ""}
+                    {item.sourceResourceLabel ? ` · ${item.sourceResourceLabel}` : ""}
                   </span>
                 )}
                 <span className="mt-1 block text-xs text-muted-foreground">{formatDistanceToNow(new Date(item.createdAt), { addSuffix: true, locale: es })}</span>

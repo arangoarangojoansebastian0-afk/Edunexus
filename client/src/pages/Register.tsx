@@ -148,8 +148,8 @@ export default function Register() {
         role: formData.role,
         accessCode: selectedRole.needsCode ? formData.accessCode : undefined,
         institutionId: formData.institutionId || undefined, // FIX: enviamos institutionId al backend
-        gradeId: formData.role === "student" ? formData.gradeId : null,
-        groupId: formData.role === "student" ? formData.groupId : null,
+        gradeId: formData.role === "student" && formData.gradeId ? formData.gradeId : undefined,
+        groupId: formData.role === "student" && formData.groupId ? formData.groupId : undefined,
         studentEmail: formData.role === "parent" && formData.studentEmail ? formData.studentEmail : undefined,
       };
 

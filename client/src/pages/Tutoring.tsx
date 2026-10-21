@@ -292,7 +292,7 @@ export default function Tutoring() {
                 Solicita o brinda tutorías académicas
               </p>
             </div>
-            {user?.verified && (
+            {user && (
               <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
                 <DialogTrigger asChild>
                   <Button className="gap-2" data-testid="button-create-event">
@@ -732,12 +732,10 @@ export default function Tutoring() {
                       : "Sé el primero en ofrecer una asesoría."
                   }
                   action={
-                    user?.verified
-                      ? {
-                          label: "Ofrecer Asesoría",
-                          onClick: () => setIsCreateOpen(true),
-                        }
-                      : undefined
+                    {
+                      label: "Ofrecer Asesoría",
+                      onClick: () => setIsCreateOpen(true),
+                    }
                   }
                 />
               )}
@@ -786,12 +784,10 @@ export default function Tutoring() {
                   title="No has creado asesorías"
                   description="Comparte tu conocimiento ofreciendo asesorías."
                   action={
-                    user?.verified
-                      ? {
-                          label: "Ofrecer Asesoría",
-                          onClick: () => setIsCreateOpen(true),
-                        }
-                      : undefined
+                    {
+                      label: "Ofrecer Asesoría",
+                      onClick: () => setIsCreateOpen(true),
+                    }
                   }
                 />
               )}

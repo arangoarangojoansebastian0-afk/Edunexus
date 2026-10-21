@@ -191,6 +191,7 @@ export async function loginUser(
   }
 
   if (!user) throw new Error("Invalid email or password");
+  if (user.blocked) throw new Error("Invalid email or password");
   if (!user.passwordHash) throw new Error("Invalid email or password");
 
   const isValid = await verifyPassword(password, user.passwordHash);

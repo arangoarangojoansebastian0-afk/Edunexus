@@ -13,4 +13,4 @@ for (const f of files) {
   if (/\.map\(\(.*=>.*\)/s.test(t) && /getAll|findMany|select\(/.test(t)) findings.push(`${path.relative(process.cwd(),f)}: inspect list size before client-side mapping`);
 }
 const report=`# Performance static audit\n\nGenerated: ${new Date().toISOString()}\n\nFiles scanned: ${files.length}\nReview flags: ${findings.length}\n\n${findings.length ? findings.map(x=>`- ${x}`).join('\n') : 'No heuristic flags.'}\n\nPrioritize server-side pagination for datasets that can exceed a few hundred records and measure real requests before optimizing further.\n`;
-fs.writeFileSync('docs/PERFORMANCE_STATIC_AUDIT.md',report); console.log(report);
+fs.writeFileSync('docs/audits/PERFORMANCE_STATIC_AUDIT.md',report); console.log(report);
