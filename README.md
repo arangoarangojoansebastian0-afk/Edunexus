@@ -239,6 +239,7 @@ Las tablas cubren identidad e instituciones, comunidad, cursos y evaluación, ma
 ## Documentación relacionada
 
 - [Índice documental](docs/README.md)
+- [Especificación técnica y funcional oficial](docs/official/EduNexus-Especificacion-tecnica-y-funcional.docx)
 - [Arquitectura](docs/architecture/system-overview.md)
 - [Mapa de archivos](docs/architecture/repository-map.md)
 - [Flujos principales](docs/architecture/key-flows.md)

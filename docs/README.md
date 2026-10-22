@@ -4,6 +4,7 @@ Este es el índice de la documentación vigente, preparada a partir de los archi
 
 ## Ingeniería
 
+- [Especificación técnica y funcional de EduNexus](official/EduNexus-Especificacion-tecnica-y-funcional.docx): documento formal vigente sobre módulos, roles, arquitectura, datos, integraciones y operación.
 - [Vista general y arquitectura](architecture/system-overview.md): componentes, límites y flujo de solicitudes.
 - [Mapa de archivos](architecture/repository-map.md): para qué sirve cada carpeta y archivo de la raíz.
 - [Flujos principales](architecture/key-flows.md): registro, sesión, correo, recuperación, cursos y archivos.

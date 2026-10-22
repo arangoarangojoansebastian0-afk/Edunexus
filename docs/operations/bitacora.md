@@ -8,3 +8,4 @@ Registro cronológico de cambios relevantes del proyecto. Las fechas usan la zon
 - El menú docente muestra accesos de trabajo docente, como sus aulas y la revisión de entregas; “Mi Grupo” solo aparece cuando el docente tiene un grupo asignado.
 - La vista de calificaciones identifica la revisión de entregas para docentes y conserva el nombre “Calificaciones” para estudiantes.
 - Se actualizó el [catálogo funcional](../reference/feature-catalog.md) y la sección de roles del [README](../../README.md).
+- Se creó la especificación oficial [EduNexus — Especificación técnica y funcional](../official/EduNexus-Especificacion-tecnica-y-funcional.docx), versión 1.0, con arquitectura, módulos, perfiles, persistencia, integraciones y operación.
