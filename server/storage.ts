@@ -507,6 +507,17 @@ async getInstitutionByCode(code: string) {
 
   // ─── GROUP METHODS ───────────────────────────────────────────────────
 
+  private async getInternalCourseGroupIds(institutionId?: string): Promise<Set<string>> {
+    const linkedGroups = institutionId
+      ? await db.select({ groupId: courses.groupId }).from(courses).where(eq(courses.institutionId, institutionId))
+      : await db.select({ groupId: courses.groupId }).from(courses);
+    return new Set(linkedGroups.flatMap(({ groupId }) => groupId ? [groupId] : []));
+  }
+
+  private isInternalCourseGroup(group: Pick<Group, "id" | "description">, internalGroupIds: Set<string>): boolean {
+    return internalGroupIds.has(group.id) || (group.description || "").startsWith("Tablón interno del curso ");
+  }
+
   async getGroup(id: string): Promise<GroupWithMembers | undefined> {
     const [group] = await db.select().from(groups).where(eq(groups.id, id));
     if (!group) return undefined;
@@ -531,11 +542,13 @@ async getInstitutionByCode(code: string) {
   }
 
   async getAllGroups(institutionId: string): Promise<GroupWithMembers[]> {
+    const internalGroupIds = await this.getInternalCourseGroupIds(institutionId);
     const allGroups = await db.select().from(groups)
       .where(eq(groups.institutionId, institutionId))
       .orderBy(desc(groups.createdAt));
     const result: GroupWithMembers[] = [];
     for (const group of allGroups) {
+      if (this.isInternalCourseGroup(group, internalGroupIds)) continue;
       const memberCount = await db
         .select({ count: sql<number>`count(*)` })
         .from(groupMembers)
@@ -558,6 +571,7 @@ async getInstitutionByCode(code: string) {
   }
 
   async getGroupsByUser(userId: string): Promise<GroupWithMembers[]> {
+    const internalGroupIds = await this.getInternalCourseGroupIds();
     const memberships = await db
       .select({ groupId: groupMembers.groupId })
       .from(groupMembers)
@@ -569,7 +583,7 @@ async getInstitutionByCode(code: string) {
     const result: GroupWithMembers[] = [];
     for (const groupId of groupIds) {
       const group = await this.getGroup(groupId);
-      if (group) result.push(group);
+      if (group && !this.isInternalCourseGroup(group, internalGroupIds)) result.push(group);
     }
     return result;
   }
