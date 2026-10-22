@@ -103,7 +103,7 @@ export default function Calendar() {
           </div>
         ))}
         {dayData.tasks.map((activity: any) => (
-          <Link key={activity.id} href={`/classroom/${activity.courseId}`}>
+          <Link key={activity.id} href={`/aula-virtual/${activity.courseId}`}>
             <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-left transition-colors hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/30 dark:hover:bg-amber-950/50">
               <span className="text-[10px] font-medium text-amber-700 dark:text-amber-400">Entrega · {format(new Date(activity.dueDate), "HH:mm")}</span>
               <p className="truncate text-sm font-medium">{activity.title}</p>

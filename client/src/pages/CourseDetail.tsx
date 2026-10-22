@@ -1377,7 +1377,7 @@ export default function CourseDetail() {
           <AlertCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
           <p className="font-medium">{courseError ? "No se pudo cargar el curso" : "Curso no encontrado"}</p>
           {courseError && <p className="mt-1 text-sm text-muted-foreground">Revisa tu conexión o tus permisos para consultar este curso.</p>}
-          <Button variant="outline" className="mt-4" onClick={() => navigate("/classroom")}>
+          <Button variant="outline" className="mt-4" onClick={() => navigate("/aula-virtual")}>
             Volver al aula
           </Button>
         </div>
@@ -1390,7 +1390,7 @@ export default function CourseDetail() {
       <div className="p-6 max-w-5xl mx-auto space-y-6">
         {/* Back + Header */}
         <div>
-          <Button variant="ghost" size="sm" onClick={() => navigate("/classroom")} className="mb-3 -ml-2">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/aula-virtual")} className="mb-3 -ml-2">
             <ArrowLeft className="h-4 w-4 mr-1.5" />
             Volver al aula
           </Button>

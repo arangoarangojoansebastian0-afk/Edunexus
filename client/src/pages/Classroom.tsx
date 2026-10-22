@@ -396,7 +396,7 @@ function CourseCard({
       </CardContent>
       <CardFooter className="pt-0 flex items-center gap-2 flex-wrap">
         <Button asChild size="sm" className="flex-1">
-          <Link href={`/classroom/${course.id}`}>
+          <Link href={`/aula-virtual/${course.id}`}>
             Abrir
             <ChevronRight className="h-3.5 w-3.5 ml-1" />
           </Link>

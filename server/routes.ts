@@ -406,9 +406,9 @@ export async function registerRoutes(
       res.json({
         users: people.slice(0, 5).map((person) => ({ title: `${person.firstName || ""} ${person.lastName || ""}`.trim() || "Usuario", description: person.role, href: `/profile/${person.id}` })),
         groups: matchedGroups.map((group) => ({ title: group.name, description: group.description || "Comunidad", href: `/groups/${group.id}` })),
-        courses: matchedCourses.map((course) => ({ title: course.name, description: course.subject, href: `/classroom/${course.id}` })),
-        activities: matchedActivities.map((activity) => ({ title: activity.title, description: `Actividad · ${activity.courseName}`, href: `/classroom/${activity.courseId}` })),
-        announcements: matchedAnnouncements.map((announcement) => ({ title: announcement.content.slice(0, 90), description: `Anuncio · ${announcement.courseName}`, href: `/classroom/${announcement.courseId}` })),
+        courses: matchedCourses.map((course) => ({ title: course.name, description: course.subject, href: `/aula-virtual/${course.id}` })),
+        activities: matchedActivities.map((activity) => ({ title: activity.title, description: `Actividad · ${activity.courseName}`, href: `/aula-virtual/${activity.courseId}` })),
+        announcements: matchedAnnouncements.map((announcement) => ({ title: announcement.content.slice(0, 90), description: `Anuncio · ${announcement.courseName}`, href: `/aula-virtual/${announcement.courseId}` })),
         posts: matchedPosts.map((post) => ({ title: post.content.slice(0, 90), description: `Publicación · ${post.firstName || ""} ${post.lastName || ""}`.trim(), href: "/" })),
         files: matchedFiles.map((file) => ({ title: file.fileName, description: file.description || file.fileType, href: "/library" })),
         conversations: conversations.filter((conversation: any) => matches(`${conversation.content || ""} ${conversation.otherUser?.firstName || ""} ${conversation.otherUser?.lastName || ""}`)).slice(0, 5).map((conversation: any) => ({ title: `${conversation.otherUser?.firstName || ""} ${conversation.otherUser?.lastName || ""}`.trim() || "Conversación", description: conversation.content || "Archivo multimedia", href: `/messages/${conversation.otherUser?.id}` })),
@@ -2854,7 +2854,7 @@ export async function registerRoutes(
           sendPushToUser(e.studentId, {
             title: `Nuevo anuncio en ${course!.name}`,
             body: `${user.firstName || "Tu profesor"} publicó algo nuevo en el curso.`,
-            url: `/classroom/${course!.id}`,
+            url: `/aula-virtual/${course!.id}`,
           }, "pushNewPost").catch(() => {});
         }
       }
@@ -2923,7 +2923,7 @@ export async function registerRoutes(
           await Promise.all(enrollments.map((enrollment) => sendPushToUser(enrollment.studentId, {
             title: `Nueva tarea en ${course.name}`,
             body: activity.title,
-            url: `/classroom/${course.id}`,
+            url: `/aula-virtual/${course.id}`,
           }, "pushNewPost")));
         }
         res.status(201).json(activity);
@@ -3050,7 +3050,7 @@ export async function registerRoutes(
         sendPushToUser(sub.studentId, {
           title: "Actividad calificada",
           body: `"${activity.title}" fue calificada con ${req.body.grade}.`,
-          url: `/classroom/${activity.courseId}`,
+          url: `/aula-virtual/${activity.courseId}`,
         }, "pushNewAnswer").catch(() => {});
       }
 
@@ -3082,7 +3082,7 @@ export async function registerRoutes(
       sendPushToUser(course.teacherId, {
         title: "Nueva entrega",
         body: `Un estudiante entregó: ${activity.title}`,
-        url: `/classroom/${course.id}`,
+        url: `/aula-virtual/${course.id}`,
       }, "pushNewAnswer").catch(() => {});
       res.status(201).json(submission);
     } catch (err) {

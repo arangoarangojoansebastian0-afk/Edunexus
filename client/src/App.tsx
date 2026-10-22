@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -82,8 +82,10 @@ function Router() {
           <Route path="/notifications" component={Notifications} />
           <Route path="/grades" component={isParent ? NotFound : Grades} />
           <Route path="/settings" component={Settings} />
-          <Route path="/classroom" component={isParent ? NotFound : Classroom} />
-          <Route path="/classroom/:id" component={isParent ? NotFound : CourseDetail} />
+          <Route path="/aula-virtual" component={isParent ? NotFound : Classroom} />
+          <Route path="/aula-virtual/:id" component={isParent ? NotFound : CourseDetail} />
+          <Route path="/classroom">{isParent ? <NotFound /> : <Redirect to="/aula-virtual" />}</Route>
+          <Route path="/classroom/:id">{(params) => isParent ? <NotFound /> : <Redirect to={`/aula-virtual/${params.id}`} />}</Route>
           <Route path="/my-group" component={user?.role === "teacher" ? MyGroup : NotFound} />
           <Route path="/schedules" component={isParent ? NotFound : Schedules} />
           <Route path="/messages" component={DirectMessages} />

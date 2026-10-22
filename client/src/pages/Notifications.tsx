@@ -57,10 +57,10 @@ function hrefForNotification(item: NotificationItem) {
     return item.type === "direct_message" ? `/messages/${id}` : `/messages/group/${id}`;
   }
   if (item.type === "event" && item.relatedId) return `/calendar?event=${encodeURIComponent(item.relatedId)}`;
-  if (item.type === "course_post" && (item.sourceId || item.relatedId)) return `/classroom/${encodeURIComponent(item.sourceId || item.relatedId!)}`;
-  if ((item.type === "activity" || item.type === "submission" || item.type === "grade") && (item.sourceId || item.relatedId)) return `/classroom/${encodeURIComponent(item.sourceId || item.relatedId!)}`;
-  if (item.type === "comment" && (item.sourceId || item.relatedId)) return `/classroom/${encodeURIComponent(item.sourceId || item.relatedId!)}`;
-  if (item.type === "activity" || item.type === "submission" || item.type === "grade") return "/classroom";
+  if (item.type === "course_post" && (item.sourceId || item.relatedId)) return `/aula-virtual/${encodeURIComponent(item.sourceId || item.relatedId!)}`;
+  if ((item.type === "activity" || item.type === "submission" || item.type === "grade") && (item.sourceId || item.relatedId)) return `/aula-virtual/${encodeURIComponent(item.sourceId || item.relatedId!)}`;
+  if (item.type === "comment" && (item.sourceId || item.relatedId)) return `/aula-virtual/${encodeURIComponent(item.sourceId || item.relatedId!)}`;
+  if (item.type === "activity" || item.type === "submission" || item.type === "grade") return "/aula-virtual";
   return "/";
 }
 

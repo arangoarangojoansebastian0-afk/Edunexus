@@ -47,7 +47,7 @@ import { getFullName, getInitials, formatRole } from "@/lib/authUtils";
 
 const mainNavItems = [
   { title: "Inicio", url: "/", icon: Home },
-  { title: "Aula Virtual", url: "/classroom", icon: School },
+  { title: "Aula Virtual", url: "/aula-virtual", icon: School },
   { title: "Horarios", url: "/schedules", icon: CalendarDays },
   { title: "Grupos", url: "/groups", icon: Users },
   { title: "Mensajes", url: "/messages", icon: MessageCircle },

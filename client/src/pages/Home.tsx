@@ -223,9 +223,9 @@ export default function Home() {
               <CardHeader className="pb-3"><CardTitle className="text-base">Accesos rápidos</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {(user?.role === "student" ? [
-                  ["Entregar actividad", "/classroom", ClipboardList], ["Ver calificaciones", "/grades", BarChart3], ["Mensajes", "/messages", MessageSquare], ["Calendario", "/calendar", Calendar]
+                  ["Entregar actividad", "/aula-virtual", ClipboardList], ["Ver calificaciones", "/grades", BarChart3], ["Mensajes", "/messages", MessageSquare], ["Calendario", "/calendar", Calendar]
                 ] : user?.role === "teacher" ? [
-                  ["Crear actividad", "/classroom", ClipboardList], ["Revisar entregas", "/grades", CheckCircle2], ["Publicar anuncio", "/", FileText], ["Abrir curso", "/classroom", BookOpen]
+                  ["Crear actividad", "/aula-virtual", ClipboardList], ["Revisar entregas", "/grades", CheckCircle2], ["Publicar anuncio", "/", FileText], ["Abrir curso", "/aula-virtual", BookOpen]
                 ] : [
                   ["Gestionar usuarios", "/admin", UserPlus], ["Gestionar cursos", "/admin", BookOpen], ["Ver estadísticas", "/admin", BarChart3], ["Administración", "/admin", ShieldCheck]
                 ]).map(([label, href, Icon]) => <Button key={label as string} asChild variant="outline" className="h-auto min-h-16 justify-start gap-2 whitespace-normal text-left"><Link href={href as string}><Icon className="h-4 w-4 shrink-0" /><span className="text-xs sm:text-sm">{label as string}</span></Link></Button>)}
@@ -421,7 +421,7 @@ export default function Home() {
                     </div>
                   ) : upcomingActivities.length ? (
                     upcomingActivities.map((activity) => (
-                      <Link key={activity.id} href={`/classroom/${activity.courseId}`}>
+                      <Link key={activity.id} href={`/aula-virtual/${activity.courseId}`}>
                         <div className="p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors cursor-pointer">
                           <p className="text-sm font-medium truncate">{activity.title}</p>
                           <p className="text-xs text-muted-foreground truncate">{activity.courseName} · {new Date(activity.dueDate).toLocaleDateString("es-CO", { day: "numeric", month: "short" })}</p>

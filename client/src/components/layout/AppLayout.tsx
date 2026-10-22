@@ -86,7 +86,7 @@ function useInstitutionColors() {
 
 const quickLinks = [
   { title: "Inicio", description: "Panel y actividad reciente", href: "/", keywords: "panel inicio feed publicaciones" },
-  { title: "Aula virtual", description: "Cursos y espacios de aprendizaje", href: "/classroom", keywords: "clase curso aula materia" },
+  { title: "Aula virtual", description: "Cursos y espacios de aprendizaje", href: "/aula-virtual", keywords: "clase curso aula materia" },
   { title: "Grupos", description: "Comunidades y grupos académicos", href: "/groups", keywords: "grupo comunidad estudiantes" },
   { title: "Biblioteca", description: "Archivos y recursos compartidos", href: "/library", keywords: "archivo documento recurso pdf" },
   { title: "Calendario", description: "Eventos y fechas importantes", href: "/calendar", keywords: "evento fecha actividad" },
@@ -229,7 +229,7 @@ export function AppLayout({ children, title }: AppLayoutProps) {
             <div className="grid grid-cols-5">
               {[
                 { href: "/", label: "Inicio", Icon: Home },
-                { href: "/classroom", label: "Aula", Icon: BookOpen },
+                { href: "/aula-virtual", label: "Aula", Icon: BookOpen },
                 { href: "/messages", label: "Mensajes", Icon: MessageSquare },
                 { href: "/calendar", label: "Calendario", Icon: CalendarDays },
                 { href: "/grades", label: "Notas", Icon: BarChart3 },

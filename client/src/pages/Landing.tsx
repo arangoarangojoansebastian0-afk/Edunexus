@@ -81,7 +81,7 @@ const features: Feature[] = [
     title: "Aula virtual",
     description:
       "Accede a cursos, espacios académicos y herramientas de aprendizaje desde un mismo entorno.",
-    route: "/classroom",
+    route: "/aula-virtual",
     category: "Aprendizaje",
   },
   {
@@ -89,7 +89,7 @@ const features: Feature[] = [
     title: "Cursos",
     description:
       "Consulta el contenido y la información de cada curso y entra directamente a sus espacios de trabajo.",
-    route: "/classroom",
+    route: "/aula-virtual",
     category: "Aprendizaje",
   },
   {
