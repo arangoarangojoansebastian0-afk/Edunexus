@@ -1522,6 +1522,51 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/teacher/workspace", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      if (user.role !== "teacher") return res.status(403).json({ message: "Este resumen es exclusivo para docentes" });
+      if (!user.institutionId) return res.status(400).json({ message: "Tu cuenta no está asociada a una institución" });
+
+      const { courses, activities, submissions } = await import("@shared/schema");
+      const { and, eq, desc, sql } = await import("drizzle-orm");
+      const institutionScope = and(
+        eq(courses.teacherId, user.id),
+        eq(courses.institutionId, user.institutionId),
+        eq(courses.isActive, true),
+      );
+      const [courseCountRows, reviewCountRows, courseRows] = await Promise.all([
+        db.select({ count: sql<number>`count(*)::int` })
+          .from(courses)
+          .where(institutionScope),
+        db.select({ count: sql<number>`count(*)::int` })
+          .from(submissions)
+          .innerJoin(activities, eq(submissions.activityId, activities.id))
+          .innerJoin(courses, eq(activities.courseId, courses.id))
+          .where(and(
+            eq(courses.teacherId, user.id),
+            eq(courses.institutionId, user.institutionId),
+            eq(courses.isActive, true),
+            eq(submissions.status, "submitted"),
+          )),
+        db.select({ id: courses.id, name: courses.name, subject: courses.subject, grade: courses.grade, isActive: courses.isActive })
+          .from(courses)
+          .where(institutionScope)
+          .orderBy(desc(courses.createdAt))
+          .limit(4),
+      ]);
+
+      res.json({
+        activeCourseCount: Number(courseCountRows[0]?.count || 0),
+        pendingReviewCount: Number(reviewCountRows[0]?.count || 0),
+        courses: courseRows,
+      });
+    } catch (error) {
+      console.error("[teacher-workspace]", error);
+      res.status(500).json({ message: "No se pudo cargar el resumen docente" });
+    }
+  });
+
   app.get("/api/gradebook/me", requireAuth, async (req, res) => {
     try {
       const user = req.user!;

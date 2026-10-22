@@ -103,6 +103,7 @@ Total: 10 rutas declaradas.
 | `DELETE` | `/api/admin/observations/:id` |
 | `GET` | `/api/admin/gradebook` |
 | `GET` | `/api/gradebook/teacher` |
+| `GET` | `/api/teacher/workspace` |
 | `GET` | `/api/gradebook/me` |
 | `POST` | `/api/admin/gradebook` |
 | `GET` | `/api/admin/report-card/:studentId/:periodId` |
@@ -239,5 +240,5 @@ Total: 10 rutas declaradas.
 | `POST` | `/api/admin/parent-links/:id/respond` |
 | `DELETE` | `/api/admin/parent-links/:id` |
 
-Total: 215 rutas declaradas.
+Total: 216 rutas declaradas.
 

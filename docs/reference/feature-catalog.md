@@ -8,6 +8,7 @@ Mapa de funciones visibles en el cliente o implementadas en las rutas actuales. 
 | Inicio y comunidad | `Home.tsx`, `routes.ts` | Feed, publicaciones, comentarios, reacciones, reconocimientos y notificaciones. |
 | Grupos y chat | `Groups.tsx`, `GroupDetail.tsx`, rutas de grupos | Descubrir/crear grupos, membresía, publicaciones, mensajes y grupos de chat. |
 | Cursos y aula virtual | `Classroom.tsx`, `CourseDetail.tsx`, rutas `/api/classroom/*` | Cursos, inscripción/visibilidad, tablero, actividades, entregas, comentarios, calificaciones y asistencia. |
+| Espacio de trabajo docente | `Home.tsx`, `/api/teacher/workspace` | Conteos exactos de aulas activas y entregas por revisar, más hasta cuatro aulas recientes, delimitados por docente e institución. |
 | Biblioteca y multimedia | `Library.tsx`, `MediaComposer.tsx`, rutas de archivos | Recursos compartidos y adjuntos, con límites y validaciones implementados en servidor. |
 | Mensajería y llamadas | `DirectMessages.tsx`, `Meet.tsx`, `MeetRoom.tsx` | Mensajes directos, solicitudes, bloques, salas y llamadas; LiveKit puede requerir credenciales externas. |
 | Tutorías, calendario y eventos | `Tutoring.tsx`, `Calendar.tsx`, `EventBoard.tsx` | Eventos/asesorías y calendario de acuerdo con rutas y permisos actuales. |

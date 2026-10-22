@@ -1,6 +1,6 @@
 # EduNexus
 
-EduNexus es una plataforma educativa web para reunir herramientas académicas, comunicación y administración escolar. El sistema está diseñado para separar la información por institución y presentar acciones de acuerdo con el rol y la relación del usuario con cursos, grupos y estudiantes.
+EduNexus es una plataforma educativa web multiinstitucional para reunir herramientas académicas, comunicación y administración escolar. El sistema separa la información por institución y presenta acciones de acuerdo con el rol y la relación del usuario con cursos, grupos y estudiantes.
 
 > **Estado:** aplicación en desarrollo. Que un módulo o ruta aparezca aquí significa que existe código relacionado; no garantiza que esté configurado o aceptado para producción. Consulta las variables de entorno, pruebas y registros del despliegue antes de depender de una función.
 
@@ -48,6 +48,7 @@ La navegación lateral también se adapta al rol: cada perfil ve accesos relacio
 - **Identidad y perfil:** registro, inicio/cierre de sesión, perfil, recuperación de contraseña y verificación de correo. Las cuentas pueden usar las funciones normales aunque el correo aún no esté verificado; la verificación se mantiene como dato y flujo disponible.
 - **Instituciones:** códigos de acceso, configuración institucional y separación de datos académicos.
 - **Aula virtual:** cursos, audiencia de grupos/estudiantes, tableros, anuncios, actividades, entregas, comentarios, asistencia y calificaciones.
+- **Espacio docente:** Inicio resume las aulas activas y las entregas por revisar del docente dentro de su institución mediante un endpoint con conteos calculados en el servidor.
 - **Comunidad:** publicaciones, comentarios, reacciones, grupos, membresía, preguntas y respuestas.
 - **Biblioteca y archivos:** recursos educativos, adjuntos y contenido multimedia con validaciones en servidor.
 - **Mensajería y llamadas:** mensajes directos y grupales, solicitudes, bloqueos, salas y videollamadas.

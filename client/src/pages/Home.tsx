@@ -34,6 +34,20 @@ import { usePersistentState } from "@/hooks/usePersistentState";
 
 const grades = ["6", "7", "8", "9", "10", "11"];
 
+interface TeacherCourseSummary {
+  id: string;
+  name: string;
+  subject: string;
+  grade: string | null;
+  isActive: boolean;
+}
+
+interface TeacherWorkspaceSummary {
+  activeCourseCount: number;
+  pendingReviewCount: number;
+  courses: TeacherCourseSummary[];
+}
+
 export default function Home() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -120,6 +134,19 @@ export default function Home() {
     queryKey: ["/api/gradebook/me"],
     enabled: user?.role === "student",
   });
+
+  const isTeacher = user?.role === "teacher";
+  const { data: teacherWorkspace, isLoading: teacherWorkspaceLoading, isError: teacherWorkspaceError, refetch: refetchTeacherWorkspace } = useQuery<TeacherWorkspaceSummary>({
+    queryKey: ["/api/teacher/workspace", user?.institutionId, user?.id],
+    queryFn: async () => {
+      const response = await fetch("/api/teacher/workspace", { credentials: "include" });
+      if (!response.ok) throw new Error("No se pudo cargar tu panel docente");
+      return response.json();
+    },
+    enabled: isTeacher && Boolean(user?.institutionId),
+  });
+
+  const activeTeacherCourses = teacherWorkspace?.courses || [];
 
   const createPostMutation = useMutation({
     mutationFn: async ({ content, files }: { content: string; files?: File[] }) => {
@@ -215,6 +242,63 @@ export default function Home() {
                 </CardHeader>
                 <CardContent className="pt-0">
                   <Button variant="ghost" className="h-auto px-0 text-sm text-primary hover:bg-transparent" onClick={dismissOnboarding}>Entendido</Button>
+                </CardContent>
+              </Card>
+            )}
+
+            {isTeacher && (
+              <Card>
+                <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-3">
+                  <div>
+                    <CardTitle className="text-base">Panel docente</CardTitle>
+                    <p className="mt-1 text-sm text-muted-foreground">Resumen de tus aulas y entregas de la institución asociada a tu cuenta.</p>
+                  </div>
+                  <Button variant="outline" size="sm" asChild className="shrink-0">
+                    <Link href="/grades">Revisar entregas</Link>
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg bg-muted/50 p-3">
+                      <p className="text-2xl font-semibold">{teacherWorkspaceLoading || teacherWorkspaceError || !user?.institutionId ? "—" : teacherWorkspace?.activeCourseCount ?? 0}</p>
+                      <p className="text-xs text-muted-foreground">Aulas activas</p>
+                    </div>
+                    <div className="rounded-lg bg-muted/50 p-3">
+                      <p className="text-2xl font-semibold">{teacherWorkspaceLoading || teacherWorkspaceError || !user?.institutionId ? "—" : teacherWorkspace?.pendingReviewCount ?? 0}</p>
+                      <p className="text-xs text-muted-foreground">Entregas por revisar</p>
+                    </div>
+                  </div>
+
+                  {!user?.institutionId ? (
+                    <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-center text-sm text-muted-foreground">Tu cuenta docente aún no está asociada a una institución. Contacta a la administración de tu institución.</p>
+                  ) : teacherWorkspaceLoading ? (
+                    <div className="space-y-2"><Skeleton className="h-14 w-full" /><Skeleton className="h-14 w-full" /></div>
+                  ) : teacherWorkspaceError ? (
+                    <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-center">
+                      <p className="text-sm text-muted-foreground">No pudimos cargar tu resumen docente.</p>
+                      <Button variant="ghost" size="sm" onClick={() => void refetchTeacherWorkspace()}>Intentar de nuevo</Button>
+                    </div>
+                  ) : activeTeacherCourses.length ? (
+                    <div className="space-y-2">
+                      {activeTeacherCourses.map((course) => (
+                        <Link key={course.id} href={`/aula-virtual/${course.id}`}>
+                          <div className="flex items-center justify-between gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">{course.name}</p>
+                              <p className="truncate text-xs text-muted-foreground">{[course.subject, course.grade].filter(Boolean).join(" · ")}</p>
+                            </div>
+                            <BookOpen className="h-4 w-4 shrink-0 text-primary" />
+                          </div>
+                        </Link>
+                      ))}
+                      {(teacherWorkspace?.activeCourseCount || 0) > activeTeacherCourses.length && (
+                        <Button variant="ghost" size="sm" asChild className="w-full"><Link href="/aula-virtual">Ver las {teacherWorkspace?.activeCourseCount} aulas</Link></Button>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="rounded-lg bg-muted/40 p-3 text-center text-sm text-muted-foreground">Aún no tienes aulas activas asignadas en esta institución.</p>
+                  )}
+
                 </CardContent>
               </Card>
             )}
