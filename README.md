@@ -41,6 +41,8 @@ La aplicación contempla roles de estudiante, docente, acudiente, secretaría, c
 
 El backend es la autoridad para los permisos. La interfaz puede ocultar acciones, pero eso no reemplaza las comprobaciones del servidor. Los permisos efectivos se definen en middleware y lógica de cada endpoint.
 
+La navegación lateral también se adapta al rol: cada perfil ve accesos relacionados con sus tareas. Por ejemplo, el docente cuenta con revisión de entregas y acceso a sus aulas, mientras que el estudiante conserva su apartado de calificaciones. Este ajuste de interfaz no sustituye los permisos del servidor.
+
 ## Módulos de la aplicación
 
 - **Identidad y perfil:** registro, inicio/cierre de sesión, perfil, recuperación de contraseña y verificación de correo. Las cuentas pueden usar las funciones normales aunque el correo aún no esté verificado; la verificación se mantiene como dato y flujo disponible.
@@ -53,6 +55,7 @@ El backend es la autoridad para los permisos. La interfaz puede ocultar acciones
 - **Administración académica:** grados, grupos, materias, años y periodos, matrículas, horarios, códigos, observaciones, asistencia y reportes.
 - **Familias:** solicitudes de vínculo acudiente-estudiante y consultas permitidas por el estado de aprobación.
 - **Notificaciones:** avisos dentro de la aplicación y notificaciones push cuando VAPID está configurado.
+- **Navegación por rol:** accesos laterales diferenciados para aprendizaje, docencia, familias, gestión institucional y administración global.
 - **Integraciones externas:** Resend, Supabase Storage, Google Classroom, LiveKit y Master2000; cada integración depende de credenciales y configuración propias.
 
 El [catálogo funcional](docs/reference/feature-catalog.md) enlaza cada área con el código principal. El [catálogo de API](docs/reference/api-endpoints.md) enumera las rutas Express.

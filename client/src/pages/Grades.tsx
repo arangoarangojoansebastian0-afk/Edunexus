@@ -46,6 +46,7 @@ export default function Grades() {
   const isStudent = user?.role === "student";
   const isTeacher = user?.role === "teacher";
   const isStaff = ["admin", "director", "coordinator", "secretary", "super_admin"].includes(user?.role || "");
+  const pageTitle = isTeacher ? "Revisar entregas" : "Calificaciones";
 
   const studentQuery = useQuery<StudentGrade[]>({
     queryKey: ["/api/gradebook/me"],
@@ -105,15 +106,15 @@ export default function Grades() {
 
   const query = isStudent ? studentQuery : teacherQuery;
   if (query.isLoading) {
-    return <AppLayout title="Calificaciones"><div className="mx-auto max-w-6xl p-4 md:p-6 space-y-4"><Skeleton className="h-28 w-full" /><div className="grid md:grid-cols-2 gap-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-36 w-full" />)}</div></div></AppLayout>;
+    return <AppLayout title={pageTitle}><div className="mx-auto max-w-6xl p-4 md:p-6 space-y-4"><Skeleton className="h-28 w-full" /><div className="grid md:grid-cols-2 gap-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-36 w-full" />)}</div></AppLayout>;
   }
 
   if (query.isError) {
-    return <AppLayout title="Calificaciones"><div className="mx-auto max-w-4xl p-4 md:p-6"><EmptyState icon={Award} title="No se pudieron cargar las calificaciones" description="Comprueba tu conexión e inténtalo de nuevo." action={{ label: "Reintentar", onClick: () => void query.refetch() }} /></div></AppLayout>;
+    return <AppLayout title={pageTitle}><div className="mx-auto max-w-4xl p-4 md:p-6"><EmptyState icon={Award} title="No se pudieron cargar las calificaciones" description="Comprueba tu conexión e inténtalo de nuevo." action={{ label: "Reintentar", onClick: () => void query.refetch() }} /></div></AppLayout>;
   }
 
   return (
-    <AppLayout title="Calificaciones">
+    <AppLayout title={pageTitle}>
       <div className="mx-auto max-w-6xl p-4 md:p-6 space-y-6">
         {isStudent ? (
           <>

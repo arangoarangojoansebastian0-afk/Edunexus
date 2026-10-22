@@ -34,6 +34,7 @@ import {
   LogOut,
   Shield,
   GraduationCap,
+  ClipboardCheck,
   ChevronUp,
   Bell,
   Clock,
@@ -45,7 +46,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { getFullName, getInitials, formatRole } from "@/lib/authUtils";
 
-const mainNavItems = [
+const studentNavItems = [
   { title: "Inicio", url: "/", icon: Home },
   { title: "Aula Virtual", url: "/aula-virtual", icon: School },
   { title: "Horarios", url: "/schedules", icon: CalendarDays },
@@ -58,11 +59,47 @@ const mainNavItems = [
   { title: "Calendario", url: "/calendar", icon: Clock },
 ];
 
+const teacherNavItems = [
+  { title: "Inicio", url: "/", icon: Home },
+  { title: "Mis Aulas", url: "/aula-virtual", icon: School },
+  { title: "Revisar entregas", url: "/grades", icon: ClipboardCheck },
+  { title: "Horarios", url: "/schedules", icon: CalendarDays },
+  { title: "Grupos", url: "/groups", icon: Users },
+  { title: "Mensajes", url: "/messages", icon: MessageCircle },
+  { title: "Biblioteca", url: "/library", icon: BookOpen },
+  { title: "Meet", url: "/meet", icon: Video },
+  { title: "Asesorías", url: "/tutoring", icon: Calendar },
+  { title: "Calendario", url: "/calendar", icon: Clock },
+];
+
+const administratorNavItems = [
+  { title: "Inicio", url: "/", icon: Home },
+  { title: "Aulas virtuales", url: "/aula-virtual", icon: School },
+  { title: "Horarios", url: "/schedules", icon: CalendarDays },
+  { title: "Grupos", url: "/groups", icon: Users },
+  { title: "Mensajes", url: "/messages", icon: MessageCircle },
+  { title: "Biblioteca", url: "/library", icon: BookOpen },
+  { title: "Meet", url: "/meet", icon: Video },
+  { title: "Calendario", url: "/calendar", icon: Clock },
+];
+
+const institutionStaffNavItems = [
+  { title: "Inicio", url: "/", icon: Home },
+  { title: "Horarios", url: "/schedules", icon: CalendarDays },
+  { title: "Mensajes", url: "/messages", icon: MessageCircle },
+  { title: "Biblioteca", url: "/library", icon: BookOpen },
+  { title: "Calendario", url: "/calendar", icon: Clock },
+];
+
 // Los padres/acudientes no tienen curso, grupo ni calificaciones propias —
 // solo necesitan ver a sus hijos y poder escribirle al colegio.
 const parentNavItems = [
   { title: "Mis hijos", url: "/parent", icon: Users },
   { title: "Mensajes", url: "/messages", icon: MessageCircle },
+];
+
+const superAdminNavItems = [
+  { title: "Administración global", url: "/super-admin", icon: Shield },
 ];
 
 const personalNavItems = [
@@ -92,12 +129,29 @@ export function AppSidebar() {
     }
   };
 
-  // BUG CORREGIDO: antes solo mostraba el link del panel a role==="admin"
-  // exacto — rector, coordinador y secretaría ya tenían permisos reales en
-  // el backend para partes del panel, pero ni siquiera veían el enlace acá
-  // para llegar a él.
-  const isAdmin = ["admin", "director", "super_admin", "coordinator", "secretary"].includes(user?.role || "");
-  const navItems = user?.role === "parent" ? parentNavItems : mainNavItems;
+  const role = user?.role || "student";
+  const isInstitutionAdmin = ["admin", "director", "coordinator", "secretary"].includes(role);
+  const isSuperAdmin = role === "super_admin";
+  const navItems = role === "teacher"
+    ? teacherNavItems
+    : role === "parent"
+      ? parentNavItems
+      : isSuperAdmin
+        ? superAdminNavItems
+        : role === "admin"
+          ? administratorNavItems
+          : isInstitutionAdmin
+            ? institutionStaffNavItems
+            : studentNavItems;
+  const navSectionLabel = role === "teacher"
+    ? "Docencia"
+    : role === "parent"
+      ? "Familia"
+      : isSuperAdmin
+        ? "Plataforma"
+        : isInstitutionAdmin
+          ? "Gestión institucional"
+          : "Aprendizaje";
 
   const { data: homeroomGroups } = useQuery<any[]>({
     queryKey: ["/api/teacher/homeroom-groups"],
@@ -121,14 +175,14 @@ export function AppSidebar() {
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Navegación</SidebarGroupLabel>
+          <SidebarGroupLabel>{navSectionLabel}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {navItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
-                    isActive={location === item.url}
+                    isActive={location === item.url || (item.url !== "/" && location.startsWith(`${item.url}/`))}
                     data-testid={`nav-${item.title.toLowerCase()}`}
                   >
                     <Link href={item.url} className="flex items-center gap-2 w-full">
@@ -146,7 +200,7 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
-              {isHomeroomTeacher && (
+              {isHomeroomTeacher && role === "teacher" && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
@@ -198,20 +252,20 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {isAdmin && (
+        {isInstitutionAdmin && (
           <SidebarGroup>
-            <SidebarGroupLabel>Administración</SidebarGroupLabel>
+            <SidebarGroupLabel>{isSuperAdmin ? "Plataforma" : "Administración"}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
-                    isActive={location === "/admin"}
+                    isActive={location === (isSuperAdmin ? "/super-admin" : "/admin")}
                     data-testid="nav-admin"
                   >
-                    <Link href="/admin">
+                    <Link href={isSuperAdmin ? "/super-admin" : "/admin"}>
                       <Shield className="h-5 w-5" />
-                      <span>Panel Admin</span>
+                      <span>{isSuperAdmin ? "Panel global" : "Panel Admin"}</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

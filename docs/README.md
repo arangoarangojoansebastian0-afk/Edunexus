@@ -14,6 +14,7 @@ Este es el índice de la documentación vigente, preparada a partir de los archi
 
 - [Desarrollo local](operations/local-development.md): requisitos, comandos y flujo de trabajo.
 - [Configuración](operations/configuration.md): variables de entorno y servicios externos.
+- [Bitácora de cambios](operations/bitacora.md): registro fechado de cambios funcionales y documentales.
 
 ## Referencia
 

@@ -13,6 +13,7 @@ Mapa de funciones visibles en el cliente o implementadas en las rutas actuales. 
 | Tutorías, calendario y eventos | `Tutoring.tsx`, `Calendar.tsx`, `EventBoard.tsx` | Eventos/asesorías y calendario de acuerdo con rutas y permisos actuales. |
 | Administración académica | `Admin.tsx`, `AdminDashboard.tsx`, rutas `/api/admin/*` | Usuarios, códigos, grados, grupos, periodos, matrículas, horarios, observaciones y reportes. |
 | Familias | `ParentPortal.tsx`, `ParentLinkRequests.tsx`, rutas `/api/parent/*` | Solicitud/aprobación de vínculos acudiente-estudiante y consulta autorizada. |
+| Navegación por rol | `client/src/components/layout/AppSidebar.tsx`, `client/src/pages/Grades.tsx` | Menús diferenciados para estudiantes, docentes, acudientes, personal institucional, administración y superadministración; el docente accede a revisión de entregas y su grupo aparece cuando corresponde. |
 | Integraciones | módulos en `server/` | Resend, Google Classroom, Supabase Storage, Web Push, LiveKit y Master2000; cada una depende de configuración. |
 
 Para comprobar una acción concreta, usar [el catálogo de API](api-endpoints.md), comprobar middleware y condiciones de negocio en la ruta indicada y realizar una prueba controlada con el rol y la institución correspondientes.
