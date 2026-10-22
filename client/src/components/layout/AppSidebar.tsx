@@ -43,6 +43,7 @@ import {
   Video,
   UserCheck,
   ClipboardList,
+  CircleHelp,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { getFullName, getInitials, formatRole } from "@/lib/authUtils";
@@ -107,6 +108,7 @@ const superAdminNavItems = [
 
 const personalNavItems = [
   { title: "Mi Perfil", url: "/profile", icon: User },
+  { title: "Centro de ayuda", url: "/help", icon: CircleHelp },
 ];
 
 export function AppSidebar() {

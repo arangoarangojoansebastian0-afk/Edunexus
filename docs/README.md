@@ -28,6 +28,7 @@ Este es el índice de la documentación vigente, preparada a partir de los archi
 - [Historial de asistencia](product/attendance-history.md): recuentos por estudiante y límites de acceso por rol.
 - [Agenda académica](product/academic-calendar.md): fuentes, filtros por tipo y controles institucionales del calendario.
 - [Entrega de anuncios](product/announcement-delivery.md): audiencia del aula, destinatarios y lectura por estudiante.
+- [Centro de ayuda](product/help-center.md): preguntas frecuentes y guía contextual de inicio para docentes.
 - [Especificación técnica y funcional oficial](official/EduNexus-Especificacion-tecnica-y-funcional.docx): alcance multiinstitucional, perfiles, conexiones, módulos e historial fechado.
 - [Guías de diseño](product/design-guidelines.md): lineamientos visuales existentes.
 

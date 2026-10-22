@@ -20,7 +20,7 @@ Este documento convierte el listado de prioridades del producto en trabajo verif
 |---:|---|---|---|
 | 8 | Inicio distinto para cada perfil | Base parcial | Inicio ya presenta acciones por rol; completar tareas y resúmenes específicos para acudiente y personal administrativo. |
 | 9 | Portal de acudientes | Base existente | Ampliar asistencia, actividades, fechas y avances respetando aprobación del vínculo y permisos sobre cada menor. |
-| 10 | Orientación para docentes nuevos | Pendiente | Guía contextual para asignaciones, aulas, actividades y revisión de trabajos. |
+| 10 | Orientación para docentes nuevos | Primera entrega completada el 22-10-2026 | Guía dentro del centro de ayuda con acceso a aulas, actividades, entregas y calendario; ampliar cuando se incorporen nuevas herramientas docentes. |
 | 11 | Permisos administrativos configurables | Pendiente | Matriz clara por secretaría, coordinación, dirección y administración, aplicada también en servidor. |
 
 ## Prioridad media — comunicación y colaboración
@@ -31,7 +31,7 @@ Este documento convierte el listado de prioridades del producto en trabajo verif
 | 13 | Mensajes vinculados a aulas | Base parcial | Mejorar mensajes de curso con reporte, bloqueo y moderación institucional. |
 | 14 | Retroalimentación en entregas | Base parcial | Completar devolución con comentarios, archivos e instrucciones para corregir y volver a entregar. |
 | 15 | Banco de recursos del curso | Base parcial | Organizar por aula y tema; explicitar quién puede descargar, sustituir o retirar cada archivo. |
-| 16 | Centro de ayuda | Pendiente | Guías breves sobre registro, correo, contraseña, aulas y resolución de problemas. |
+| 16 | Centro de ayuda | Primera entrega completada el 22-10-2026 | Preguntas frecuentes con búsqueda y respuestas filtradas por rol sobre cuenta, aulas, notas, vínculos familiares, mensajes y administración. Falta ampliar cobertura con la evolución de los módulos. |
 
 ## Prioridad media — gestión institucional
 

@@ -2,6 +2,13 @@
 
 Registro cronológico de cambios relevantes del proyecto. Las fechas usan la zona horaria de Colombia. Cada entrada resume el cambio y enlaza la documentación funcional vigente.
 
+## 2026-10-22 — Centro de ayuda y guía inicial docente
+
+- Se añadió el centro autenticado `/help` con búsqueda de preguntas frecuentes filtradas por rol y enlaces a las secciones correspondientes.
+- El perfil docente recibe una guía inicial para abrir aulas, publicar actividades, revisar entregas y consultar la agenda.
+- Se añadió el acceso a la ayuda en la navegación general y se documentó el alcance en la [guía del centro de ayuda](../product/help-center.md), el catálogo funcional y la hoja de ruta. La especificación oficial pasa a versión 2.0.
+- Verificación: `npm run check` y `npm run build` completaron correctamente. No se ejecutaron pruebas automatizadas. El render visual del DOCX no está disponible porque LibreOffice (`soffice.exe`) no está instalado.
+
 ## 2026-10-22 — Seguimiento de entrega y lectura de anuncios
 
 - Cada publicación nueva del tablón registra destinatarios según la matrícula activa del curso y excluye al autor.

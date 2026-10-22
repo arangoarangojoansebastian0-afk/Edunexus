@@ -36,6 +36,7 @@ const MyGroup = lazy(() => import("@/pages/MyGroup"));
 const Schedules = lazy(() => import("@/pages/Schedules"));
 const Promotions = lazy(() => import("@/pages/Promotions"));
 const DirectMessages = lazy(() => import("@/pages/DirectMessages"));
+const HelpCenter = lazy(() => import("@/pages/HelpCenter"));
 import { CallProvider } from "@/context/CallContext";
 import { GlobalCallUI } from "@/components/calls/CallUI";
 import NotFound from "@/pages/not-found";
@@ -78,6 +79,7 @@ function Router() {
           <Route path="/meet/:id" component={isParent ? NotFound : MeetRoom} />
           <Route path="/calendar" component={isParent ? NotFound : Calendar} />
           <Route path="/profile" component={Profile} />
+          <Route path="/help" component={HelpCenter} />
           <Route path="/profile/:id" component={Profile} />
           <Route path="/admin" component={canOpenAdmin ? Admin : NotFound} />
           <Route path="/super-admin" component={user?.role === "super_admin" ? SuperAdmin : NotFound} />
