@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, ChevronLeft, ChevronRight, Clock, User, MapPin } from "lucide-react";
+import { Loader2, ChevronLeft, ChevronRight, Clock, User, MapPin, BookOpen, ClipboardList, CalendarDays } from "lucide-react";
 import { useEffect, useState } from "react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth, addMonths, subMonths, startOfWeek, endOfWeek, addWeeks, subWeeks, addDays, subDays, getISODay } from "date-fns";
 import { es } from "date-fns/locale";
@@ -12,12 +12,14 @@ import { Link } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 
 type CalendarView = "month" | "week" | "day" | "agenda";
+type CalendarFilter = "events" | "tasks" | "classes";
 
 export default function Calendar() {
   const { user } = useAuth();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [view, setView] = useState<CalendarView>("month");
+  const [enabledFilters, setEnabledFilters] = useState<Record<CalendarFilter, boolean>>({ events: true, tasks: true, classes: true });
 
   const { data: events = [], isLoading, isError: eventsError, refetch: refetchEvents } = useQuery<EventWithHost[]>({
     queryKey: ["/api/events"],
@@ -63,9 +65,9 @@ export default function Calendar() {
         : eachDayOfInterval({ start: currentDate, end: addDays(currentDate, 29) });
 
   const getEventsForDay = (day: Date) => {
-    const evts = (events as any[]).filter((event) => isSameDay(new Date(event.startTime), day));
-    const acts = (activities as any[]).filter((a) => a.dueDate && isSameDay(new Date(a.dueDate), day));
-    const classes = (schedules as any[]).filter((schedule) => Number(schedule.dayOfWeek) === getISODay(day));
+    const evts = enabledFilters.events ? (events as any[]).filter((event) => isSameDay(new Date(event.startTime), day)) : [];
+    const acts = enabledFilters.tasks ? (activities as any[]).filter((a) => a.dueDate && isSameDay(new Date(a.dueDate), day)) : [];
+    const classes = enabledFilters.classes ? (schedules as any[]).filter((schedule) => Number(schedule.dayOfWeek) === getISODay(day)) : [];
     return {
       events: evts,
       tasks: acts,
@@ -129,7 +131,7 @@ export default function Calendar() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold sm:text-3xl">Calendario educativo</h1>
-            <p className="text-sm text-muted-foreground">Eventos, asesorías y fechas de entrega</p>
+            <p className="text-sm text-muted-foreground">Clases, eventos, asesorías y fechas de entrega</p>
           </div>
           <div className="flex flex-wrap gap-1" role="group" aria-label="Vista del calendario">
             {(["month", "week", "day", "agenda"] as CalendarView[]).map((calendarView) => (
@@ -139,6 +141,21 @@ export default function Calendar() {
               </Button>
             ))}
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filtrar elementos del calendario">
+          {([
+            ["events", "Eventos y asesorías", CalendarDays],
+            ["tasks", "Entregas", ClipboardList],
+            ["classes", "Clases", BookOpen],
+          ] as const).map(([filter, label, Icon]) => (
+            <Button key={filter} type="button" size="sm" variant={enabledFilters[filter] ? "default" : "outline"}
+              aria-pressed={enabledFilters[filter]}
+              onClick={() => setEnabledFilters((current) => ({ ...current, [filter]: !current[filter] }))}>
+              <Icon className="mr-2 h-4 w-4" />{label}
+            </Button>
+          ))}
+          {!Object.values(enabledFilters).some(Boolean) && <span className="text-xs text-muted-foreground">Activa al menos un tipo para ver elementos.</span>}
         </div>
 
         {isLoading || activitiesLoading || schedulesLoading ? (
@@ -264,7 +281,7 @@ export default function Calendar() {
                       </section>
                     ))}
                     {!visibleDays.some((day) => getEventsForDay(day).total > 0) && (
-                      <p className="py-10 text-center text-sm text-muted-foreground">No hay eventos ni fechas de entrega en este periodo.</p>
+                      <p className="py-10 text-center text-sm text-muted-foreground">No hay elementos de los tipos seleccionados en este periodo.</p>
                     )}
                   </div>
                 )}
