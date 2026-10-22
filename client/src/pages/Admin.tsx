@@ -1028,6 +1028,7 @@ function TabConfigAcademica() {
                   value={yearForm.startDate}
                   onChange={(e) => setYearForm((p) => ({ ...p, startDate: e.target.value }))}
                 />
+                <p className="text-xs text-muted-foreground">También abre la revisión de promoción del año anterior en esta fecha.</p>
               </div>
               <div className="space-y-1">
                 <Label>Fecha fin</Label>

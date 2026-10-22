@@ -82,6 +82,9 @@ Total: 10 rutas declaradas.
 | `GET` | `/api/admin/enrollments/:id` |
 | `PATCH` | `/api/admin/enrollments/:id` |
 | `DELETE` | `/api/admin/enrollments/:id` |
+| `GET` | `/api/promotions` |
+| `PUT` | `/api/promotions/:enrollmentId/recommendation` |
+| `POST` | `/api/promotions/:enrollmentId/decision` |
 | `POST` | `/api/admin/users/:id/expel` |
 | `DELETE` | `/api/admin/users/:id/permanent` |
 | `GET` | `/api/admin/codes/teacher` |
@@ -240,5 +243,5 @@ Total: 10 rutas declaradas.
 | `POST` | `/api/admin/parent-links/:id/respond` |
 | `DELETE` | `/api/admin/parent-links/:id` |
 
-Total: 216 rutas declaradas.
+Total: 219 rutas declaradas.
 

@@ -34,6 +34,7 @@ const Classroom = lazy(() => import("@/pages/Classroom"));
 const CourseDetail = lazy(() => import("@/pages/CourseDetail"));
 const MyGroup = lazy(() => import("@/pages/MyGroup"));
 const Schedules = lazy(() => import("@/pages/Schedules"));
+const Promotions = lazy(() => import("@/pages/Promotions"));
 const DirectMessages = lazy(() => import("@/pages/DirectMessages"));
 import { CallProvider } from "@/context/CallContext";
 import { GlobalCallUI } from "@/components/calls/CallUI";
@@ -44,6 +45,7 @@ function Router() {
   const { isAuthenticated, isLoading, user } = useAuth();
   const canOpenAdmin = ["admin", "director", "coordinator", "secretary", "super_admin"].includes(user?.role || "");
   const isParent = user?.role === "parent";
+  const canReviewPromotions = ["teacher", "admin", "director", "coordinator"].includes(user?.role || "");
 
   if (isLoading) {
     return (
@@ -88,6 +90,7 @@ function Router() {
           <Route path="/classroom/:id">{(params) => isParent ? <NotFound /> : <Redirect to={`/aula-virtual/${params.id}`} />}</Route>
           <Route path="/my-group" component={user?.role === "teacher" ? MyGroup : NotFound} />
           <Route path="/schedules" component={isParent ? NotFound : Schedules} />
+          <Route path="/promotions" component={canReviewPromotions ? Promotions : NotFound} />
           <Route path="/messages" component={DirectMessages} />
           <Route path="/messages/group/:groupId" component={DirectMessages} />
           <Route path="/messages/:userId" component={DirectMessages} />

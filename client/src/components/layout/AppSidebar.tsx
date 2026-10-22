@@ -42,6 +42,7 @@ import {
   MessageCircle,
   Video,
   UserCheck,
+  ClipboardList,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { getFullName, getInitials, formatRole } from "@/lib/authUtils";
@@ -63,6 +64,7 @@ const teacherNavItems = [
   { title: "Inicio", url: "/", icon: Home },
   { title: "Mis Aulas", url: "/aula-virtual", icon: School },
   { title: "Revisar entregas", url: "/grades", icon: ClipboardCheck },
+  { title: "Promoción anual", url: "/promotions", icon: ClipboardList },
   { title: "Horarios", url: "/schedules", icon: CalendarDays },
   { title: "Grupos", url: "/groups", icon: Users },
   { title: "Mensajes", url: "/messages", icon: MessageCircle },
@@ -75,6 +77,7 @@ const teacherNavItems = [
 const administratorNavItems = [
   { title: "Inicio", url: "/", icon: Home },
   { title: "Aulas virtuales", url: "/aula-virtual", icon: School },
+  { title: "Promoción anual", url: "/promotions", icon: ClipboardList },
   { title: "Horarios", url: "/schedules", icon: CalendarDays },
   { title: "Grupos", url: "/groups", icon: Users },
   { title: "Mensajes", url: "/messages", icon: MessageCircle },
@@ -200,6 +203,13 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+              {isInstitutionAdmin && ["director", "coordinator"].includes(role) && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={location === "/promotions"} data-testid="nav-promocion-anual">
+                    <Link href="/promotions" className="flex items-center gap-2 w-full"><ClipboardList className="h-5 w-5" /><span>Promoción anual</span></Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
               {isHomeroomTeacher && role === "teacher" && (
                 <SidebarMenuItem>
                   <SidebarMenuButton

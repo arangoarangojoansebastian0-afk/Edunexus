@@ -21,6 +21,7 @@ Este es el índice de la documentación vigente, preparada a partir de los archi
 
 - [Catálogo de API](reference/api-endpoints.md): rutas declaradas en el backend, actualizado desde el código al documentar esta versión.
 - [Catálogo funcional](reference/feature-catalog.md): módulos identificados en el cliente y servidor; no sustituye pruebas de aceptación.
+- [Revisión anual de promoción](product/annual-promotion.md): calendario, evidencia, consenso docente, resolución directiva y controles institucionales.
 - [Especificación técnica y funcional oficial](official/EduNexus-Especificacion-tecnica-y-funcional.docx): alcance multiinstitucional, perfiles, conexiones, módulos e historial fechado.
 - [Guías de diseño](product/design-guidelines.md): lineamientos visuales existentes.
 

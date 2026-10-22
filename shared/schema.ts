@@ -9,6 +9,7 @@ import {
   integer,
   jsonb,
   index,
+  uniqueIndex,
   pgEnum,
   time,
 } from "drizzle-orm/pg-core";
@@ -590,6 +591,35 @@ export const teachingAssignments = pgTable("teaching_assignments", {
   groupId: varchar("group_id").references(() => academicGroups.id, { onDelete: "cascade" }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// Consenso docente y resolución directiva para la promoción anual.
+export const studentPromotionReviews = pgTable("student_promotion_reviews", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }).notNull(),
+  enrollmentId: varchar("enrollment_id").references(() => studentEnrollments.id, { onDelete: "cascade" }).notNull(),
+  teacherId: varchar("teacher_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  recommendation: varchar("recommendation", { length: 30 }).notNull(), // promote | repeat | review
+  notes: text("notes").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_promotion_review_enrollment_teacher").on(table.enrollmentId, table.teacherId),
+  index("idx_promotion_review_institution_enrollment").on(table.institutionId, table.enrollmentId),
+  index("idx_promotion_review_teacher").on(table.teacherId),
+]);
+
+export const studentPromotionDecisions = pgTable("student_promotion_decisions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  institutionId: uuid("institution_id").references(() => institutionSettings.id, { onDelete: "cascade" }).notNull(),
+  enrollmentId: varchar("enrollment_id").references(() => studentEnrollments.id, { onDelete: "cascade" }).notNull(),
+  decidedBy: varchar("decided_by").references(() => users.id).notNull(),
+  outcome: varchar("outcome", { length: 30 }).notNull(), // promote | repeat | defer
+  targetEnrollmentId: varchar("target_enrollment_id").references(() => studentEnrollments.id),
+  notes: text("notes").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_promotion_decision_institution_enrollment").on(table.institutionId, table.enrollmentId),
+]);
 
 // ====== CLASSROOM MODULE ======
 export const courses = pgTable(

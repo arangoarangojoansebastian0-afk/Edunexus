@@ -106,7 +106,7 @@ export default function Grades() {
 
   const query = isStudent ? studentQuery : teacherQuery;
   if (query.isLoading) {
-    return <AppLayout title={pageTitle}><div className="mx-auto max-w-6xl p-4 md:p-6 space-y-4"><Skeleton className="h-28 w-full" /><div className="grid md:grid-cols-2 gap-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-36 w-full" />)}</div></AppLayout>;
+    return <AppLayout title={pageTitle}><div className="mx-auto max-w-6xl p-4 md:p-6 space-y-4"><Skeleton className="h-28 w-full" /><div className="grid md:grid-cols-2 gap-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-36 w-full" />)}</div></div></AppLayout>;
   }
 
   if (query.isError) {

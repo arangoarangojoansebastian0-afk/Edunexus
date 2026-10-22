@@ -30,6 +30,12 @@ import { Readable } from "stream";
 import session from "express-session";
 import { supabase } from "./supabase";
 import { db } from "./db";
+import { and, eq, gt, gte, lte, asc, desc, or, inArray } from "drizzle-orm";
+import {
+  academicYears, academicPeriods, academicGroups, grades, studentEnrollments,
+  teachingAssignments, studentObservations, attendance, courses, courseEnrollments, gradebookEntries,
+  subjects, users, studentPromotionReviews, studentPromotionDecisions,
+} from "@shared/schema";
 import { sendPushToUser, getVapidPublicKey, pushEnabled } from "./push";
 import { hashPassword } from "./authSimple";
 import { messagingLimiter } from "./rateLimit";
@@ -44,6 +50,15 @@ interface Request extends ExpressRequest {
 
 class MediaUploadError extends Error {
   constructor(message: string, readonly statusCode: number) { super(message); }
+}
+
+function isPromotionReviewOpen(startDate: Date | string | null | undefined): boolean {
+  if (!startDate) return false;
+  const configuredDay = startDate instanceof Date ? startDate.toISOString().slice(0, 10) : String(startDate).slice(0, 10);
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/Bogota", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+  const part = (type: string) => parts.find((item) => item.type === type)?.value || "00";
+  const today = `${part("year")}-${part("month")}-${part("day")}`;
+  return today >= configuredDay;
 }
 
 declare global {
@@ -979,7 +994,25 @@ export async function registerRoutes(
       if (!req.user?.institutionId) {
         return res.status(400).json({ error: "El usuario no pertenece a ninguna institución" });
       }
-      res.json(await storage.createAcademicYear(req.body, req.user.institutionId));
+      const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
+        const parsed = new Date(`${value}T00:00:00.000Z`);
+        return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+      });
+      const yearSchema = z.object({
+        year: z.coerce.number().int().min(2000).max(3000),
+        startDate: isoDate.optional(),
+        endDate: isoDate.optional(),
+      });
+      const input = yearSchema.safeParse(req.body);
+      if (!input.success) return res.status(400).json({ message: "Año o fechas inválidas" });
+      if (input.data.startDate && input.data.endDate && input.data.startDate > input.data.endDate) {
+        return res.status(400).json({ message: "La fecha final debe ser posterior a la fecha inicial" });
+      }
+      res.json(await storage.createAcademicYear({
+        year: input.data.year,
+        startDate: input.data.startDate ? new Date(`${input.data.startDate}T00:00:00.000Z`) : undefined,
+        endDate: input.data.endDate ? new Date(`${input.data.endDate}T00:00:00.000Z`) : undefined,
+      }, req.user.institutionId));
     } catch { res.status(500).json({ message: "Error" }); }
   });
 
@@ -1196,6 +1229,237 @@ export async function registerRoutes(
   app.delete("/api/admin/enrollments/:id", requireAuth, requireSecretary, async (req, res) => {
     try { await storage.deleteStudentEnrollment(req.params.id); res.json({ success: true }); }
     catch { res.status(500).json({ message: "Error" }); }
+  });
+
+  // Revisión anual de promoción: el año destino fija la fecha de apertura.
+  // Todas las consultas se limitan a la institución de la sesión autenticada.
+  app.get("/api/promotions", requireAuth, async (req, res) => {
+    try {
+      const institutionId = req.user!.institutionId;
+      if (!institutionId) return res.status(400).json({ message: "La cuenta debe estar vinculada a una institución" });
+      const role = req.user!.role;
+      const isTeacher = role === "teacher";
+      const isLeadership = ["admin", "director", "coordinator", "super_admin"].includes(role);
+      if (!isTeacher && !isLeadership) return res.status(403).json({ message: "No tienes acceso a la revisión de promoción" });
+
+      const years = await db.select().from(academicYears)
+        .where(eq(academicYears.institutionId, institutionId)).orderBy(asc(academicYears.year));
+      if (req.query.meta === "1") return res.json({ years });
+      const selectedYearId = typeof req.query.yearId === "string" ? req.query.yearId : undefined;
+      const sourceYear = (selectedYearId ? years.find((year) => year.id === selectedYearId) : [...years].reverse().find((year) => year.isActive)) || null;
+      if (selectedYearId && !sourceYear) return res.status(404).json({ message: "El año académico no existe en tu institución" });
+      if (!sourceYear) return res.json({ years, sourceYear: null, targetYear: null, reviewOpen: false, cases: [] });
+
+      const targetYear = years.find((year) => year.year === sourceYear.year + 1) || null;
+      const reviewOpen = isPromotionReviewOpen(targetYear?.startDate);
+      const periods = await db.select({ id: academicPeriods.id, startDate: academicPeriods.startDate, endDate: academicPeriods.endDate }).from(academicPeriods)
+        .where(eq(academicPeriods.academicYearId, sourceYear.id)).orderBy(asc(academicPeriods.startDate));
+      const periodIds = periods.map((period) => period.id);
+      const evidenceStartDate = sourceYear.startDate || periods[0]?.startDate || null;
+      const evidenceEndDate = sourceYear.endDate || periods.at(-1)?.endDate || null;
+      const enrolled = await db.select({ enrollment: studentEnrollments, student: users, group: academicGroups, grade: grades })
+        .from(studentEnrollments)
+        .innerJoin(users, eq(studentEnrollments.studentId, users.id))
+        .innerJoin(academicGroups, eq(studentEnrollments.groupId, academicGroups.id))
+        .innerJoin(grades, eq(academicGroups.gradeId, grades.id))
+        .where(and(eq(studentEnrollments.institutionId, institutionId), eq(studentEnrollments.academicYearId, sourceYear.id), eq(users.institutionId, institutionId), eq(academicGroups.institutionId, institutionId), eq(grades.institutionId, institutionId), or(eq(studentEnrollments.status, "enrolled"), eq(studentEnrollments.status, "completed"))!));
+      if (!enrolled.length) return res.json({ years, sourceYear, targetYear, reviewOpen, cases: [] });
+      const groupIds = Array.from(new Set(enrolled.map((row) => row.group.id)));
+      const studentIds = Array.from(new Set(enrolled.map((row) => row.student.id)));
+      const enrollmentIds = enrolled.map((row) => row.enrollment.id);
+      const homeroomIds = Array.from(new Set(enrolled.map((row) => row.group.homeroomTeacherId).filter((id): id is string => !!id)));
+      const assignments = await db.select({ groupId: teachingAssignments.groupId, teacherId: teachingAssignments.teacherId, firstName: users.firstName, lastName: users.lastName })
+        .from(teachingAssignments).innerJoin(users, eq(teachingAssignments.teacherId, users.id))
+        .where(and(inArray(teachingAssignments.groupId, groupIds), eq(users.institutionId, institutionId), eq(users.role, "teacher")));
+      const courseTeachers = await db.select({ groupId: courses.academicGroupId, teacherId: courses.teacherId, firstName: users.firstName, lastName: users.lastName })
+        .from(courses).innerJoin(users, eq(courses.teacherId, users.id))
+        .where(and(eq(courses.institutionId, institutionId), inArray(courses.academicGroupId, groupIds), eq(users.institutionId, institutionId), eq(users.role, "teacher"), or(eq(courses.academicYear, String(sourceYear.year)), periodIds.length ? inArray(courses.academicPeriodId, periodIds) : undefined)));
+      const individualCourseTeachers = await db.select({ studentId: courseEnrollments.studentId, teacherId: courses.teacherId, firstName: users.firstName, lastName: users.lastName })
+        .from(courseEnrollments).innerJoin(courses, eq(courseEnrollments.courseId, courses.id)).innerJoin(users, eq(courses.teacherId, users.id))
+        .where(and(inArray(courseEnrollments.studentId, studentIds), eq(courseEnrollments.status, "active"), eq(courses.institutionId, institutionId), eq(users.institutionId, institutionId), eq(users.role, "teacher"), or(eq(courses.academicYear, String(sourceYear.year)), periodIds.length ? inArray(courses.academicPeriodId, periodIds) : undefined)));
+      const homeroomUsers = homeroomIds.length ? await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName }).from(users)
+        .where(and(inArray(users.id, homeroomIds), eq(users.institutionId, institutionId), eq(users.role, "teacher"))) : [];
+      const reviewsData = await db.select({ review: studentPromotionReviews, firstName: users.firstName, lastName: users.lastName })
+        .from(studentPromotionReviews).innerJoin(users, eq(studentPromotionReviews.teacherId, users.id))
+        .where(and(eq(studentPromotionReviews.institutionId, institutionId), inArray(studentPromotionReviews.enrollmentId, enrollmentIds), eq(users.institutionId, institutionId)));
+      const gradesData = periodIds.length ? await db.select({ grade: gradebookEntries, groupId: gradebookEntries.groupId, studentId: gradebookEntries.studentId, subjectName: subjects.name, periodName: academicPeriods.name })
+        .from(gradebookEntries).innerJoin(subjects, eq(gradebookEntries.subjectId, subjects.id))
+        .innerJoin(academicPeriods, eq(gradebookEntries.academicPeriodId, academicPeriods.id))
+        .where(and(eq(gradebookEntries.institutionId, institutionId), inArray(gradebookEntries.studentId, studentIds), inArray(gradebookEntries.groupId, groupIds), eq(subjects.institutionId, institutionId), eq(academicPeriods.academicYearId, sourceYear.id))) : [];
+      const attendanceData = await db.select({ status: attendance.status, date: attendance.date, notes: attendance.notes, groupId: courses.academicGroupId, studentId: attendance.studentId })
+        .from(attendance).innerJoin(courses, eq(attendance.courseId, courses.id))
+        .where(and(eq(attendance.institutionId, institutionId), inArray(attendance.studentId, studentIds), eq(courses.institutionId, institutionId), inArray(courses.academicGroupId, groupIds), or(inArray(courses.academicPeriodId, periodIds), eq(courses.academicYear, String(sourceYear.year)))!));
+      const observationConditions = [eq(studentObservations.institutionId, institutionId), inArray(studentObservations.studentId, studentIds)];
+      if (evidenceStartDate) observationConditions.push(gte(studentObservations.createdAt, new Date(evidenceStartDate)));
+      if (evidenceEndDate) observationConditions.push(lte(studentObservations.createdAt, new Date(evidenceEndDate)));
+      const observationsData = await db.select({ id: studentObservations.id, studentId: studentObservations.studentId, type: studentObservations.type, severity: studentObservations.severity, title: studentObservations.title, description: studentObservations.description, createdAt: studentObservations.createdAt, teacherName: users.firstName, teacherLastName: users.lastName })
+        .from(studentObservations).innerJoin(users, eq(studentObservations.teacherId, users.id)).where(and(...observationConditions, eq(users.institutionId, institutionId))).orderBy(desc(studentObservations.createdAt));
+      const decisionsData = await db.select().from(studentPromotionDecisions)
+        .where(and(eq(studentPromotionDecisions.institutionId, institutionId), inArray(studentPromotionDecisions.enrollmentId, enrollmentIds)))
+        .orderBy(desc(studentPromotionDecisions.createdAt));
+      const teachersByGroup = new Map<string, Map<string, { teacherId: string; firstName: string | null; lastName: string | null }>>();
+      for (const teacher of [...assignments, ...courseTeachers]) {
+        if (!teacher.groupId) continue;
+        const map = teachersByGroup.get(teacher.groupId) || new Map();
+        map.set(teacher.teacherId, teacher);
+        teachersByGroup.set(teacher.groupId, map);
+      }
+      const teachersByStudent = new Map<string, Map<string, { teacherId: string; firstName: string | null; lastName: string | null }>>();
+      for (const teacher of individualCourseTeachers) {
+        const map = teachersByStudent.get(teacher.studentId) || new Map();
+        map.set(teacher.teacherId, teacher);
+        teachersByStudent.set(teacher.studentId, map);
+      }
+      const homeroomById = new Map(homeroomUsers.map((teacher) => [teacher.id, teacher]));
+      const reviewsByEnrollment = new Map<string, typeof reviewsData>();
+      for (const item of reviewsData) reviewsByEnrollment.set(item.review.enrollmentId, [...(reviewsByEnrollment.get(item.review.enrollmentId) || []), item]);
+      const latestDecisionByEnrollment = new Map<string, typeof decisionsData[number]>();
+      for (const decision of decisionsData) if (!latestDecisionByEnrollment.has(decision.enrollmentId)) latestDecisionByEnrollment.set(decision.enrollmentId, decision);
+      const cases = [];
+      for (const row of enrolled) {
+        const requiredById = new Map(teachersByGroup.get(row.group.id) || []);
+        for (const [teacherId, teacher] of teachersByStudent.get(row.student.id) || []) requiredById.set(teacherId, teacher);
+        if (row.group.homeroomTeacherId) {
+          const homeroom = homeroomById.get(row.group.homeroomTeacherId);
+          if (homeroom) requiredById.set(homeroom.id, { teacherId: homeroom.id, firstName: homeroom.firstName, lastName: homeroom.lastName });
+        }
+        const requiredTeachers = Array.from(requiredById.values());
+        if (isTeacher && !requiredById.has(req.user!.id)) continue;
+
+        const reviews = reviewsByEnrollment.get(row.enrollment.id) || [];
+        const caseGrades = gradesData.filter((item) => item.studentId === row.student.id && item.groupId === row.group.id);
+        const caseAttendance = attendanceData.filter((item) => item.studentId === row.student.id && item.groupId === row.group.id);
+        const observations = observationsData.filter((item) => item.studentId === row.student.id).map(({ studentId: _studentId, ...item }) => item);
+        const decision = latestDecisionByEnrollment.get(row.enrollment.id);
+        const counts = { present: 0, absent: 0, late: 0, other: 0 };
+        caseAttendance.forEach((record) => { if (record.status in counts) counts[record.status as keyof typeof counts]++; else counts.other++; });
+        const requiredTeacherIds = new Set(requiredTeachers.map((teacher) => teacher.teacherId));
+        const recommendations = reviews.map(({ review, firstName, lastName }) => ({ ...review, teacherName: `${firstName || ""} ${lastName || ""}`.trim() })).filter((review) => requiredTeacherIds.has(review.teacherId));
+        const complete = requiredTeachers.length > 0 && requiredTeachers.every((teacher) => recommendations.some((review) => review.teacherId === teacher.teacherId));
+        const outcomes = new Set(recommendations.map((review) => review.recommendation));
+        cases.push({
+          enrollment: row.enrollment,
+          student: { id: row.student.id, firstName: row.student.firstName, lastName: row.student.lastName, email: row.student.email },
+          group: { id: row.group.id, name: row.group.name, gradeName: row.grade.name, gradeLevel: row.grade.level },
+          requiredTeachers: requiredTeachers.map((teacher) => ({ id: teacher.teacherId, name: `${teacher.firstName || ""} ${teacher.lastName || ""}`.trim(), submitted: recommendations.some((review) => review.teacherId === teacher.teacherId) })),
+          reviews: recommendations,
+          consensus: complete && outcomes.size === 1 && ["promote", "repeat"].includes(recommendations[0]?.recommendation) ? recommendations[0].recommendation : null,
+          allTeachersSubmitted: complete,
+          grades: caseGrades.map((item) => ({ ...item.grade, subjectName: item.subjectName, periodName: item.periodName })),
+          attendance: { ...counts, records: caseAttendance.map(({ studentId: _studentId, groupId: _groupId, ...record }) => record) },
+          observations,
+          existingCommitments: { academic: row.enrollment.academicCommitments, coexistence: row.enrollment.coexistenceCommitments, observation: row.enrollment.academicObservation, disciplinaryStatus: row.enrollment.disciplinaryStatus },
+          decision: decision || null,
+        });
+      }
+      res.json({ years, sourceYear, targetYear, reviewOpen, cases });
+    } catch (error) {
+      console.error("[promotions] No se pudo cargar la revisión:", error);
+      res.status(500).json({ message: "No se pudo cargar la revisión anual" });
+    }
+  });
+
+  app.put("/api/promotions/:enrollmentId/recommendation", requireAuth, async (req, res) => {
+    try {
+      const institutionId = req.user!.institutionId;
+      if (!institutionId || req.user!.role !== "teacher") return res.status(403).json({ message: "Solo los docentes asignados pueden registrar recomendaciones" });
+      const recommendationSchema = z.object({ recommendation: z.enum(["promote", "repeat", "review"]), notes: z.string().trim().min(5).max(4000) });
+      const input = recommendationSchema.safeParse(req.body);
+      if (!input.success) return res.status(400).json({ message: "Indica una recomendación y su justificación (mínimo 5 caracteres)" });
+      const [enrollment] = await db.select({ enrollment: studentEnrollments, group: academicGroups, sourceYear: academicYears })
+        .from(studentEnrollments).innerJoin(academicGroups, eq(studentEnrollments.groupId, academicGroups.id))
+        .innerJoin(academicYears, eq(studentEnrollments.academicYearId, academicYears.id))
+        .where(and(eq(studentEnrollments.id, req.params.enrollmentId), eq(studentEnrollments.institutionId, institutionId), eq(academicGroups.institutionId, institutionId), eq(academicYears.institutionId, institutionId)));
+      if (!enrollment) return res.status(404).json({ message: "Matrícula no encontrada en tu institución" });
+      if (enrollment.enrollment.status !== "enrolled") return res.status(409).json({ message: "La matrícula ya no está activa" });
+      const [targetYear] = await db.select().from(academicYears).where(and(eq(academicYears.institutionId, institutionId), eq(academicYears.year, enrollment.sourceYear.year + 1)));
+      if (!isPromotionReviewOpen(targetYear?.startDate)) return res.status(409).json({ message: "La revisión se abrirá en la fecha de inicio configurada para el próximo año académico" });
+      const [assignment] = await db.select({ id: teachingAssignments.id }).from(teachingAssignments)
+        .where(and(eq(teachingAssignments.teacherId, req.user!.id), eq(teachingAssignments.groupId, enrollment.group.id)));
+      const sourcePeriods = await db.select({ id: academicPeriods.id }).from(academicPeriods).where(eq(academicPeriods.academicYearId, enrollment.sourceYear.id));
+      const [courseAssignment] = await db.select({ id: courses.id }).from(courses).where(and(eq(courses.institutionId, institutionId), eq(courses.teacherId, req.user!.id), eq(courses.academicGroupId, enrollment.group.id), or(eq(courses.academicYear, String(enrollment.sourceYear.year)), sourcePeriods.length ? inArray(courses.academicPeriodId, sourcePeriods.map((period) => period.id)) : undefined)));
+      const [individualCourseAssignment] = await db.select({ id: courseEnrollments.id }).from(courseEnrollments).innerJoin(courses, eq(courseEnrollments.courseId, courses.id))
+        .where(and(eq(courseEnrollments.studentId, enrollment.enrollment.studentId), eq(courseEnrollments.status, "active"), eq(courses.institutionId, institutionId), eq(courses.teacherId, req.user!.id), or(eq(courses.academicYear, String(enrollment.sourceYear.year)), sourcePeriods.length ? inArray(courses.academicPeriodId, sourcePeriods.map((period) => period.id)) : undefined)));
+      if (!assignment && !courseAssignment && !individualCourseAssignment && enrollment.group.homeroomTeacherId !== req.user!.id) return res.status(403).json({ message: "No enseñas a este estudiante en el año revisado" });
+      const [saved] = await db.insert(studentPromotionReviews).values({ institutionId, enrollmentId: enrollment.enrollment.id, teacherId: req.user!.id, ...input.data })
+        .onConflictDoUpdate({ target: [studentPromotionReviews.enrollmentId, studentPromotionReviews.teacherId], set: { ...input.data, updatedAt: new Date() } }).returning();
+      res.json(saved);
+    } catch (error) {
+      console.error("[promotions] No se pudo guardar la recomendación:", error);
+      res.status(500).json({ message: "No se pudo guardar la recomendación" });
+    }
+  });
+
+  app.post("/api/promotions/:enrollmentId/decision", requireAuth, requireCoordinator, async (req, res) => {
+    try {
+      const institutionId = req.user!.institutionId;
+      if (!institutionId) return res.status(400).json({ message: "La cuenta debe pertenecer a una institución" });
+      const decisionSchema = z.object({ outcome: z.enum(["promote", "repeat", "defer"]), targetGroupId: z.string().optional(), notes: z.string().trim().min(5).max(4000) });
+      const input = decisionSchema.safeParse(req.body);
+      if (!input.success) return res.status(400).json({ message: "Revisa la decisión, el grupo destino y la justificación" });
+      const result = await db.transaction(async (tx) => {
+        const [row] = await tx.select({ enrollment: studentEnrollments, student: users, sourceGroup: academicGroups, sourceGrade: grades, sourceYear: academicYears })
+          .from(studentEnrollments).innerJoin(users, eq(studentEnrollments.studentId, users.id))
+          .innerJoin(academicGroups, eq(studentEnrollments.groupId, academicGroups.id)).innerJoin(grades, eq(academicGroups.gradeId, grades.id))
+          .innerJoin(academicYears, eq(studentEnrollments.academicYearId, academicYears.id))
+          .where(and(eq(studentEnrollments.id, req.params.enrollmentId), eq(studentEnrollments.institutionId, institutionId), eq(academicGroups.institutionId, institutionId), eq(grades.institutionId, institutionId), eq(academicYears.institutionId, institutionId)));
+        if (!row) throw Object.assign(new Error("Matrícula no encontrada en tu institución"), { status: 404 });
+        if (row.enrollment.status !== "enrolled") throw Object.assign(new Error("La matrícula ya fue cerrada"), { status: 409 });
+        const [targetYear] = await tx.select().from(academicYears).where(and(eq(academicYears.institutionId, institutionId), eq(academicYears.year, row.sourceYear.year + 1)));
+        if (!isPromotionReviewOpen(targetYear?.startDate)) throw Object.assign(new Error("La revisión todavía no está abierta"), { status: 409 });
+        const assigned = await tx.select({ teacherId: teachingAssignments.teacherId }).from(teachingAssignments).innerJoin(users, eq(teachingAssignments.teacherId, users.id))
+          .where(and(eq(teachingAssignments.groupId, row.sourceGroup.id), eq(users.institutionId, institutionId), eq(users.role, "teacher")));
+        const required = new Set(assigned.map((entry) => entry.teacherId));
+        const sourcePeriods = await tx.select({ id: academicPeriods.id }).from(academicPeriods).where(eq(academicPeriods.academicYearId, row.sourceYear.id));
+        const courseTeachers = await tx.select({ teacherId: courses.teacherId }).from(courses).innerJoin(users, eq(courses.teacherId, users.id))
+          .where(and(eq(courses.institutionId, institutionId), eq(courses.academicGroupId, row.sourceGroup.id), eq(users.institutionId, institutionId), eq(users.role, "teacher"), or(eq(courses.academicYear, String(row.sourceYear.year)), sourcePeriods.length ? inArray(courses.academicPeriodId, sourcePeriods.map((period) => period.id)) : undefined)));
+        courseTeachers.forEach((entry) => required.add(entry.teacherId));
+        const individualCourseTeachers = await tx.select({ teacherId: courses.teacherId }).from(courseEnrollments)
+          .innerJoin(courses, eq(courseEnrollments.courseId, courses.id)).innerJoin(users, eq(courses.teacherId, users.id))
+          .where(and(eq(courseEnrollments.studentId, row.student.id), eq(courseEnrollments.status, "active"), eq(courses.institutionId, institutionId), eq(users.institutionId, institutionId), eq(users.role, "teacher"), or(eq(courses.academicYear, String(row.sourceYear.year)), sourcePeriods.length ? inArray(courses.academicPeriodId, sourcePeriods.map((period) => period.id)) : undefined)));
+        individualCourseTeachers.forEach((entry) => required.add(entry.teacherId));
+        if (row.sourceGroup.homeroomTeacherId) required.add(row.sourceGroup.homeroomTeacherId);
+        const reviews = await tx.select().from(studentPromotionReviews).where(and(eq(studentPromotionReviews.institutionId, institutionId), eq(studentPromotionReviews.enrollmentId, row.enrollment.id)));
+        const complete = required.size > 0 && Array.from(required).every((id) => reviews.some((review) => review.teacherId === id));
+        const outcomes = new Set(reviews.filter((review) => required.has(review.teacherId)).map((review) => review.recommendation));
+        const consensus = complete && outcomes.size === 1 ? [...outcomes][0] : null;
+        if (input.data.outcome !== "defer" && consensus !== input.data.outcome) throw Object.assign(new Error("Se requiere que todos los docentes asignados registren la misma recomendación"), { status: 409 });
+
+        let targetEnrollmentId: string | null = null;
+        if (input.data.outcome !== "defer") {
+          if (!input.data.targetGroupId) throw Object.assign(new Error("Selecciona el grupo de destino"), { status: 400 });
+          const [destination] = await tx.select({ group: academicGroups, grade: grades }).from(academicGroups)
+            .innerJoin(grades, eq(academicGroups.gradeId, grades.id))
+            .where(and(eq(academicGroups.id, input.data.targetGroupId), eq(academicGroups.institutionId, institutionId), eq(grades.institutionId, institutionId)));
+          if (!destination) throw Object.assign(new Error("El grupo de destino no pertenece a tu institución"), { status: 400 });
+          const expectedLevel = input.data.outcome === "promote" ? row.sourceGrade.level + 1 : row.sourceGrade.level;
+          if (destination.grade.level !== expectedLevel) throw Object.assign(new Error(input.data.outcome === "promote" ? "El grupo destino debe ser del grado inmediatamente siguiente" : "El grupo destino debe corresponder al mismo grado"), { status: 400 });
+          const [existing] = await tx.select({ id: studentEnrollments.id }).from(studentEnrollments)
+            .where(and(eq(studentEnrollments.studentId, row.student.id), eq(studentEnrollments.academicYearId, targetYear.id), eq(studentEnrollments.institutionId, institutionId)));
+          if (existing) throw Object.assign(new Error("El estudiante ya tiene matrícula en el año destino"), { status: 409 });
+          const [closed] = await tx.update(studentEnrollments).set({ status: "completed", promotionStatus: input.data.outcome === "promote" ? "promoted" : "not_promoted", updatedAt: new Date() })
+            .where(and(eq(studentEnrollments.id, row.enrollment.id), eq(studentEnrollments.institutionId, institutionId), eq(studentEnrollments.status, "enrolled"))).returning({ id: studentEnrollments.id });
+          if (!closed) throw Object.assign(new Error("La matrícula ya fue resuelta por otra persona"), { status: 409 });
+          const [created] = await tx.insert(studentEnrollments).values({
+            studentId: row.student.id, groupId: destination.group.id, academicYearId: targetYear.id, institutionId,
+            enrollmentNumber: `PROM-${targetYear.year}-${row.student.id.slice(-8)}`, enrollmentDate: new Date(), status: "enrolled",
+            enrollmentType: "promotion", previousGrade: row.sourceGrade.name, previousYear: row.sourceYear.year,
+            studentStatus: row.enrollment.studentStatus, promotionStatus: input.data.outcome === "promote" ? "promoted" : "not_promoted",
+            academicObservation: row.enrollment.academicObservation, disciplinaryStatus: row.enrollment.disciplinaryStatus,
+            academicCommitments: row.enrollment.academicCommitments, coexistenceCommitments: row.enrollment.coexistenceCommitments,
+            classroomTeacherId: destination.group.homeroomTeacherId, assignedClassroom: destination.group.name,
+          }).returning();
+          targetEnrollmentId = created.id;
+        }
+        const [decision] = await tx.insert(studentPromotionDecisions).values({ institutionId, enrollmentId: row.enrollment.id, decidedBy: req.user!.id, outcome: input.data.outcome, targetEnrollmentId, notes: input.data.notes }).returning();
+        return decision;
+      });
+      res.status(201).json(result);
+    } catch (error: any) {
+      const status = error?.status || 500;
+      if (status === 500) console.error("[promotions] No se pudo registrar la decisión:", error);
+      res.status(status).json({ message: status === 500 ? "No se pudo registrar la decisión" : error.message });
+    }
   });
 
   app.post("/api/admin/users/:id/expel", requireAuth, requireSecretary, async (req, res) => {

@@ -3281,12 +3281,13 @@ async getInstitutionByCode(code: string) {
   // ─── DIRECTOR DE GRUPO (homeroom teacher) ──────────────────────────────
   async getAcademicGroupsWithHomeroom(institutionId: string) {
     const rows = await db
-      .select({ group: academicGroups, teacher: users })
+      .select({ group: academicGroups, teacher: users, grade: grades })
       .from(academicGroups)
       .leftJoin(users, eq(academicGroups.homeroomTeacherId, users.id))
+      .leftJoin(grades, eq(academicGroups.gradeId, grades.id))
       .where(eq(academicGroups.institutionId, institutionId))
       .orderBy(academicGroups.name);
-    return rows.map((r) => ({ ...r.group, homeroomTeacher: r.teacher || null }));
+    return rows.map((r) => ({ ...r.group, grade: r.grade || null, gradeName: r.grade?.name || null, gradeLevel: r.grade?.level ?? null, homeroomTeacher: r.teacher || null }));
   }
 
   async assignHomeroomTeacher(groupId: string, teacherId: string | null) {

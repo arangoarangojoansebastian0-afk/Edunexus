@@ -332,6 +332,37 @@ export async function runMigrations(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
     `);
 
+    // ── Consenso docente y aprobación institucional de promoción anual ───
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS student_promotion_reviews (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        institution_id UUID NOT NULL REFERENCES institution_settings(id) ON DELETE CASCADE,
+        enrollment_id VARCHAR NOT NULL REFERENCES student_enrollments(id) ON DELETE CASCADE,
+        teacher_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        recommendation VARCHAR(30) NOT NULL CHECK (recommendation IN ('promote', 'repeat', 'review')),
+        notes TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_promotion_review_enrollment_teacher UNIQUE (enrollment_id, teacher_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_promotion_review_institution_enrollment
+        ON student_promotion_reviews(institution_id, enrollment_id);
+      CREATE INDEX IF NOT EXISTS idx_promotion_review_teacher ON student_promotion_reviews(teacher_id);
+
+      CREATE TABLE IF NOT EXISTS student_promotion_decisions (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        institution_id UUID NOT NULL REFERENCES institution_settings(id) ON DELETE CASCADE,
+        enrollment_id VARCHAR NOT NULL REFERENCES student_enrollments(id) ON DELETE CASCADE,
+        decided_by VARCHAR NOT NULL REFERENCES users(id),
+        outcome VARCHAR(30) NOT NULL CHECK (outcome IN ('promote', 'repeat', 'defer')),
+        target_enrollment_id VARCHAR REFERENCES student_enrollments(id),
+        notes TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_promotion_decision_institution_enrollment
+        ON student_promotion_decisions(institution_id, enrollment_id);
+    `);
+
     await client.query("COMMIT");
     console.log("[migrate] All migrations OK");
   } catch (err: any) {

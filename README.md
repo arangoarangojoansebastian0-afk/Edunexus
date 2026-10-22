@@ -54,6 +54,7 @@ La navegación lateral también se adapta al rol: cada perfil ve accesos relacio
 - **Mensajería y llamadas:** mensajes directos y grupales, solicitudes, bloqueos, salas y videollamadas.
 - **Calendario y asesorías:** eventos, disponibilidad y reservas según las rutas del servidor.
 - **Administración académica:** grados, grupos, materias, años y periodos, matrículas, horarios, códigos, observaciones, asistencia y reportes.
+- **Promoción anual:** cada año destino define cuándo inicia la revisión. Todos los docentes que enseñaron al estudiante registran su recomendación con justificación; dirección revisa la evidencia integral y aprueba, mantiene o aplaza el caso. Una decisión final crea la matrícula destino validada dentro de la institución. No hay promoción automática por promedio.
 - **Familias:** solicitudes de vínculo acudiente-estudiante y consultas permitidas por el estado de aprobación.
 - **Notificaciones:** avisos dentro de la aplicación y notificaciones push cuando VAPID está configurado.
 - **Navegación por rol:** accesos laterales diferenciados para aprendizaje, docencia, familias, gestión institucional y administración global.
@@ -250,5 +251,6 @@ Las tablas cubren identidad e instituciones, comunidad, cursos y evaluación, ma
 - [Configuración](docs/operations/configuration.md)
 - [Catálogo funcional](docs/reference/feature-catalog.md)
 - [Rutas de API](docs/reference/api-endpoints.md)
+- [Revisión anual de promoción](docs/product/annual-promotion.md)
 
 Los documentos previos se conservan en `docs/archive/legacy-documents/` como registro histórico; para instrucciones actuales usa los enlaces anteriores y verifica siempre el código.

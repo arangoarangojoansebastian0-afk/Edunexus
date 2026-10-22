@@ -16,6 +16,8 @@ La fuente ORM primaria es `shared/schema.ts` (PostgreSQL y Drizzle). Los nombres
 
 `subjects`, `grades`, `academic_groups`, `academic_years`, `academic_periods`, `student_enrollments`, `class_schedules`, `student_observations`, `teaching_assignments`.
 
+`student_promotion_reviews` conserva la recomendación y justificación de cada docente requerido para una matrícula. `student_promotion_decisions` conserva decisiones directivas y referencia la matrícula destino cuando se aprueba promoción o permanencia. Ambas tablas tienen `institution_id`; las rutas vuelven a validar la institución de la sesión, la matrícula, el grupo y el año de origen/destino.
+
 ## Aula virtual y evaluación
 
 `courses`, `course_enrollments`, `activities`, `course_announcements`, `announcement_comments`, `submissions`, `activity_comments`, `attendance`, `gradebook_entries`.
