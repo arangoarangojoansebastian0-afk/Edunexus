@@ -63,7 +63,7 @@ const studentNavItems = [
 const teacherNavItems = [
   { title: "Inicio", url: "/", icon: Home },
   { title: "Mis Aulas", url: "/aula-virtual", icon: School },
-  { title: "Revisar entregas", url: "/grades", icon: ClipboardCheck },
+  { title: "Calificaciones y entregas", url: "/grades", icon: ClipboardCheck },
   { title: "Promoción anual", url: "/promotions", icon: ClipboardList },
   { title: "Horarios", url: "/schedules", icon: CalendarDays },
   { title: "Grupos", url: "/groups", icon: Users },

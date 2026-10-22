@@ -24,6 +24,8 @@ Este es el índice de la documentación vigente, preparada a partir de los archi
 - [Revisión anual de promoción](product/annual-promotion.md): calendario, evidencia, consenso docente, resolución directiva y controles institucionales.
 - [Plan de implementación priorizado](product/implementation-roadmap.md): backlog de funciones escolares, estado conocido y orden de trabajo.
 - [Seguimiento de actividades](product/activity-tracking.md): roster, estados de entrega y filtros disponibles para el docente.
+- [Libro de calificaciones docente](product/teacher-gradebook.md): asignaciones, periodos, matrícula y auditoría de notas.
+- [Historial de asistencia](product/attendance-history.md): recuentos por estudiante y límites de acceso por rol.
 - [Especificación técnica y funcional oficial](official/EduNexus-Especificacion-tecnica-y-funcional.docx): alcance multiinstitucional, perfiles, conexiones, módulos e historial fechado.
 - [Guías de diseño](product/design-guidelines.md): lineamientos visuales existentes.
 

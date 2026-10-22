@@ -2,6 +2,23 @@
 
 Registro cronológico de cambios relevantes del proyecto. Las fechas usan la zona horaria de Colombia. Cada entrada resume el cambio y enlaza la documentación funcional vigente.
 
+## 2026-10-22 — Historial de asistencia por estudiante
+
+- Se agregó una consulta de historial limitada a 90 días como máximo y una vista inicial de los últimos 30 días en el aula.
+- El docente autorizado ve el total de registros, ausencias, tardanzas y excusas por estudiante; el estudiante solo puede consultar su propio historial.
+- El cliente conserva la toma diaria de asistencia y ofrece abrir u ocultar el resumen sin mezclarlo con el roster de otro curso.
+- Se actualizaron la hoja de ruta, el catálogo de API y el catálogo funcional. La especificación oficial pasa a versión 1.6.
+- Verificación: `npm run check` completó correctamente. No se ejecutaron pruebas automatizadas.
+
+## 2026-10-22 — Libro de calificaciones para docentes
+
+- La vista docente de calificaciones ahora incluye el libro consolidado por materia, grupo y periodo del año activo.
+- Cada docente solo consulta grupos y materias de sus asignaciones, estudiantes matriculados en el año activo de su institución y periodos de ese mismo año.
+- Se puede registrar o actualizar una nota cuantitativa o cualitativa. La API valida en servidor asignación, institución, periodo y matrícula antes de guardar.
+- Los cambios registran actor, nota anterior y nueva en `audit_logs`; notas institucionales de otras materias no se devuelven en la respuesta del espacio docente.
+- Se actualizó la hoja de ruta y el catálogo funcional; la especificación oficial pasa a versión 1.5.
+- Verificación: `npm run check` completó correctamente. No se ejecutaron pruebas automatizadas.
+
 ## 2026-10-22 — Seguimiento completo de entregas por actividad
 
 - El panel de entregas del aula ahora incluye a todos los estudiantes inscritos, incluso cuando aún no han enviado su trabajo.

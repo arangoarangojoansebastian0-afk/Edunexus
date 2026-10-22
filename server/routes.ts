@@ -1786,6 +1786,177 @@ export async function registerRoutes(
     }
   });
 
+  // Libro docente: solo materias/grupos asignados y estudiantes matriculados
+  // en el año activo de la misma institución.
+  app.get("/api/gradebook/teacher/workspace", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      if (user.role !== "teacher" || !user.institutionId) return res.status(403).json({ message: "Acceso exclusivo para docentes vinculados a una institución" });
+      const { teachingAssignments, academicGroups, grades, subjects, academicYears, academicPeriods, studentEnrollments, gradebookEntries, users } = await import("@shared/schema");
+      const { and, eq, inArray, asc, desc } = await import("drizzle-orm");
+      const assignments = await db.select({
+        groupId: teachingAssignments.groupId,
+        groupName: academicGroups.name,
+        gradeName: grades.name,
+        subjectId: teachingAssignments.subjectId,
+        subjectName: subjects.name,
+      }).from(teachingAssignments)
+        .innerJoin(academicGroups, eq(teachingAssignments.groupId, academicGroups.id))
+        .innerJoin(grades, eq(academicGroups.gradeId, grades.id))
+        .innerJoin(subjects, eq(teachingAssignments.subjectId, subjects.id))
+        .where(and(
+          eq(teachingAssignments.teacherId, user.id),
+          eq(academicGroups.institutionId, user.institutionId),
+          eq(grades.institutionId, user.institutionId),
+          eq(subjects.institutionId, user.institutionId),
+        ));
+      const [activeYear] = await db.select({ id: academicYears.id, year: academicYears.year })
+        .from(academicYears)
+        .where(and(eq(academicYears.institutionId, user.institutionId), eq(academicYears.isActive, true)))
+        .limit(1);
+      if (!activeYear || !assignments.length) return res.json({ academicYear: activeYear || null, assignments, periods: [], students: [], entries: [] });
+
+      const periods = await db.select({
+        id: academicPeriods.id,
+        name: academicPeriods.name,
+        startDate: academicPeriods.startDate,
+        endDate: academicPeriods.endDate,
+        isActive: academicPeriods.isActive,
+      }).from(academicPeriods)
+        .where(eq(academicPeriods.academicYearId, activeYear.id))
+        .orderBy(asc(academicPeriods.startDate));
+      if (!periods.length) return res.json({ academicYear: activeYear, assignments, periods, students: [], entries: [] });
+
+      const groupIds = [...new Set(assignments.map((row) => row.groupId))];
+      const enrollments = await db.select({
+        groupId: studentEnrollments.groupId,
+        studentId: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+      }).from(studentEnrollments)
+        .innerJoin(users, eq(studentEnrollments.studentId, users.id))
+        .where(and(
+          inArray(studentEnrollments.groupId, groupIds),
+          eq(studentEnrollments.academicYearId, activeYear.id),
+          eq(studentEnrollments.institutionId, user.institutionId),
+          eq(studentEnrollments.status, "enrolled"),
+          eq(users.institutionId, user.institutionId),
+          eq(users.role, "student"),
+        ))
+        .orderBy(asc(users.lastName), asc(users.firstName));
+      const entries = await db.select({
+        id: gradebookEntries.id,
+        groupId: gradebookEntries.groupId,
+        subjectId: gradebookEntries.subjectId,
+        academicPeriodId: gradebookEntries.academicPeriodId,
+        studentId: gradebookEntries.studentId,
+        grade: gradebookEntries.grade,
+        notes: gradebookEntries.notes,
+        updatedAt: gradebookEntries.updatedAt,
+      }).from(gradebookEntries).where(and(
+        eq(gradebookEntries.institutionId, user.institutionId),
+        inArray(gradebookEntries.groupId, groupIds),
+        inArray(gradebookEntries.subjectId, [...new Set(assignments.map((row) => row.subjectId))]),
+        inArray(gradebookEntries.academicPeriodId, periods.map((period) => period.id)),
+      )).orderBy(desc(gradebookEntries.updatedAt));
+      res.json({ academicYear: activeYear, assignments, periods, students: enrollments, entries });
+    } catch (error) {
+      console.error("[teacher-gradebook-workspace]", error);
+      res.status(500).json({ message: "No se pudo cargar el libro de calificaciones" });
+    }
+  });
+
+  app.post("/api/gradebook/teacher/workspace", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      if (user.role !== "teacher" || !user.institutionId) return res.status(403).json({ message: "Acceso exclusivo para docentes vinculados a una institución" });
+      const input = z.object({
+        groupId: z.string().min(1),
+        subjectId: z.string().min(1),
+        academicPeriodId: z.string().min(1),
+        studentId: z.string().min(1),
+        grade: z.string().trim().min(1).max(50),
+        notes: z.string().max(5000).optional().nullable(),
+      }).parse(req.body);
+      const { teachingAssignments, academicGroups, subjects, academicYears, academicPeriods, studentEnrollments, gradebookEntries, users } = await import("@shared/schema");
+      const { and, eq } = await import("drizzle-orm");
+      const [assignment] = await db.select({ groupId: teachingAssignments.groupId })
+        .from(teachingAssignments)
+        .innerJoin(academicGroups, eq(teachingAssignments.groupId, academicGroups.id))
+        .innerJoin(subjects, eq(teachingAssignments.subjectId, subjects.id))
+        .where(and(
+          eq(teachingAssignments.teacherId, user.id),
+          eq(teachingAssignments.groupId, input.groupId),
+          eq(teachingAssignments.subjectId, input.subjectId),
+          eq(academicGroups.institutionId, user.institutionId),
+          eq(subjects.institutionId, user.institutionId),
+        ));
+      if (!assignment) return res.status(403).json({ message: "No tienes asignada esta materia en este grupo" });
+      const [period] = await db.select({ id: academicPeriods.id, academicYearId: academicPeriods.academicYearId })
+        .from(academicPeriods)
+        .innerJoin(academicYears, eq(academicPeriods.academicYearId, academicYears.id))
+        .where(and(
+          eq(academicPeriods.id, input.academicPeriodId),
+          eq(academicYears.institutionId, user.institutionId),
+          eq(academicYears.isActive, true),
+        ));
+      if (!period) return res.status(400).json({ message: "El periodo no pertenece al año activo de tu institución" });
+      const [enrollment] = await db.select({ id: studentEnrollments.id })
+        .from(studentEnrollments)
+        .innerJoin(users, eq(studentEnrollments.studentId, users.id))
+        .where(and(
+          eq(studentEnrollments.studentId, input.studentId),
+          eq(studentEnrollments.groupId, input.groupId),
+          eq(studentEnrollments.academicYearId, period.academicYearId),
+          eq(studentEnrollments.institutionId, user.institutionId),
+          eq(studentEnrollments.status, "enrolled"),
+          eq(users.institutionId, user.institutionId),
+          eq(users.role, "student"),
+        ));
+      if (!enrollment) return res.status(403).json({ message: "El estudiante no está matriculado en este grupo y periodo" });
+
+      const values = {
+        institutionId: user.institutionId,
+        studentId: input.studentId,
+        subjectId: input.subjectId,
+        groupId: input.groupId,
+        academicPeriodId: input.academicPeriodId,
+        grade: input.grade,
+        recordedBy: user.id,
+        updatedAt: new Date(),
+      };
+      const saved = await db.transaction(async (tx) => {
+        const [existing] = await tx.select({ id: gradebookEntries.id, grade: gradebookEntries.grade }).from(gradebookEntries).where(and(
+          eq(gradebookEntries.institutionId, user.institutionId!),
+          eq(gradebookEntries.studentId, input.studentId),
+          eq(gradebookEntries.subjectId, input.subjectId),
+          eq(gradebookEntries.groupId, input.groupId),
+          eq(gradebookEntries.academicPeriodId, input.academicPeriodId),
+        )).limit(1);
+        if (existing) {
+          const [updated] = await tx.update(gradebookEntries).set({ grade: values.grade, ...(input.notes !== undefined ? { notes: input.notes || null } : {}), recordedBy: values.recordedBy, updatedAt: values.updatedAt }).where(eq(gradebookEntries.id, existing.id)).returning();
+          return { entry: updated, oldGrade: existing.grade };
+        }
+        const [created] = await tx.insert(gradebookEntries).values({ ...values, notes: input.notes || null }).returning();
+        return { entry: created, oldGrade: null };
+      });
+      await logAudit({
+        institutionId: user.institutionId,
+        actorId: user.id,
+        actorName: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+        action: "gradebook.teacher_entry_saved",
+        entityType: "gradebook_entry",
+        entityId: saved.entry.id,
+        details: { studentId: input.studentId, groupId: input.groupId, subjectId: input.subjectId, academicPeriodId: input.academicPeriodId, previousGrade: saved.oldGrade, newGrade: input.grade },
+      });
+      res.status(201).json(saved.entry);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ message: "Datos de calificación inválidos", errors: error.errors });
+      console.error("[teacher-gradebook-save]", error);
+      res.status(500).json({ message: "No se pudo guardar la calificación" });
+    }
+  });
+
   app.get("/api/teacher/workspace", requireAuth, async (req, res) => {
     try {
       const user = req.user!;
@@ -3538,6 +3709,56 @@ export async function registerRoutes(
       res.json(canManageAttendance ? records : records.filter((record) => record.studentId === user.id));
     } catch (err) {
       res.status(500).json({ message: "Failed to get attendance" });
+    }
+  });
+
+  app.get("/api/classroom/courses/:id/attendance/history", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      const course = await storage.getCourse(req.params.id);
+      if (!course || course.institutionId !== user.institutionId) return res.status(404).json({ message: "Curso no encontrado" });
+      const canManageAttendance = canManageCourseAttendance(course, user);
+      const isEnrolledStudent = user.role === "student" && await storage.isEnrolled(course.id, user.id);
+      if (!canManageAttendance && !isEnrolledStudent) return res.status(404).json({ message: "Curso no encontrado" });
+      const today = new Date();
+      const defaultFrom = new Date(today);
+      defaultFrom.setDate(defaultFrom.getDate() - 29);
+      const fromValue = typeof req.query.from === "string" ? req.query.from : defaultFrom.toISOString().slice(0, 10);
+      const toValue = typeof req.query.to === "string" ? req.query.to : today.toISOString().slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(fromValue) || !/^\d{4}-\d{2}-\d{2}$/.test(toValue)) {
+        return res.status(400).json({ message: "Usa fechas con formato AAAA-MM-DD" });
+      }
+      const from = new Date(`${fromValue}T00:00:00.000Z`);
+      const to = new Date(`${toValue}T23:59:59.999Z`);
+      const spanDays = (to.getTime() - from.getTime()) / 86400000;
+      if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || spanDays < 0 || spanDays > 90) {
+        return res.status(400).json({ message: "El rango debe ser válido y no superar 90 días" });
+      }
+      const { users, attendance } = await import("@shared/schema");
+      const { and, eq, gte, lte, asc } = await import("drizzle-orm");
+      const conditions = [
+        eq(attendance.courseId, course.id),
+        eq(attendance.institutionId, user.institutionId!),
+        gte(attendance.date, from),
+        lte(attendance.date, to),
+      ];
+      if (isEnrolledStudent) conditions.push(eq(attendance.studentId, user.id));
+      const rows = await db.select({
+        id: attendance.id,
+        studentId: attendance.studentId,
+        date: attendance.date,
+        status: attendance.status,
+        notes: attendance.notes,
+        firstName: users.firstName,
+        lastName: users.lastName,
+      }).from(attendance)
+        .innerJoin(users, eq(attendance.studentId, users.id))
+        .where(and(...conditions))
+        .orderBy(asc(attendance.date));
+      res.json(rows.map((row) => ({ ...row, studentName: `${row.firstName || ""} ${row.lastName || ""}`.trim() || "Estudiante" })));
+    } catch (error) {
+      console.error("[course-attendance-history]", error);
+      res.status(500).json({ message: "No se pudo cargar el historial de asistencia" });
     }
   });
 

@@ -34,7 +34,7 @@ import {
   AlertCircle, FileText, Award, UserCheck, Paperclip, X, Download, Monitor,
   MessageSquare,
 } from "lucide-react";
-import { format, isPast } from "date-fns";
+import { format, isPast, subDays } from "date-fns";
 import { es } from "date-fns/locale";
 import type { CourseWithTeacher, Activity, SubmissionWithStudent, AttendanceWithStudent } from "@shared/schema";
 import { MediaFileList } from "@/components/media/MediaFileList";
@@ -510,6 +510,9 @@ function AttendanceTab({
   const [selectedDate, setSelectedDate] = useState(today);
   const [selectedTime, setSelectedTime] = useState("07:00");
   const [attendanceMap, setAttendanceMap] = useState<Record<string, string>>({});
+  const [showHistory, setShowHistory] = useState(false);
+  const historyFrom = format(subDays(new Date(), 29), "yyyy-MM-dd");
+  const historyTo = format(new Date(), "yyyy-MM-dd");
 
   const { data: records, isError: attendanceError } = useQuery<AttendanceWithStudent[]>({
     queryKey: ["/api/classroom/courses", courseId, "attendance", selectedDate],
@@ -522,6 +525,17 @@ function AttendanceTab({
         if (!Array.isArray(data)) throw new Error("La respuesta de asistencia no tiene el formato esperado");
         return data;
       }),
+  });
+  const attendanceHistoryQuery = useQuery<{ id: string; studentId: string; studentName: string; date: string; status: string; notes: string | null }[]>({
+    queryKey: ["/api/classroom/courses", courseId, "attendance", "history", historyFrom, historyTo],
+    queryFn: async () => {
+      const response = await fetch(`/api/classroom/courses/${courseId}/attendance/history?from=${historyFrom}&to=${historyTo}`, { credentials: "include" });
+      if (!response.ok) throw new Error("No se pudo cargar el historial de asistencia");
+      const data = await response.json();
+      if (!Array.isArray(data)) throw new Error("El historial no tiene el formato esperado");
+      return data;
+    },
+    enabled: showHistory,
   });
 
   const saveMutation = useMutation({
@@ -698,6 +712,30 @@ function AttendanceTab({
           })}
         </div>
       )}
+
+      <div className="border-t pt-4">
+        <Button type="button" size="sm" variant="outline" aria-expanded={showHistory} onClick={() => setShowHistory((visible) => !visible)}>
+          <CalendarCheck className="mr-2 h-4 w-4" />{showHistory ? "Ocultar historial" : "Historial de los últimos 30 días"}
+        </Button>
+        {showHistory && (
+          <div className="mt-4 space-y-3">
+            {attendanceHistoryQuery.isLoading ? <p className="text-sm text-muted-foreground">Cargando historial…</p>
+              : attendanceHistoryQuery.isError ? <EmptyState icon={AlertCircle} title="No se pudo cargar el historial" description="Intenta nuevamente en unos segundos." action={{ label: "Reintentar", onClick: () => void attendanceHistoryQuery.refetch() }} />
+                : (students.length ? students.map(({ student }) => {
+                  const studentRecords = (attendanceHistoryQuery.data || []).filter((record) => record.studentId === student.id);
+                  if (!studentRecords.length) return null;
+                  const absences = studentRecords.filter((record) => record.status === "absent").length;
+                  const late = studentRecords.filter((record) => record.status === "late").length;
+                  const excused = studentRecords.filter((record) => record.status === "excused").length;
+                  return <div key={student.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3">
+                    <div><p className="text-sm font-medium">{getFullName(student.firstName, student.lastName)}</p><p className="text-xs text-muted-foreground">{studentRecords.length} registros · {absences} ausencias · {late} tardanzas · {excused} excusas</p></div>
+                    <div className="flex flex-wrap gap-1">{studentRecords.slice(-3).reverse().map((record) => <Badge key={record.id} variant="outline" className={statusColor[record.status] || ""}>{format(new Date(record.date), "d MMM", { locale: es })}: {statusLabel[record.status] || record.status}</Badge>)}</div>
+                  </div>;
+                }) : (attendanceHistoryQuery.data || []).map((record) => <div key={record.id} className="flex justify-between rounded-md border p-3"><span className="text-sm">{format(new Date(record.date), "d MMM yyyy", { locale: es })}</span><Badge className={statusColor[record.status] || ""}>{statusLabel[record.status] || record.status}</Badge></div>))}
+            {!attendanceHistoryQuery.isLoading && !attendanceHistoryQuery.isError && !(attendanceHistoryQuery.data || []).length && <p className="py-3 text-sm text-muted-foreground">No hay registros en este periodo.</p>}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

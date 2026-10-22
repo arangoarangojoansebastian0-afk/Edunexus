@@ -8,8 +8,8 @@ Este documento convierte el listado de prioridades del producto en trabajo verif
 |---:|---|---|---|
 | 1 | Panel de trabajo docente | Base existente | Aulas asignadas, conteo de revisiones y próximas tareas en Inicio. Mejorar clases próximas y avisos del docente. |
 | 2 | Seguimiento de actividades | Primera entrega completada el 22-10-2026 | Roster por actividad, búsqueda y estado pendiente/atrasado/entregado/calificado. Falta consolidar filtros y reportes entre cursos y grupos. |
-| 3 | Libro de calificaciones completo | Base existente, requiere completar | Revisar promedio por periodo contra el modelo de cada institución, y alinear vistas de estudiante y docente. |
-| 4 | Asistencia por curso | Base existente | Toma de lista e historial por aula; completar reportes de ausencias y tardanzas con filtros institucionales. |
+| 3 | Libro de calificaciones completo | En curso; registro docente agregado el 22-10-2026 | Docentes ya pueden registrar y actualizar notas por materia, grupo y periodo asignados. Falta consolidar promedios y cierre según el modelo evaluativo de cada institución. |
+| 4 | Asistencia por curso | Historial agregado por estudiante agregado el 22-10-2026 | Toma de lista, historial de 30 días, conteos de ausencias y tardanzas por estudiante; faltan exportaciones y filtros de rango más amplios para personal autorizado. |
 | 5 | Agenda académica unificada | Base existente, requiere integrar | Calendario existente; consolidar clases, entregas, evaluaciones, eventos y asesorías, con filtros por aula y avisos próximos. |
 | 6 | Anuncios dirigidos | Base parcial | El contenido del aula respeta su audiencia. Falta evidencia visible de quién recibió cada aviso y selección de varios destinos/estudiantes en un mismo envío. |
 | 7 | Inscripción y acceso confiables | Base existente, requiere auditoría | Mantener audiencia por grupos/alumnos y validar las mismas reglas en cada endpoint, pantalla, consulta y enlace directo. |
@@ -38,7 +38,7 @@ Este documento convierte el listado de prioridades del producto en trabajo verif
 | N.º | Función | Estado | Próximo alcance |
 |---:|---|---|---|
 | 17 | Informes exportables | Base parcial | Completar exportación PDF y Excel de asistencia, notas, entregas y matrícula con permisos por institución. |
-| 18 | Historial de cambios administrativos | Pendiente de verificar e implementar | Registrar actor, fecha, valor anterior y nuevo para cambios de notas, matrícula, grupos y permisos. |
+| 18 | Historial de cambios administrativos | Parcial; nuevas notas docentes auditadas desde el 22-10-2026 | Extender el registro de actor, fecha, valor anterior y nuevo a cambios de matrícula, grupos y permisos. |
 | 19 | Importación masiva | Pendiente | Plantillas, validación, vista previa y reporte de filas rechazadas antes de persistir. |
 | 20 | Periodos y cierre académico | Base parcial | Configurar fechas y reglas de promedio; bloquear o auditar cambios tras el cierre. |
 | 21 | Gestión de grupos académicos | Base existente, requiere completar | Distinguir grupos escolares de grupos sociales y evitar duplicados al crear cursos por materia. |
@@ -57,6 +57,6 @@ Este documento convierte el listado de prioridades del producto en trabajo verif
 
 ## Orden de ejecución
 
-El primer tramo empieza por seguimiento, calificaciones, asistencia, agenda y controles de acceso del aula. El seguimiento por actividad se completó parcialmente en esta entrega: el docente ya ve el estado de cada estudiante del roster, con búsqueda y filtro. El trabajo siguiente es cerrar la matriz de calificaciones por periodo y ampliar el seguimiento consolidado entre cursos.
+El primer tramo empieza por seguimiento, calificaciones, asistencia, agenda y controles de acceso del aula. El seguimiento por actividad ya muestra el estado de cada estudiante del roster, con búsqueda y filtro. El libro docente permite capturar notas por asignación y periodo. La asistencia ahora incluye un historial agregado de 30 días. El siguiente trabajo es integrar la agenda académica.
 
 Después se abordarán el portal familiar, los informes, la adaptación móvil y los flujos de permisos. Los indicadores de integración deben describir el entorno donde corre cada institución y no asumir que las credenciales locales están presentes en producción.
