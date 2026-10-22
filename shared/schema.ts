@@ -144,6 +144,23 @@ export const posts = pgTable(
   ]
 );
 
+// Estado de entrega y lectura de publicaciones del tablón de cada aula.
+export const coursePostRecipients = pgTable(
+  "course_post_recipients",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    postId: varchar("post_id").references(() => posts.id, { onDelete: "cascade" }).notNull(),
+    userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    deliveredAt: timestamp("delivered_at").defaultNow().notNull(),
+    readAt: timestamp("read_at"),
+  },
+  (table) => [
+    uniqueIndex("uq_course_post_recipient").on(table.postId, table.userId),
+    index("idx_course_post_recipients_post").on(table.postId),
+    index("idx_course_post_recipients_user").on(table.userId),
+  ],
+);
+
 // Comments table
 export const comments = pgTable(
   "comments",

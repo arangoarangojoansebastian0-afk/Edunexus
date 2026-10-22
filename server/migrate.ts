@@ -315,6 +315,20 @@ export async function runMigrations(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_announcement_comments_announcement ON announcement_comments(announcement_id);
     `);
 
+    // ── Destinatarios y lecturas de publicaciones del tablón de cursos ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS course_post_recipients (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        post_id VARCHAR NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+        user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        delivered_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        read_at TIMESTAMP,
+        CONSTRAINT uq_course_post_recipient UNIQUE (post_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_course_post_recipients_post ON course_post_recipients(post_id);
+      CREATE INDEX IF NOT EXISTS idx_course_post_recipients_user ON course_post_recipients(user_id);
+    `);
+
     // ── Nivel 4: bitácora de auditoría de acciones administrativas ─────────
     await client.query(`
       CREATE TABLE IF NOT EXISTS audit_logs (

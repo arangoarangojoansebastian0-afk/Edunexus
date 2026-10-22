@@ -3293,7 +3293,37 @@ export async function registerRoutes(
       }
       const groupId = await storage.getOrCreateCourseGroup(req.params.id);
       const posts = await storage.getPostsByGroup(groupId);
-      res.json(posts);
+      const { db } = await import("./db");
+      const { coursePostRecipients, users } = await import("@shared/schema");
+      const { and, eq, inArray, isNull } = await import("drizzle-orm");
+      if (user.role === "student" && posts.length > 0) {
+        await db.update(coursePostRecipients).set({ readAt: new Date() }).where(and(
+          eq(coursePostRecipients.userId, user.id),
+          inArray(coursePostRecipients.postId, posts.map((post) => post.id)),
+          isNull(coursePostRecipients.readAt),
+        ));
+      }
+      const canViewDelivery = user.role === "teacher" || ["admin", "director", "coordinator"].includes(user.role);
+      if (!canViewDelivery || posts.length === 0) return res.json(posts);
+      const receipts = await db.select({
+        postId: coursePostRecipients.postId,
+        userId: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        readAt: coursePostRecipients.readAt,
+      }).from(coursePostRecipients)
+        .innerJoin(users, eq(coursePostRecipients.userId, users.id))
+        .where(inArray(coursePostRecipients.postId, posts.map((post) => post.id)));
+      const receiptsByPost = new Map<string, typeof receipts>();
+      for (const receipt of receipts) {
+        const rows = receiptsByPost.get(receipt.postId) || [];
+        rows.push(receipt);
+        receiptsByPost.set(receipt.postId, rows);
+      }
+      res.json(posts.map((post) => {
+        const readers = receiptsByPost.get(post.id) || [];
+        return { ...post, _delivery: { deliveredCount: readers.length, readCount: readers.filter((row) => row.readAt).length, recipients: readers } };
+      }));
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Error al obtener el tablón" });
     }
@@ -3321,8 +3351,13 @@ export async function registerRoutes(
 
       // Notificar a los estudiantes inscritos (no al autor) de la nueva publicación
       const enrollments = await storage.getEnrollments(req.params.id);
-      for (const e of enrollments) {
-        if (e.studentId !== user.id && e.student.role === "student" && e.student.institutionId === course!.institutionId) {
+      const recipients = enrollments.filter((e) => e.studentId !== user.id && e.student.role === "student" && e.student.institutionId === course!.institutionId);
+      if (recipients.length > 0) {
+        const { db } = await import("./db");
+        const { coursePostRecipients } = await import("@shared/schema");
+        await db.insert(coursePostRecipients).values(recipients.map((e) => ({ postId: post.id, userId: e.studentId }))).onConflictDoNothing();
+      }
+      for (const e of recipients) {
           await storage.createNotification({
             userId: e.studentId,
             type: "course_post",
@@ -3336,7 +3371,6 @@ export async function registerRoutes(
             body: `${user.firstName || "Tu profesor"} publicó algo nuevo en el curso.`,
             url: `/aula-virtual/${course!.id}`,
           }, "pushNewPost").catch(() => {});
-        }
       }
 
       res.status(201).json(post);

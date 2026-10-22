@@ -2,6 +2,14 @@
 
 Registro cronológico de cambios relevantes del proyecto. Las fechas usan la zona horaria de Colombia. Cada entrada resume el cambio y enlaza la documentación funcional vigente.
 
+## 2026-10-22 — Seguimiento de entrega y lectura de anuncios
+
+- Cada publicación nueva del tablón registra destinatarios según la matrícula activa del curso y excluye al autor.
+- Al abrir el tablón, cada estudiante marca como leídas las publicaciones que recibió. El docente asignado y personal autorizado pueden revisar nombres y estados; las cuentas de estudiantes no reciben esos datos.
+- Se añadió la tabla idempotente `course_post_recipients` en el esquema y migración de arranque. Las publicaciones históricas sin registros no se presentan como notificadas.
+- Se documentó el flujo en [entrega de anuncios](../product/announcement-delivery.md), la hoja de ruta, el catálogo y la especificación oficial, versión 1.9.
+- Verificación: `npm run check` y `npm run build` completaron correctamente. No se ejecutaron pruebas automatizadas. El render visual del DOCX no está disponible porque LibreOffice (`soffice.exe`) no está instalado.
+
 ## 2026-10-22 — Filtros por tipo en la agenda académica
 
 - El calendario ya integra clases recurrentes, eventos y asesorías institucionales, y fechas de entrega; ahora se puede activar u ocultar cada tipo y filtrar entregas por curso o clases por grupo.

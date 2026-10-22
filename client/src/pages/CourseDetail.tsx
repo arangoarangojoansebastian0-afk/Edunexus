@@ -1522,18 +1522,34 @@ export default function CourseDetail() {
               ))
             ) : boardPosts && boardPosts.length > 0 ? (
               boardPosts.map((post) => (
-                <PostCard
-                  key={post.id}
-                  post={post}
-                  currentUserId={user?.id}
-                  likesCount={(post as any)._count?.reactions || 0}
-                  commentsCount={(post as any)._count?.comments || 0}
-                  onDelete={
-                    post.authorId === user?.id || isTeacher
-                      ? (postId) => deleteBoardPostMutation.mutate(postId)
-                      : undefined
-                  }
-                />
+                <div key={post.id} className="space-y-2">
+                  {(post as any)._delivery && (
+                    <details className="rounded-lg border bg-card px-3 py-2 text-sm">
+                      <summary className="cursor-pointer font-medium">
+                        Aviso enviado a {(post as any)._delivery.deliveredCount} estudiantes · visto por {(post as any)._delivery.readCount}
+                      </summary>
+                      <ul className="mt-2 space-y-1 pl-5 text-muted-foreground">
+                        {(post as any)._delivery.recipients.map((recipient: any) => (
+                          <li key={recipient.userId}>
+                            {getFullName(recipient.firstName, recipient.lastName)} — {recipient.readAt ? "Visto" : "Pendiente de abrir"}
+                          </li>
+                        ))}
+                        {(post as any)._delivery.deliveredCount === 0 && <li>Este aviso no tiene registros de entrega.</li>}
+                      </ul>
+                    </details>
+                  )}
+                  <PostCard
+                    post={post}
+                    currentUserId={user?.id}
+                    likesCount={(post as any)._count?.reactions || 0}
+                    commentsCount={(post as any)._count?.comments || 0}
+                    onDelete={
+                      post.authorId === user?.id || isTeacher
+                        ? (postId) => deleteBoardPostMutation.mutate(postId)
+                        : undefined
+                    }
+                  />
+                </div>
               ))
             ) : (
               <EmptyState

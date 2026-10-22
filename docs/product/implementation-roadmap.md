@@ -11,7 +11,7 @@ Este documento convierte el listado de prioridades del producto en trabajo verif
 | 3 | Libro de calificaciones completo | En curso; registro docente agregado el 22-10-2026 | Docentes ya pueden registrar y actualizar notas por materia, grupo y periodo asignados. Falta consolidar promedios y cierre según el modelo evaluativo de cada institución. |
 | 4 | Asistencia por curso | Historial agregado por estudiante agregado el 22-10-2026 | Toma de lista, historial de 30 días, conteos de ausencias y tardanzas por estudiante; faltan exportaciones y filtros de rango más amplios para personal autorizado. |
 | 5 | Agenda académica unificada | Primera entrega completada el 22-10-2026 | Calendario unificado con filtros por tipo, curso y grupo. Pendiente: recordatorios configurables y evaluaciones con fecha explícita. Los eventos siguen siendo institucionales porque el modelo no los asocia a un aula. |
-| 6 | Anuncios dirigidos | Base parcial | El contenido del aula respeta su audiencia. Falta evidencia visible de quién recibió cada aviso y selección de varios destinos/estudiantes en un mismo envío. |
+| 6 | Anuncios dirigidos | Seguimiento de entrega y lectura agregado el 22-10-2026 | Los cursos delimitan su audiencia por grupos/estudiantes y el docente puede ver destinatarios y lecturas por publicación. Falta enviar un mismo aviso a varios cursos o una audiencia personalizada por aviso. |
 | 7 | Inscripción y acceso confiables | Base existente, requiere auditoría | Mantener audiencia por grupos/alumnos y validar las mismas reglas en cada endpoint, pantalla, consulta y enlace directo. |
 
 ## Prioridad alta — experiencia por perfil
