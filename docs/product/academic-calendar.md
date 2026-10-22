@@ -6,7 +6,9 @@ El calendario de EduNexus combina en una sola vista los eventos y asesorías ins
 
 ## Filtros
 
-Los controles de filtro activan o desactivan de forma independiente eventos y asesorías, entregas y clases. Los filtros solo cambian lo que se muestra en pantalla: no alteran las consultas ni amplían el acceso del usuario a datos.
+Los controles de filtro activan o desactivan de forma independiente eventos y asesorías, entregas y clases. También se puede filtrar las entregas por curso y las clases por grupo. Los eventos son institucionales y permanecen visibles al escoger curso o grupo, porque el modelo actual no los asocia a un aula.
+
+Los filtros solo cambian lo que se muestra en pantalla: no alteran las consultas ni amplían el acceso del usuario a datos.
 
 ## Fuentes y permisos
 
@@ -20,4 +22,4 @@ La interfaz agrupa cada elemento en la fecha correspondiente. Los horarios se re
 
 ## Pendiente
 
-Esta primera entrega no añade filtros por aula, evaluación con fecha propia ni recordatorios configurables. Esos alcances continúan en la hoja de ruta y requieren definir sus reglas de origen y notificación.
+Esta primera entrega no añade evaluación con fecha propia ni recordatorios configurables. Esos alcances continúan en la hoja de ruta y requieren definir sus reglas de origen y notificación.

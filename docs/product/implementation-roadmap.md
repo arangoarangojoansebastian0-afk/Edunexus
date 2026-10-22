@@ -10,7 +10,7 @@ Este documento convierte el listado de prioridades del producto en trabajo verif
 | 2 | Seguimiento de actividades | Primera entrega completada el 22-10-2026 | Roster por actividad, búsqueda y estado pendiente/atrasado/entregado/calificado. Falta consolidar filtros y reportes entre cursos y grupos. |
 | 3 | Libro de calificaciones completo | En curso; registro docente agregado el 22-10-2026 | Docentes ya pueden registrar y actualizar notas por materia, grupo y periodo asignados. Falta consolidar promedios y cierre según el modelo evaluativo de cada institución. |
 | 4 | Asistencia por curso | Historial agregado por estudiante agregado el 22-10-2026 | Toma de lista, historial de 30 días, conteos de ausencias y tardanzas por estudiante; faltan exportaciones y filtros de rango más amplios para personal autorizado. |
-| 5 | Agenda académica unificada | Primera entrega completada el 22-10-2026 | Calendario unificado de eventos/asesorías, entregas y clases con filtros independientes por tipo. Pendiente: filtros por aula, recordatorios configurables y evaluaciones con fecha explícita. |
+| 5 | Agenda académica unificada | Primera entrega completada el 22-10-2026 | Calendario unificado con filtros por tipo, curso y grupo. Pendiente: recordatorios configurables y evaluaciones con fecha explícita. Los eventos siguen siendo institucionales porque el modelo no los asocia a un aula. |
 | 6 | Anuncios dirigidos | Base parcial | El contenido del aula respeta su audiencia. Falta evidencia visible de quién recibió cada aviso y selección de varios destinos/estudiantes en un mismo envío. |
 | 7 | Inscripción y acceso confiables | Base existente, requiere auditoría | Mantener audiencia por grupos/alumnos y validar las mismas reglas en cada endpoint, pantalla, consulta y enlace directo. |
 
@@ -57,6 +57,6 @@ Este documento convierte el listado de prioridades del producto en trabajo verif
 
 ## Orden de ejecución
 
-El primer tramo empieza por seguimiento, calificaciones, asistencia, agenda y controles de acceso del aula. El seguimiento por actividad ya muestra el estado de cada estudiante del roster, con búsqueda y filtro. El libro docente permite capturar notas por asignación y periodo. La asistencia incluye un historial agregado de 30 días. La agenda ya reúne las fuentes existentes y permite filtrar eventos/asesorías, entregas y clases; siguen pendientes filtros por aula y recordatorios.
+El primer tramo empieza por seguimiento, calificaciones, asistencia, agenda y controles de acceso del aula. El seguimiento por actividad ya muestra el estado de cada estudiante del roster, con búsqueda y filtro. El libro docente permite capturar notas por asignación y periodo. La asistencia incluye un historial agregado de 30 días. La agenda reúne las fuentes existentes y permite filtrar por tipo, curso y grupo; siguen pendientes los recordatorios configurables y las evaluaciones con fecha explícita.
 
 Después se abordarán el portal familiar, los informes, la adaptación móvil y los flujos de permisos. Los indicadores de integración deben describir el entorno donde corre cada institución y no asumir que las credenciales locales están presentes en producción.

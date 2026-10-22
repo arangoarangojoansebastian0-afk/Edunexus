@@ -20,6 +20,7 @@ export default function Calendar() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [view, setView] = useState<CalendarView>("month");
   const [enabledFilters, setEnabledFilters] = useState<Record<CalendarFilter, boolean>>({ events: true, tasks: true, classes: true });
+  const [selectedContext, setSelectedContext] = useState("all");
 
   const { data: events = [], isLoading, isError: eventsError, refetch: refetchEvents } = useQuery<EventWithHost[]>({
     queryKey: ["/api/events"],
@@ -66,8 +67,10 @@ export default function Calendar() {
 
   const getEventsForDay = (day: Date) => {
     const evts = enabledFilters.events ? (events as any[]).filter((event) => isSameDay(new Date(event.startTime), day)) : [];
-    const acts = enabledFilters.tasks ? (activities as any[]).filter((a) => a.dueDate && isSameDay(new Date(a.dueDate), day)) : [];
-    const classes = enabledFilters.classes ? (schedules as any[]).filter((schedule) => Number(schedule.dayOfWeek) === getISODay(day)) : [];
+    const acts = enabledFilters.tasks ? (activities as any[]).filter((a) => a.dueDate && isSameDay(new Date(a.dueDate), day)
+      && (selectedContext === "all" || selectedContext === `course:${a.courseId}`)) : [];
+    const classes = enabledFilters.classes ? (schedules as any[]).filter((schedule) => Number(schedule.dayOfWeek) === getISODay(day)
+      && (selectedContext === "all" || selectedContext === `group:${schedule.groupId}`)) : [];
     return {
       events: evts,
       tasks: acts,
@@ -156,6 +159,22 @@ export default function Calendar() {
             </Button>
           ))}
           {!Object.values(enabledFilters).some(Boolean) && <span className="text-xs text-muted-foreground">Activa al menos un tipo para ver elementos.</span>}
+          <label className="sr-only" htmlFor="calendar-context-filter">Filtrar por curso o grupo</label>
+          <select id="calendar-context-filter" className="h-9 max-w-full rounded-md border border-input bg-background px-3 text-sm"
+            value={selectedContext} onChange={(event) => setSelectedContext(event.target.value)}>
+            <option value="all">Todos los cursos y grupos</option>
+            {(activities as any[]).length > 0 && <optgroup label="Cursos">
+              {Array.from(new Map((activities as any[]).map((activity) => [activity.courseId, activity.courseName])).entries()).map(([id, name]) => (
+                <option key={`course:${id}`} value={`course:${id}`}>{name || "Curso"}</option>
+              ))}
+            </optgroup>}
+            {(schedules as any[]).length > 0 && <optgroup label="Grupos">
+              {Array.from(new Map((schedules as any[]).map((schedule) => [schedule.groupId, schedule.groupName])).entries()).map(([id, name]) => (
+                <option key={`group:${id}`} value={`group:${id}`}>{name || "Grupo"}</option>
+              ))}
+            </optgroup>}
+          </select>
+          {selectedContext !== "all" && <span className="text-xs text-muted-foreground">Los eventos institucionales siguen visibles.</span>}
         </div>
 
         {isLoading || activitiesLoading || schedulesLoading ? (

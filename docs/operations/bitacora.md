@@ -4,9 +4,9 @@ Registro cronológico de cambios relevantes del proyecto. Las fechas usan la zon
 
 ## 2026-10-22 — Filtros por tipo en la agenda académica
 
-- El calendario ya integra clases recurrentes, eventos y asesorías institucionales, y fechas de entrega; ahora se puede activar u ocultar cada tipo con controles accesibles.
+- El calendario ya integra clases recurrentes, eventos y asesorías institucionales, y fechas de entrega; ahora se puede activar u ocultar cada tipo y filtrar entregas por curso o clases por grupo.
 - Los filtros afectan solamente la presentación. Las tres fuentes siguen usando sus rutas existentes, con autorización por institución y rol en servidor.
-- Se documentó el alcance y sus pendientes en [agenda académica](../product/academic-calendar.md), el catálogo funcional, la hoja de ruta y la especificación oficial, versión 1.7.
+- Se documentó el alcance y sus pendientes en [agenda académica](../product/academic-calendar.md), el catálogo funcional, la hoja de ruta y la especificación oficial, versión 1.8.
 - Verificación: `npm run check` y `npm run build` completaron correctamente. No se ejecutaron pruebas automatizadas. El render visual del DOCX no se pudo completar porque LibreOffice (`soffice.exe`) no está instalado en este entorno.
 
 ## 2026-10-22 — Historial de asistencia por estudiante
