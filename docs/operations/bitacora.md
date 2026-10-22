@@ -2,6 +2,15 @@
 
 Registro cronológico de cambios relevantes del proyecto. Las fechas usan la zona horaria de Colombia. Cada entrada resume el cambio y enlaza la documentación funcional vigente.
 
+## 2026-10-22 — Seguimiento completo de entregas por actividad
+
+- El panel de entregas del aula ahora incluye a todos los estudiantes inscritos, incluso cuando aún no han enviado su trabajo.
+- Cada fila identifica el estado como pendiente, atrasada, entregada sin calificar o calificada; se muestra la fecha límite o la hora de envío cuando aplica.
+- Se añadieron búsqueda por estudiante y filtros por estado. El docente puede abrir la calificación desde la misma lista.
+- La vista combina los endpoints existentes de roster y entregas. El servidor conserva sus controles de institución, relación con el curso y rol; no se añadió una tabla ni migración.
+- Se actualizó el catálogo funcional, el catálogo de API, la hoja de ruta y la especificación oficial a versión 1.4.
+- Verificación: `npm run check` completó correctamente. No se ejecutaron pruebas automatizadas.
+
 ## 2026-10-21 — Revisión colegiada de promoción anual
 
 - Se agregó `/promotions` para docentes, coordinación, dirección y administración institucional, con expedientes de calificaciones, asistencia, observaciones y compromisos del estudiante.

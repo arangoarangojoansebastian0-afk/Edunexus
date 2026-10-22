@@ -1195,6 +1195,8 @@ export default function CourseDetail() {
   const [selectedSubmissions, setSelectedSubmissions] = useState<string | null>(null);
   const [activitySearch, setActivitySearch] = useState("");
   const [activityStatusFilter, setActivityStatusFilter] = useState("all");
+  const [submissionRosterSearch, setSubmissionRosterSearch] = useState("");
+  const [submissionRosterFilter, setSubmissionRosterFilter] = useState("all");
 
   // Necesario para que la tabla de Calificaciones muestre el sistema
   // evaluativo real (cuantitativo/cualitativo/mixto) en vez de asumir
@@ -1262,7 +1264,7 @@ export default function CourseDetail() {
     COURSE_DATA_STAFF_ROLES.includes(user?.role || "") || user?.role === "coordinator" ||
     (user?.role === "teacher" && course.teacherId === user.id)
   );
-  const { data: students, isError: studentsError } = useQuery<{ id: string; student: { id: string; firstName: string | null; lastName: string | null; profileImageUrl: string | null } }[]>({
+  const { data: students, isLoading: studentsLoading, isError: studentsError } = useQuery<{ id: string; student: { id: string; firstName: string | null; lastName: string | null; profileImageUrl: string | null } }[]>({
     queryKey: ["/api/classroom/courses", id, "students"],
     queryFn: async () => {
       const response = await fetch(`/api/classroom/courses/${id}/students`, { credentials: "include" });
@@ -1562,6 +1564,27 @@ export default function CourseDetail() {
                 {filteredActivityList.map((activity) => {
                   const isOverdue = activity.dueDate && isPast(new Date(activity.dueDate));
                   const submissionStatus = activityStatusById.get(activity.id);
+                  const submissionsByStudent = new Map<string, SubmissionWithStudent>();
+                  (activitySubmissions || [])
+                    .filter((submission) => submission.activityId === activity.id)
+                    .forEach((submission) => {
+                      const current = submissionsByStudent.get(submission.studentId);
+                      if (!current || new Date(submission.submittedAt).getTime() > new Date(current.submittedAt).getTime()) {
+                        submissionsByStudent.set(submission.studentId, submission);
+                      }
+                    });
+                  const roster = (students || []).map(({ student }) => {
+                    const submission = submissionsByStudent.get(student.id) || null;
+                    const overdue = !submission && !!activity.dueDate && isPast(new Date(activity.dueDate));
+                    const status = submission ? (submission.grade != null ? "graded" : "submitted") : overdue ? "overdue" : "pending";
+                    return { student, submission, status };
+                  });
+                  const normalizedRosterSearch = submissionRosterSearch.trim().toLocaleLowerCase();
+                  const visibleRoster = roster.filter(({ student, status }) => {
+                    const name = getFullName(student.firstName, student.lastName).toLocaleLowerCase();
+                    return (!normalizedRosterSearch || name.includes(normalizedRosterSearch))
+                      && (submissionRosterFilter === "all" || status === submissionRosterFilter);
+                  });
                   return (
                     <Card key={activity.id} data-testid={`card-activity-${activity.id}`}>
                       <CardContent className="p-4">
@@ -1626,7 +1649,7 @@ export default function CourseDetail() {
                                 data-testid={`button-view-submissions-${activity.id}`}
                               >
                                 <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
-                                Entregas
+                                Seguimiento
                               </Button>
                             ) : (
                               <Button
@@ -1649,37 +1672,67 @@ export default function CourseDetail() {
                           selectedSubmissions === activity.id &&
                           activitySubmissions && (
                             <div className="mt-4 border-t pt-4">
-                              <h5 className="text-sm font-semibold mb-3">
-                                Entregas ({activitySubmissions.length})
-                              </h5>
-                              {activitySubmissions.length === 0 ? (
+                              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <h5 className="text-sm font-semibold">Seguimiento de entregas</h5>
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    {roster.filter((row) => row.submission).length} de {roster.length} estudiantes entregaron
+                                  </p>
+                                </div>
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(180px,1fr)_180px]">
+                                  <Input
+                                    type="search"
+                                    aria-label="Buscar estudiante en el seguimiento"
+                                    placeholder="Buscar estudiante..."
+                                    value={submissionRosterSearch}
+                                    onChange={(event) => setSubmissionRosterSearch(event.target.value)}
+                                  />
+                                  <Select value={submissionRosterFilter} onValueChange={setSubmissionRosterFilter}>
+                                    <SelectTrigger aria-label="Filtrar estudiantes por estado"><SelectValue placeholder="Todos los estados" /></SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="all">Todos los estados</SelectItem>
+                                      <SelectItem value="pending">Pendiente</SelectItem>
+                                      <SelectItem value="overdue">Atrasada</SelectItem>
+                                      <SelectItem value="submitted">Entregada</SelectItem>
+                                      <SelectItem value="graded">Calificada</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+                              {studentsError ? (
+                                <p className="text-sm text-destructive">No se pudo cargar la lista de estudiantes del curso.</p>
+                              ) : studentsLoading ? (
+                                <p className="text-sm text-muted-foreground">Cargando estudiantes inscritos…</p>
+                              ) : roster.length === 0 ? (
                                 <p className="text-sm text-muted-foreground">
-                                  Ningún estudiante ha entregado aún
+                                  No hay estudiantes inscritos en este curso.
                                 </p>
+                              ) : visibleRoster.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">No hay estudiantes que coincidan con esos filtros.</p>
                               ) : (
                                 <div className="space-y-2">
-                                  {activitySubmissions.map((sub) => (
+                                  {visibleRoster.map(({ student, submission, status }) => (
                                     <div
-                                      key={sub.id}
+                                      key={student.id}
                                       className="flex items-center justify-between p-2 rounded-md bg-muted/50"
                                     >
                                       <div className="flex items-center gap-2">
                                         <Avatar className="h-7 w-7">
-                                          <AvatarImage src={sub.student.profileImageUrl || undefined} />
+                                          <AvatarImage src={student.profileImageUrl || undefined} />
                                           <AvatarFallback className="text-xs">
-                                            {getInitials(sub.student.firstName, sub.student.lastName)}
+                                            {getInitials(student.firstName, student.lastName)}
                                           </AvatarFallback>
                                         </Avatar>
                                         <div>
                                           <p className="text-sm font-medium">
-                                            {getFullName(sub.student.firstName, sub.student.lastName)}
+                                            {getFullName(student.firstName, student.lastName)}
                                           </p>
-                                          <p className="text-xs text-muted-foreground">
-                                            {format(new Date(sub.submittedAt), "dd MMM, HH:mm", { locale: es })}
-                                          </p>
-                                          {sub.attachments && sub.attachments.length > 0 && (
+                                          <p className="text-xs text-muted-foreground">{submission
+                                            ? `Entregada el ${format(new Date(submission.submittedAt), "dd MMM, HH:mm", { locale: es })}`
+                                            : activity.dueDate ? `Fecha límite: ${format(new Date(activity.dueDate), "dd MMM yyyy, HH:mm", { locale: es })}` : "Sin entrega todavía"}</p>
+                                          {submission?.attachments && submission.attachments.length > 0 && (
                                             <div className="flex flex-wrap gap-1 mt-0.5">
-                                              {sub.attachments.map((url, i) => (
+                                              {submission.attachments.map((url, i) => (
                                                 <a
                                                   key={i}
                                                   href={url}
@@ -1696,24 +1749,12 @@ export default function CourseDetail() {
                                         </div>
                                       </div>
                                       <div className="flex items-center gap-2">
-                                        {sub.grade != null ? (
-                                          <Badge variant="secondary" className="no-default-active-elevate">
-                                            {institution?.evaluationType === "qualitative"
-                                              ? sub.grade
-                                              : `${sub.grade}/${activity.maxScore}`}
-                                          </Badge>
-                                        ) : (
-                                          <Badge variant="outline" className="no-default-active-elevate">
-                                            Sin calificar
-                                          </Badge>
-                                        )}
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          onClick={() => setGradeSubmission(sub)}
-                                        >
-                                          Calificar
-                                        </Button>
+                                        <Badge variant={status === "overdue" ? "destructive" : status === "graded" ? "default" : status === "submitted" ? "secondary" : "outline"}>
+                                          {status === "overdue" ? "Atrasada" : status === "graded" ? (institution?.evaluationType === "qualitative" ? submission?.grade : `${submission?.grade}/${activity.maxScore}`) : status === "submitted" ? "Entregada · sin calificar" : "Pendiente"}
+                                        </Badge>
+                                        {submission && <Button size="sm" variant="outline" onClick={() => setGradeSubmission(submission)}>
+                                          {status === "graded" ? "Ver / editar nota" : "Calificar"}
+                                        </Button>}
                                       </div>
                                     </div>
                                   ))}
